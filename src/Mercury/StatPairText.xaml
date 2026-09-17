@@ -1,0 +1,34 @@
+<UserControl x:Class="Mercury.StatPairText"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:Mercury"
+             Foreground="{DynamicResource TextBrush}">
+    <StackPanel Orientation="Horizontal">
+        <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Label">
+            <TextBlock FontFamily="{DynamicResource ProgressFontFamily}"
+                       FontSize="{DynamicResource ProgressFontSize}"
+                       TextTrimming="CharacterEllipsis">
+                <Run Text="{Binding Key, Mode=OneWay}"
+                     FontWeight="SemiBold"
+                     FontFamily="{DynamicResource LabelFontFamily}"
+                     FontSize="{DynamicResource LabelFontSize}"
+                     Foreground="{DynamicResource MutedBrush}"/>
+                <Run Text=": "
+                     FontWeight="SemiBold"
+                     FontFamily="{DynamicResource LabelFontFamily}"
+                     FontSize="{DynamicResource LabelFontSize}"
+                     Foreground="{DynamicResource MutedBrush}"/>
+            </TextBlock>
+        </Border>
+        <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Value">
+            <TextBlock FontFamily="{DynamicResource ProgressFontFamily}"
+                       FontSize="{DynamicResource ProgressFontSize}"
+                       TextTrimming="CharacterEllipsis">
+                <Run Text="{Binding Value, Mode=OneWay}"
+                     FontFamily="{DynamicResource ValueFontFamily}"
+                     FontSize="{DynamicResource ValueFontSize}"
+                     Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+            </TextBlock>
+        </Border>
+    </StackPanel>
+</UserControl>

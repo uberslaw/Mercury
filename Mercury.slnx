@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Mercury.Core/Mercury.Core.csproj" />
+    <Project Path="src/Mercury/Mercury.csproj" />
+    <Project Path="src/Mercury.Catcher/Mercury.Catcher.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Mercury.Tests/Mercury.Tests.csproj" />
+  </Folder>
+</Solution>

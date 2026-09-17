@@ -1,0 +1,97 @@
+<UserControl x:Class="Mercury.ProgressStatsLine"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:Mercury"
+             Foreground="{DynamicResource TextBrush}">
+    <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Progress">
+    <StackPanel Margin="0,6,0,2">
+        <local:StatPairText DataContext="{Binding Job}"
+                            Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=UserControl}}">
+            <local:StatPairText.Style>
+                <Style TargetType="local:StatPairText">
+                    <Setter Property="Margin" Value="0,0,0,4"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding Display}" Value="">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </local:StatPairText.Style>
+        </local:StatPairText>
+        <local:StatPairText DataContext="{Binding Stage}"
+                            Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=UserControl}}">
+            <local:StatPairText.Style>
+                <Style TargetType="local:StatPairText">
+                    <Setter Property="Margin" Value="0,0,0,4"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding Display}" Value="">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </local:StatPairText.Style>
+        </local:StatPairText>
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" MinWidth="160"/>
+                <ColumnDefinition Width="*" MinWidth="160"/>
+            </Grid.ColumnDefinitions>
+            <local:StatPairText Grid.Column="0" DataContext="{Binding Elapsed}"
+                                Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=UserControl}}">
+                <local:StatPairText.Style>
+                    <Style TargetType="local:StatPairText">
+                        <Setter Property="Margin" Value="0,0,8,4"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Display}" Value="">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </local:StatPairText.Style>
+            </local:StatPairText>
+            <local:StatPairText Grid.Column="1" DataContext="{Binding ThisStage}"
+                                Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=UserControl}}">
+                <local:StatPairText.Style>
+                    <Style TargetType="local:StatPairText">
+                        <Setter Property="Margin" Value="0,0,0,4"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Display}" Value="">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </local:StatPairText.Style>
+            </local:StatPairText>
+        </Grid>
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" MinWidth="140"/>
+                <ColumnDefinition Width="*" MinWidth="180"/>
+                <ColumnDefinition Width="*" MinWidth="100"/>
+                <ColumnDefinition Width="*" MinWidth="88"/>
+            </Grid.ColumnDefinitions>
+            <local:StatPairText Grid.Column="0" DataContext="{Binding Files}"
+                                Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+            <local:StatPairText Grid.Column="1" DataContext="{Binding Bytes}"
+                                Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+            <local:StatPairText Grid.Column="2" DataContext="{Binding Speed}"
+                                Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                    <local:StatPairText Grid.Column="3" DataContext="{Binding Eta}"
+                                Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+        </Grid>
+        <local:StatPairText DataContext="{Binding PauseAfter}"
+                            Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=UserControl}}">
+            <local:StatPairText.Style>
+                <Style TargetType="local:StatPairText">
+                    <Setter Property="Margin" Value="0,6,0,0"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding Display}" Value="">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </local:StatPairText.Style>
+        </local:StatPairText>
+    </StackPanel>
+    </Border>
+</UserControl>

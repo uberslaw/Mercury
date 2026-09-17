@@ -1,0 +1,184 @@
+<Window x:Class="Mercury.ThemePreviewWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:Mercury"
+        Title="Theme preview"
+        Width="400" Height="720"
+        MinWidth="340" MinHeight="520"
+        Background="{DynamicResource BgBrush}">
+    <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="BgBrush">
+    <DockPanel>
+        <Border DockPanel.Dock="Bottom" Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="StatusBarBrush,StatusBarTextBrush">
+            <Border Background="{DynamicResource StatusBarBrush}" Padding="10,6">
+                <TextBlock Text="Data: preview" Foreground="{DynamicResource StatusBarTextBrush}"/>
+            </Border>
+        </Border>
+
+        <Border DockPanel.Dock="Top" Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="HeaderBrush">
+            <Border Background="{DynamicResource HeaderBrush}" Padding="12,10" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
+                <StackPanel>
+                    <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Body">
+                        <TextBlock Text="Progress" FontWeight="SemiBold" Foreground="{DynamicResource OnHeaderBrush}"
+                                   FontFamily="{DynamicResource BodyFontFamily}" FontSize="{DynamicResource BodyFontSize}"/>
+                    </Border>
+                    <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Body">
+                        <TextBlock Text="Current" FontWeight="SemiBold" Margin="0,4,0,4" Foreground="{DynamicResource OnHeaderBrush}"
+                                   FontFamily="{DynamicResource BodyFontFamily}" FontSize="{DynamicResource BodyFontSize}"/>
+                    </Border>
+                    <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="HeaderBarFillBrush,HeaderBarTrackBrush">
+                        <ProgressBar Value="62" Maximum="100" Height="14"
+                                     Foreground="{DynamicResource HeaderBarFillBrush}"
+                                     Background="{DynamicResource HeaderBarTrackBrush}"/>
+                    </Border>
+                    <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Body">
+                        <TextBlock Text="Overall" FontWeight="SemiBold" Margin="0,8,0,4" Foreground="{DynamicResource OnHeaderBrush}"
+                                   FontFamily="{DynamicResource BodyFontFamily}" FontSize="{DynamicResource BodyFontSize}"/>
+                    </Border>
+                    <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="HeaderBarFillBrush,HeaderBarTrackBrush">
+                        <ProgressBar Value="28" Maximum="100" Height="14"
+                                     Foreground="{DynamicResource HeaderBarFillBrush}"
+                                     Background="{DynamicResource HeaderBarTrackBrush}"/>
+                    </Border>
+                    <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Progress" Margin="0,6,0,0">
+                        <StackPanel Orientation="Horizontal">
+                            <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Label">
+                                <TextBlock FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}"
+                                           Foreground="{DynamicResource OnHeaderBrush}">
+                                    <Run Text="Files: " FontWeight="SemiBold" FontFamily="{DynamicResource LabelFontFamily}"
+                                         FontSize="{DynamicResource LabelFontSize}" Foreground="{DynamicResource MutedBrush}"/>
+                                </TextBlock>
+                            </Border>
+                            <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Value">
+                                <TextBlock FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}"
+                                           Foreground="{DynamicResource OnHeaderBrush}">
+                                    <Run Text="12/20    " FontFamily="{DynamicResource ValueFontFamily}" FontSize="{DynamicResource ValueFontSize}"/>
+                                </TextBlock>
+                            </Border>
+                            <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Label">
+                                <TextBlock FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}"
+                                           Foreground="{DynamicResource OnHeaderBrush}">
+                                    <Run Text="Bytes: " FontWeight="SemiBold" FontFamily="{DynamicResource LabelFontFamily}"
+                                         FontSize="{DynamicResource LabelFontSize}" Foreground="{DynamicResource MutedBrush}"/>
+                                </TextBlock>
+                            </Border>
+                            <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Value">
+                                <TextBlock FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}"
+                                           Foreground="{DynamicResource OnHeaderBrush}">
+                                    <Run Text="1.4 GB    " FontFamily="{DynamicResource ValueFontFamily}" FontSize="{DynamicResource ValueFontSize}"/>
+                                </TextBlock>
+                            </Border>
+                            <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Label">
+                                <TextBlock FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}"
+                                           Foreground="{DynamicResource OnHeaderBrush}">
+                                    <Run Text="Speed: " FontWeight="SemiBold" FontFamily="{DynamicResource LabelFontFamily}"
+                                         FontSize="{DynamicResource LabelFontSize}" Foreground="{DynamicResource MutedBrush}"/>
+                                </TextBlock>
+                            </Border>
+                            <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Value">
+                                <TextBlock FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}"
+                                           Foreground="{DynamicResource OnHeaderBrush}">
+                                    <Run Text="42 MB/s" FontFamily="{DynamicResource ValueFontFamily}" FontSize="{DynamicResource ValueFontSize}"/>
+                                </TextBlock>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OkBrush">
+                        <TextBlock Text="Job finished successfully." FontWeight="SemiBold" Margin="0,6,0,0"
+                                   Foreground="{DynamicResource OkBrush}"/>
+                    </Border>
+                    <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="WarnBrush">
+                        <TextBlock Text="Cloud-synced folder warning." TextWrapping="Wrap" Margin="0,4,0,0"
+                                   Foreground="{DynamicResource WarnBrush}"/>
+                    </Border>
+                    <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="DangerBrush">
+                        <TextBlock Text="Copy failed — access denied." FontWeight="SemiBold" Margin="0,4,0,0"
+                                   Foreground="{DynamicResource DangerBrush}"/>
+                    </Border>
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="PanelBrush">
+            <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="TabBackgroundBrush,TabSelectedBackgroundBrush,TabSelectedForegroundBrush,TabUnselectedForegroundBrush,Body">
+            <TabControl Background="{DynamicResource PanelBrush}">
+                <TabItem Header="Transfer">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10">
+                        <StackPanel>
+                            <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="MutedBrush">
+                                <TextBlock Text="Sample chrome — not a real job" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,8"/>
+                            </Border>
+                            <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="TextBrush">
+                                <TextBlock Text="Source and destination" FontWeight="SemiBold"/>
+                            </Border>
+                            <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="InputBackgroundBrush" Margin="0,6,0,8">
+                                <TextBox Text="D:\Photos\2024" IsReadOnly="True"/>
+                            </Border>
+                            <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="BorderBrush" Margin="0,0,0,8">
+                                <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Padding="8">
+                                    <TextBlock Text="Border sample" Foreground="{DynamicResource TextBrush}"/>
+                                </Border>
+                            </Border>
+                            <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Button">
+                            <WrapPanel Margin="0,0,0,8">
+                                <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="AccentBrush,AccentForegroundBrush">
+                                    <Button Content="Start" Style="{StaticResource AccentButton}"/>
+                                </Border>
+                                <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="ButtonBrush,ButtonForegroundBrush">
+                                    <Button Content="Pause" Style="{StaticResource ToolbarButton}"/>
+                                </Border>
+                                <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="CancelButtonBrush,AccentForegroundBrush">
+                                    <Button Content="Stop" Style="{StaticResource CancelButton}"/>
+                                </Border>
+                            </WrapPanel>
+                            </Border>
+                            <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="ButtonHoverBrush" Margin="0,0,0,8">
+                                <Border Background="{DynamicResource ButtonHoverBrush}" Padding="10,6" CornerRadius="4">
+                                    <TextBlock Text="Button hover sample" Foreground="{DynamicResource ButtonForegroundBrush}" HorizontalAlignment="Center"/>
+                                </Border>
+                            </Border>
+                            <TextBlock Text="Job" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                            <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="BarFillBrush,BarTrackBrush">
+                                <ProgressBar Value="38" Maximum="100" Height="16"/>
+                            </Border>
+                            <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="PanelAltBrush" Margin="0,10,0,0">
+                                <ListBox FontFamily="Segoe UI" FontSize="13" Height="56"
+                                         Background="{DynamicResource PanelAltBrush}">
+                                    <ListBoxItem>Saved job: Weekend backup</ListBoxItem>
+                                </ListBox>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+                <TabItem Header="Queue">
+                    <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="QueueBackgroundBrush" Margin="10">
+                        <ListBox FontFamily="Segoe UI" FontSize="13" Background="{DynamicResource QueueBackgroundBrush}">
+                            <ListBoxItem>
+                                <StackPanel>
+                                    <TextBlock Text="Weekend backup" FontWeight="SemiBold"/>
+                                    <TextBlock Text="C:\Src  →  D:\Dest" Opacity="0.8"/>
+                                    <ProgressBar Value="55" Maximum="100" Height="14" Margin="0,6,0,0"/>
+                                </StackPanel>
+                            </ListBoxItem>
+                        </ListBox>
+                    </Border>
+                </TabItem>
+                <TabItem Header="Console">
+                    <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="ConsoleBackgroundBrush,Console" Margin="10">
+                        <ListBox Background="{DynamicResource ConsoleBackgroundBrush}">
+                            <ListBoxItem>
+                                <TextBlock Text="12:01:03 [job] Copied file.txt" Foreground="{DynamicResource TextBrush}"/>
+                            </ListBoxItem>
+                            <ListBoxItem>
+                                <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="ErrorLineBrush">
+                                    <TextBlock Text="12:01:04 [job] ERROR: access denied" Foreground="{DynamicResource ErrorLineBrush}"/>
+                                </Border>
+                            </ListBoxItem>
+                        </ListBox>
+                    </Border>
+                </TabItem>
+            </TabControl>
+            </Border>
+        </Border>
+    </DockPanel>
+    </Border>
+</Window>

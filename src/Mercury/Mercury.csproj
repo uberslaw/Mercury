@@ -1,0 +1,99 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <RootNamespace>Mercury</RootNamespace>
+    <AssemblyName>Mercury</AssemblyName>
+    <Product>Mercury</Product>
+    <Description>Portable Windows file transfer with speed limits, hours, restart, and verify.</Description>
+    <Version>1.0.0</Version>
+    <NeutralLanguage>en-US</NeutralLanguage>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <DebugType>embedded</DebugType>
+    <ApplicationIcon>Assets\Mercury.ico</ApplicationIcon>
+    <!-- Alias: -p:Portable=true|false -->
+    <PublishPortable Condition="'$(PublishPortable)' == '' and '$(Portable)' != ''">$(Portable)</PublishPortable>
+    <!-- Release `dotnet build` refreshes dist\Mercury. Debug stays a fast inner loop. -->
+    <PublishPortable Condition="'$(PublishPortable)' == '' and '$(Configuration)' == 'Release'">true</PublishPortable>
+    <PublishPortable Condition="'$(PublishPortable)' == ''">false</PublishPortable>
+    <RepoRoot>$([MSBuild]::EnsureTrailingSlash($([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..'))))</RepoRoot>
+    <PortableOutputDir>$([System.IO.Path]::GetFullPath('$(RepoRoot)dist\Mercury'))</PortableOutputDir>
+    <PortableExe>$(PortableOutputDir)\Mercury.exe</PortableExe>
+    <PortableCatcherExe>$(PortableOutputDir)\MercuryCatcher.exe</PortableCatcherExe>
+    <PortableReadme>$(RepoRoot)README.md</PortableReadme>
+    <CatcherProject>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\Mercury.Catcher\Mercury.Catcher.csproj'))</CatcherProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Using Remove="System.Drawing" />
+    <Using Remove="System.Windows.Forms" />
+  </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Mercury.Core\Mercury.Core.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="Mercury.Wpf.Tests" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <EmbeddedResource Include="Themes\default.mercury-theme.json" />
+        <Resource Include="Assets\Mercury.ico" />
+    </ItemGroup>
+
+  <!-- Self-contained win-x64 folder, not single-file. Matches publish.ps1. Skips if dist\Mercury\Mercury.exe is locked. -->
+  <Target Name="PublishPortableFolder"
+          AfterTargets="Build"
+          Condition="'$(PublishPortable)' == 'true' and '$(DesignTimeBuild)' != 'true'">
+    <PropertyGroup>
+      <_PortableExeUnix>$(PortableExe.Replace('\', '/'))</_PortableExeUnix>
+      <_PortableCatcherUnix>$(PortableCatcherExe.Replace('\', '/'))</_PortableCatcherUnix>
+    </PropertyGroup>
+    <MakeDir Directories="$(RepoRoot)dist" />
+    <Exec Command="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command &quot;$p='$(_PortableExeUnix)'; if (-not [IO.File]::Exists($p)) { exit 0 }; try { ([IO.File]::Open($p,'Open','ReadWrite','None')).Dispose(); exit 0 } catch { exit 2 }&quot;"
+          IgnoreExitCode="true"
+          StandardOutputImportance="Low"
+          StandardErrorImportance="Low">
+      <Output TaskParameter="ExitCode" PropertyName="_PortableLockExit" />
+    </Exec>
+    <Exec Command="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command &quot;$p='$(_PortableCatcherUnix)'; if (-not [IO.File]::Exists($p)) { exit 0 }; try { ([IO.File]::Open($p,'Open','ReadWrite','None')).Dispose(); exit 0 } catch { exit 2 }&quot;"
+          IgnoreExitCode="true"
+          StandardOutputImportance="Low"
+          StandardErrorImportance="Low">
+      <Output TaskParameter="ExitCode" PropertyName="_PortableCatcherLockExit" />
+    </Exec>
+    <Warning Condition="'$(_PortableLockExit)' == '2'"
+             Text="Skipping portable folder: $(PortableExe) is in use. Close that Mercury.exe and rebuild Release to refresh dist\Mercury. A running copy job was not stopped." />
+    <Warning Condition="'$(_PortableCatcherLockExit)' == '2'"
+             Text="Skipping portable folder: $(PortableCatcherExe) is in use. Close MercuryCatcher.exe and rebuild Release to refresh dist\Mercury. A running listener was not stopped." />
+    <Exec Command="dotnet publish &quot;$(MSBuildProjectFullPath)&quot; -c $(Configuration) -r win-x64 --self-contained true -p:PublishSingleFile=false -p:PublishReadyToRun=true -p:PublishPortable=false -o &quot;$(PortableOutputDir)&quot;"
+          Condition="'$(_PortableLockExit)' != '2' and '$(_PortableCatcherLockExit)' != '2'"
+          IgnoreExitCode="true">
+      <Output TaskParameter="ExitCode" PropertyName="_PortablePublishExit" />
+    </Exec>
+    <Exec Command="dotnet publish &quot;$(CatcherProject)&quot; -c $(Configuration) -r win-x64 --self-contained true -p:PublishSingleFile=false -p:PublishReadyToRun=true -p:ErrorOnDuplicatePublishOutputFiles=false -o &quot;$(PortableOutputDir)&quot;"
+          Condition="'$(_PortableLockExit)' != '2' and '$(_PortableCatcherLockExit)' != '2' and '$(_PortablePublishExit)' == '0'"
+          IgnoreExitCode="true">
+      <Output TaskParameter="ExitCode" PropertyName="_CatcherPublishExit" />
+    </Exec>
+    <Warning Condition="'$(_PortableLockExit)' != '2' and '$(_PortableCatcherLockExit)' != '2' and '$(_PortablePublishExit)' != '0' and '$(_PortablePublishExit)' != ''"
+             Text="Portable publish failed (exit $(_PortablePublishExit)). If Mercury.exe in dist\Mercury is running, close it and rebuild. A running copy job was not stopped." />
+    <Warning Condition="'$(_PortableLockExit)' != '2' and '$(_PortableCatcherLockExit)' != '2' and '$(_CatcherPublishExit)' != '0' and '$(_CatcherPublishExit)' != ''"
+             Text="MercuryCatcher publish failed (exit $(_CatcherPublishExit)). If MercuryCatcher.exe in dist\Mercury is running, close it and rebuild." />
+    <Copy SourceFiles="$(PortableReadme)"
+          DestinationFiles="$(PortableOutputDir)\README.md"
+          SkipUnchangedFiles="true"
+          Condition="'$(_PortableLockExit)' != '2' and '$(_PortableCatcherLockExit)' != '2' and '$(_PortablePublishExit)' == '0' and Exists('$(PortableReadme)')" />
+    <Message Importance="High"
+             Condition="'$(_PortableLockExit)' != '2' and '$(_PortableCatcherLockExit)' != '2' and '$(_PortablePublishExit)' == '0'"
+             Text="Portable folder: $(PortableOutputDir)" />
+  </Target>
+
+</Project>

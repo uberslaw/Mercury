@@ -1,0 +1,121 @@
+<UserControl x:Class="Mercury.ThemePanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:Mercury">
+    <DockPanel Margin="12">
+        <GroupBox Header="Saved themes" DockPanel.Dock="Top">
+            <StackPanel>
+                <ListBox ItemsSource="{Binding SavedThemes}"
+                         SelectedItem="{Binding SelectedSavedTheme}"
+                         FontFamily="Segoe UI"
+                         FontSize="13"
+                         MinHeight="56"
+                         MaxHeight="110"/>
+                <WrapPanel Margin="0,8,0,0">
+                    <Button Content="Save" Style="{StaticResource AccentButton}" Command="{Binding SaveCommand}"
+                            ToolTip="Overwrite the selected named theme in data\\themes.json"/>
+                    <Button Content="Save As…" Style="{StaticResource ToolbarButton}" Command="{Binding SaveAsCommand}"
+                            ToolTip="Save a named copy, or export a .json file"/>
+                    <Button Content="Export" Style="{StaticResource ToolbarButton}" Command="{Binding ExportCommand}"
+                            ToolTip="Write a portable .mercury-theme.json (colours and fonts) you can attach in chat"/>
+                    <Button Content="Import" Style="{StaticResource ToolbarButton}" Command="{Binding ImportCommand}"
+                            ToolTip="Load a .mercury-theme.json (or theme .json) back into the live theme"/>
+                    <Button Content="Load" Style="{StaticResource ToolbarButton}" Command="{Binding LoadSelectedCommand}"/>
+                    <Button Content="Delete" Style="{StaticResource CompactButton}" Command="{Binding DeleteCommand}"/>
+                    <Button Content="Reset to default" Style="{StaticResource ToolbarButton}" Command="{Binding ResetCommand}" Margin="0"/>
+                </WrapPanel>
+                <WrapPanel Margin="0,8,0,0">
+                    <Button Content="Open preview" Style="{StaticResource AccentButton}" Command="{Binding OpenPreviewCommand}"/>
+                    <Button Content="Pop out editor" Style="{StaticResource ToolbarButton}" Command="{Binding PopOutCommand}" Margin="0"/>
+                </WrapPanel>
+                <TextBlock Text="{Binding StatusHint}" TextWrapping="Wrap" Margin="0,8,0,0"
+                           Foreground="{DynamicResource MutedBrush}"/>
+            </StackPanel>
+        </GroupBox>
+
+        <ScrollViewer x:Name="EditorScroll" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <GroupBox Header="Fonts (per text type)">
+                    <ItemsControl ItemsSource="{Binding FontItems}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="{Binding HighlightBrush}"
+                                        Padding="0,3"
+                                        local:ThemeChrome.Role="Editor"
+                                        local:ThemeChrome.Keys="{Binding Key}"
+                                        MouseEnter="FontRow_MouseEnter"
+                                        MouseLeave="FontRow_MouseLeave"
+                                        PreviewMouseLeftButtonDown="FontRow_PreviewMouseLeftButtonDown">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="210"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="72"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding Label}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                        <TextBox Grid.Column="1" Margin="0,0,8,0" Text="{Binding Family, UpdateSourceTrigger=PropertyChanged}"
+                                                 ToolTip="Font family (Segoe UI, Consolas, …)"/>
+                                        <TextBox Grid.Column="2" Text="{Binding SizeText, UpdateSourceTrigger=PropertyChanged}"
+                                                 ToolTip="Size in points"/>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </GroupBox>
+        <ItemsControl ItemsSource="{Binding Groups}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <GroupBox Header="{Binding Title}">
+                            <ItemsControl ItemsSource="{Binding Items}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{Binding HighlightBrush}"
+                                                Padding="0,3"
+                                                local:ThemeChrome.Role="Editor"
+                                                local:ThemeChrome.Keys="{Binding Key}"
+                                                MouseEnter="ColorRow_MouseEnter"
+                                                MouseLeave="ColorRow_MouseLeave"
+                                                PreviewMouseLeftButtonDown="ColorRow_PreviewMouseLeftButtonDown">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="210"/>
+                                                    <ColumnDefinition Width="108"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="{Binding Label}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                                <TextBox Grid.Column="1" Width="100" HorizontalAlignment="Left"
+                                                         Style="{StaticResource ThemeHexBox}"
+                                                         Text="{Binding Hex, UpdateSourceTrigger=PropertyChanged}"
+                                                         TextChanged="HexBox_TextChanged"
+                                                         LostFocus="HexBox_LostFocus"
+                                                         PreviewKeyDown="HexBox_PreviewKeyDown"
+                                                         DataObject.Pasting="HexBox_Pasting"
+                                                         ToolTip="Hex color (#4a2f2c or 4a2f2c)"/>
+                                                <Grid Grid.Column="2" Width="36" Height="26" Margin="8,0,0,0">
+                                                    <Rectangle RadiusX="3" RadiusY="3"
+                                                               Fill="{Binding SwatchBrush}"
+                                                               Stroke="#C4A484"
+                                                               StrokeThickness="1"/>
+                                                    <Button Style="{StaticResource ThemeSwatchButton}"
+                                                            Background="Transparent"
+                                                            BorderBrush="Transparent"
+                                                            Command="{Binding PickCommand}"
+                                                            ToolTip="Pick a color"/>
+                                                </Grid>
+                                                <TextBlock Grid.Column="3" Text="{Binding Hint}" VerticalAlignment="Center"
+                                                           Margin="8,0,0,0" Foreground="{DynamicResource DangerBrush}"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </GroupBox>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>

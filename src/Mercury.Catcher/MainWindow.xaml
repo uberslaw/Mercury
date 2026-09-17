@@ -1,0 +1,65 @@
+<Window x:Class="Mercury.Catcher.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Mercury Catcher"
+        Height="560" Width="720"
+        MinHeight="440" MinWidth="560"
+        WindowStartupLocation="CenterScreen">
+    <DockPanel>
+        <StatusBar DockPanel.Dock="Bottom">
+            <StatusBarItem>
+                <TextBlock Text="{Binding DataPathLabel}" TextTrimming="CharacterEllipsis"/>
+            </StatusBarItem>
+        </StatusBar>
+        <Border DockPanel.Dock="Top" Background="{DynamicResource HeaderBrush}" Padding="14,12">
+            <StackPanel>
+                <TextBlock Text="Mercury Catcher" FontWeight="SemiBold" FontSize="16" Foreground="{DynamicResource OnHeaderBrush}"/>
+                <TextBlock Text="{Binding ListenLabel}" TextWrapping="Wrap" Margin="0,6,0,0" Foreground="{DynamicResource OnHeaderBrush}"/>
+            </StackPanel>
+        </Border>
+        <ScrollViewer Padding="16" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <GroupBox Header="Receive folder">
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right" Content="Browse" Style="{StaticResource ToolbarButton}"
+                                Command="{Binding BrowseDestCommand}" Margin="8,0,0,0"/>
+                        <TextBox Text="{Binding DestinationFolder, UpdateSourceTrigger=PropertyChanged}"/>
+                    </DockPanel>
+                </GroupBox>
+                <GroupBox Header="Template">
+                    <StackPanel>
+                        <TextBlock Text="Import the .mercury-catch file exported from Mercury. Enter the same passphrase used when it was created."
+                                   TextWrapping="Wrap" Margin="0,0,0,8"/>
+                        <ComboBox ItemsSource="{Binding Templates}"
+                                  SelectedItem="{Binding SelectedTemplate}"
+                                  DisplayMemberPath="Display"
+                                  Margin="0,0,0,8"/>
+                        <DockPanel Margin="0,0,0,8">
+                            <TextBlock DockPanel.Dock="Left" Text="Passphrase" VerticalAlignment="Center" Margin="0,0,8,0" Width="90"/>
+                            <PasswordBox x:Name="PassphraseBox" PasswordChanged="PassphraseBox_PasswordChanged"/>
+                        </DockPanel>
+                        <WrapPanel>
+                            <Button Content="Import file" Style="{StaticResource ToolbarButton}" Command="{Binding ImportCommand}"/>
+                            <Button Content="Listen" Style="{StaticResource AccentButton}" Command="{Binding ListenCommand}"/>
+                            <Button Content="Stop" Style="{StaticResource CancelButton}" Command="{Binding StopCommand}" Margin="0"/>
+                        </WrapPanel>
+                        <CheckBox Content="Ready to receive" IsChecked="{Binding ReadyToReceive}"
+                                  IsEnabled="{Binding CanMarkReady}" Margin="0,8,0,0"
+                                  ToolTip="Off until you Listen with a receive folder. Health reports Ready only when this is on. Passphrase is required on every connect."/>
+                        <TextBlock Text="Passphrase required — a sender cannot connect with host:port alone. Wrong fingerprint or wrong passphrase is rejected."
+                                   TextWrapping="Wrap" Margin="0,8,0,0" Foreground="{DynamicResource MutedBrush}"/>
+                    </StackPanel>
+                </GroupBox>
+                <GroupBox Header="Router / NAT">
+                    <TextBlock Text="{Binding Hint}" TextWrapping="Wrap"/>
+                </GroupBox>
+                <GroupBox Header="Last transfer">
+                    <TextBlock Text="{Binding LastTransfer}" TextWrapping="Wrap"/>
+                </GroupBox>
+                <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap"/>
+                <TextBlock Margin="0,12,0,0" TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}"
+                           Text="v1: sender connects outbound to this listener. There is no NAT traversal without a port-forward and a running Catcher. Transfers are one HTTPS zip pack (or a single file). Catcher unpacks the zip into a folder tree in the receive folder and deletes the transport zip. Per-file resume is not in this version. TLS cannot be turned off."/>
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</Window>

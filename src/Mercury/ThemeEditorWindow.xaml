@@ -1,0 +1,10 @@
+<Window x:Class="Mercury.ThemeEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:Mercury"
+        Title="Theme editor"
+        Width="540" Height="760"
+        MinWidth="460" MinHeight="480"
+        Background="{DynamicResource BgBrush}">
+    <local:ThemePanel/>
+</Window>

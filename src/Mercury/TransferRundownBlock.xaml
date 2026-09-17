@@ -1,0 +1,147 @@
+<UserControl x:Class="Mercury.TransferRundownBlock"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:Mercury"
+             Foreground="{DynamicResource TextBrush}">
+    <UserControl.Style>
+        <Style TargetType="UserControl">
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsVisible}" Value="True">
+                    <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Style>
+    <Border Padding="0,6,0,2" Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OkBrush,WarnBrush,DangerBrush,MutedBrush,Progress">
+        <StackPanel>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" MinWidth="220"/>
+                    <ColumnDefinition Width="*" MinWidth="220"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Label">
+                        <TextBlock FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}">
+                            <Run Text="Started: " FontWeight="SemiBold" FontFamily="{DynamicResource LabelFontFamily}"
+                                 FontSize="{DynamicResource LabelFontSize}" Foreground="{DynamicResource MutedBrush}"/>
+                        </TextBlock>
+                    </Border>
+                    <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Value">
+                        <TextBlock FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}" TextTrimming="CharacterEllipsis">
+                            <Run Text="{Binding StartedText, Mode=OneWay}" FontFamily="{DynamicResource ValueFontFamily}"
+                                 FontSize="{DynamicResource ValueFontSize}"
+                                 Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                        </TextBlock>
+                    </Border>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Label">
+                        <TextBlock FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}">
+                            <Run Text="Ended: " FontWeight="SemiBold" FontFamily="{DynamicResource LabelFontFamily}"
+                                 FontSize="{DynamicResource LabelFontSize}" Foreground="{DynamicResource MutedBrush}"/>
+                        </TextBlock>
+                    </Border>
+                    <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Value">
+                        <TextBlock FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}" TextTrimming="CharacterEllipsis">
+                            <Run Text="{Binding EndedText, Mode=OneWay}" FontFamily="{DynamicResource ValueFontFamily}"
+                                 FontSize="{DynamicResource ValueFontSize}"
+                                 Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                        </TextBlock>
+                    </Border>
+                </StackPanel>
+            </Grid>
+            <Grid Margin="0,2,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" MinWidth="220"/>
+                    <ColumnDefinition Width="*" MinWidth="220"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Label">
+                        <TextBlock FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}">
+                            <Run Text="Elapsed: " FontWeight="SemiBold" FontFamily="{DynamicResource LabelFontFamily}"
+                                 FontSize="{DynamicResource LabelFontSize}" Foreground="{DynamicResource MutedBrush}"/>
+                        </TextBlock>
+                    </Border>
+                    <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Value">
+                        <TextBlock FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}" TextTrimming="CharacterEllipsis">
+                            <Run Text="{Binding ElapsedText, Mode=OneWay}" FontFamily="{DynamicResource ValueFontFamily}"
+                                 FontSize="{DynamicResource ValueFontSize}"
+                                 Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                        </TextBlock>
+                    </Border>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Label">
+                        <TextBlock FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}">
+                            <Run Text="Average: " FontWeight="SemiBold" FontFamily="{DynamicResource LabelFontFamily}"
+                                 FontSize="{DynamicResource LabelFontSize}" Foreground="{DynamicResource MutedBrush}"/>
+                        </TextBlock>
+                    </Border>
+                    <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Value">
+                        <TextBlock FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}" TextTrimming="CharacterEllipsis">
+                            <Run Text="{Binding AverageSpeedText, Mode=OneWay}" FontFamily="{DynamicResource ValueFontFamily}"
+                                 FontSize="{DynamicResource ValueFontSize}"
+                                 Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                        </TextBlock>
+                    </Border>
+                </StackPanel>
+            </Grid>
+            <Grid Margin="0,2,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" MinWidth="220"/>
+                    <ColumnDefinition Width="*" MinWidth="220"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Label">
+                        <TextBlock FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}">
+                            <Run Text="Files: " FontWeight="SemiBold" FontFamily="{DynamicResource LabelFontFamily}"
+                                 FontSize="{DynamicResource LabelFontSize}" Foreground="{DynamicResource MutedBrush}"/>
+                        </TextBlock>
+                    </Border>
+                    <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Value">
+                        <TextBlock FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}" TextTrimming="CharacterEllipsis">
+                            <Run Text="{Binding FilesText, Mode=OneWay}" FontFamily="{DynamicResource ValueFontFamily}"
+                                 FontSize="{DynamicResource ValueFontSize}"
+                                 Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                        </TextBlock>
+                    </Border>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Label">
+                        <TextBlock FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}">
+                            <Run Text="Folders: " FontWeight="SemiBold" FontFamily="{DynamicResource LabelFontFamily}"
+                                 FontSize="{DynamicResource LabelFontSize}" Foreground="{DynamicResource MutedBrush}"/>
+                        </TextBlock>
+                    </Border>
+                    <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Value">
+                        <TextBlock FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}" TextTrimming="CharacterEllipsis">
+                            <Run Text="{Binding FoldersText, Mode=OneWay}" FontFamily="{DynamicResource ValueFontFamily}"
+                                 FontSize="{DynamicResource ValueFontSize}"
+                                 Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                        </TextBlock>
+                    </Border>
+                </StackPanel>
+            </Grid>
+            <TextBlock Text="{Binding MatchText}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,4,0,0"
+                       FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Highlight}" Value="Ok">
+                                <Setter Property="Foreground" Value="{DynamicResource OkBrush}"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding Highlight}" Value="Warn">
+                                <Setter Property="Foreground" Value="{DynamicResource WarnBrush}"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding Highlight}" Value="Danger">
+                                <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+        </StackPanel>
+    </Border>
+</UserControl>
