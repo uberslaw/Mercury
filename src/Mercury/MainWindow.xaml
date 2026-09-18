@@ -10,6 +10,7 @@
         Drop="Window_Drop"
         DragOver="Window_DragOver"
         Closing="Window_Closing"
+        Loaded="Window_Loaded"
         Deactivated="Window_Deactivated"
         PreviewKeyDown="Window_PreviewKeyDown">
     <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="BgBrush">
@@ -232,8 +233,8 @@
                                                       ToolTip="/DCOPY:T — copy folder creation and last-write times. Default on with file timestamps."/>
                                             <CheckBox Content="Empty directories" IsChecked="{Binding CopyEmptyDirectories}" Width="200"
                                                       ToolTip="/E — create empty source folders at dest (vs /S). Default on."/>
-                                            <CheckBox Content="Unbuffered I/O" IsChecked="{Binding UnbufferedIo}" Width="200"
-                                                      ToolTip="/J — write-through FileStream (cousin of unbuffered I/O). Default off. Useful for large video."/>
+                                            <CheckBox Content="Force unbuffered I/O" IsChecked="{Binding UnbufferedIo}" Width="220"
+                                                      ToolTip="/J — write-through unbuffered I/O. Checked: always on. Unchecked (default): auto-probe on large sequential files (video, ISO, VHD) unless a speed cap is already limiting the job. Small files stay buffered."/>
                                             <CheckBox Content="Copy symbolic links as links" IsChecked="{Binding CopySymbolicLinksAsLinks}" Width="200"
                                                       ToolTip="/SL — copy symlinks as links. Default off: skip reparse points (do not follow), same as today."/>
                                             <CheckBox Content="FAT 2s times" IsChecked="{Binding FatTimestampTolerance}" Width="200"

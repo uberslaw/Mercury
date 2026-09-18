@@ -92,6 +92,19 @@
                 </Style>
             </local:StatPairText.Style>
         </local:StatPairText>
+        <local:StatPairText DataContext="{Binding Types}"
+                            Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=UserControl}}">
+            <local:StatPairText.Style>
+                <Style TargetType="local:StatPairText">
+                    <Setter Property="Margin" Value="0,6,0,0"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding Display}" Value="">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </local:StatPairText.Style>
+        </local:StatPairText>
     </StackPanel>
     </Border>
 </UserControl>

@@ -43,6 +43,8 @@ public class RoboFlagsTests
         Assert.Contains("/DCOPY:T", section.Body, StringComparison.Ordinal);
         Assert.Contains("/E", section.Body, StringComparison.Ordinal);
         Assert.Contains("/J", section.Body, StringComparison.Ordinal);
+        Assert.Contains("auto-probe", section.Body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Force unbuffered", section.Body, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("/SL", section.Body, StringComparison.Ordinal);
         Assert.Contains("/FFT", section.Body, StringComparison.Ordinal);
         Assert.Contains("/XA:HS", section.Body, StringComparison.Ordinal);

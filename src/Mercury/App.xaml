@@ -82,7 +82,7 @@
         </Style>
 
         <Style TargetType="Window">
-            <Setter Property="Icon" Value="pack://application:,,,/Assets/Mercury.ico"/>
+            <Setter Property="Icon" Value="pack://application:,,,/Mercury;component/Assets/Mercury.ico"/>
             <Setter Property="Background" Value="{DynamicResource BgBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
             <Setter Property="FontFamily" Value="{DynamicResource BodyFontFamily}"/>

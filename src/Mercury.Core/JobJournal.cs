@@ -223,6 +223,71 @@ public sealed class JobJournal : IDisposable
 
     public void SetMetaInt(string key, int value) => SetMeta(key, value.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
+    public void SetHeartbeat(JobHeartbeatState state)
+    {
+        SetMeta("heartbeat_dirty", state.Dirty ? "1" : "0");
+        SetMeta("heartbeat_percent", state.Percent.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture));
+        SetMeta("heartbeat_file", state.File ?? "");
+        SetMeta("heartbeat_utc", state.Utc.ToString("O"));
+        Checkpoint();
+    }
+
+    public void ClearHeartbeat()
+    {
+        SetMeta("heartbeat_dirty", "0");
+        SetMeta("heartbeat_percent", "0");
+        SetMeta("heartbeat_file", "");
+        SetMeta("heartbeat_utc", "");
+        Checkpoint();
+    }
+
+    public JobHeartbeatState? ReadHeartbeat(string jobId)
+    {
+        var dirty = GetMeta("heartbeat_dirty");
+        if (dirty != "1")
+        {
+            return null;
+        }
+
+        var percentText = GetMeta("heartbeat_percent");
+        _ = double.TryParse(
+            percentText,
+            System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out var percent);
+        var utcText = GetMeta("heartbeat_utc");
+        var utc = DateTimeOffset.UtcNow;
+        if (!string.IsNullOrWhiteSpace(utcText) &&
+            DateTimeOffset.TryParse(utcText, null, System.Globalization.DateTimeStyles.RoundtripKind, out var parsed))
+        {
+            utc = parsed;
+        }
+
+        var file = GetMeta("heartbeat_file");
+        return new JobHeartbeatState
+        {
+            JobId = jobId,
+            Dirty = true,
+            Percent = percent,
+            File = string.IsNullOrWhiteSpace(file) ? null : file,
+            Utc = utc
+        };
+    }
+
+    private void Checkpoint()
+    {
+        try
+        {
+            using var cmd = _connection.CreateCommand();
+            cmd.CommandText = "PRAGMA wal_checkpoint(PASSIVE);";
+            cmd.ExecuteNonQuery();
+        }
+        catch
+        {
+            // WAL checkpoint is best-effort; sidecar is the durable dirty flag
+        }
+    }
+
     public int GetMetaInt(string key)
     {
         var text = GetMeta(key);

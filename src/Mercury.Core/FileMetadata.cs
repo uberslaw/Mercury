@@ -61,7 +61,7 @@ public static class FileMetadata
             options.CopyOwner ? "owner on (/COPY:O)" : "owner off",
             options.CopyDirectoryTimestamps ? "dir timestamps on (/DCOPY:T)" : "dir timestamps off",
             options.CopyEmptyDirectories ? "empty dirs on (/E)" : "empty dirs off (/S)",
-            options.UnbufferedIo ? "unbuffered I/O on (/J)" : "unbuffered I/O off",
+            options.UnbufferedIo ? "unbuffered I/O forced on (/J)" : "unbuffered I/O auto-probe (/J)",
             options.CopySymbolicLinksAsLinks ? "copy symlinks as links (/SL)" : "skip symlink reparse (as now)",
             options.FatTimestampTolerance ? "FAT 2s on (/FFT)" : "FAT 2s off",
             options.ExcludeHiddenSystem ? "exclude hidden/system on (/XA:HS)" : "exclude hidden/system off",

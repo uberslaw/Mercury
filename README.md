@@ -42,7 +42,7 @@ Tick **Portable: keep data beside Mercury.exe** on the Settings tab if you want 
 
 The status bar shows the data folder. Console → Open logs folder, or Settings → Error log.
 
-Closing the window does not throw away progress. Use **Resume last**.
+Closing the window while a copy is running asks whether to wait for the current file or close now. A crash, kill, or reboot leaves a dirty heartbeat (`jobs\{id}\heartbeat.json` plus journal meta); the next launch offers resume. Use **Resume last** for a clean Stop as well.
 
 ## Options (robocopy equivalents)
 
@@ -64,7 +64,7 @@ Closing the window does not throw away progress. Use **Resume last**.
 | Owner — default off | `/COPY:O` |
 | Directory timestamps — default on | `/DCOPY:T` |
 | Empty directories — default on | `/E` |
-| Unbuffered I/O (write-through) — default off | `/J` |
+| Force unbuffered I/O (unchecked = auto-probe) | `/J` |
 | Copy symbolic links as links — default off (skip reparse) | `/SL` |
 | FAT 2s times — default off | `/FFT` |
 | Exclude hidden/system — default off | `/XA:HS` |

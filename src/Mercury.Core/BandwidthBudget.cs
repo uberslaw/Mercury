@@ -140,8 +140,41 @@ public sealed class BandwidthBudget
         }
     }
 
+    public bool IsIdleThrottleCapping()
+    {
+        RefreshLoad();
+        return IsIdleThrottleActive();
+    }
+
+    public double? EffectiveCapBytesPerSecond(double? jobMaxBytesPerSecond)
+    {
+        double? cap = null;
+        Consider(ref cap, jobMaxBytesPerSecond);
+        Consider(ref cap, GlobalMaxBytesPerSecond);
+        if (IsIdleThrottleCapping())
+        {
+            Consider(ref cap, IdleThrottleBytesPerSecond);
+        }
+
+        return cap;
+    }
+
+    public bool IsNearCap(double measuredBytesPerSecond, double? jobMaxBytesPerSecond, double slack = 0.92)
+    {
+        var cap = EffectiveCapBytesPerSecond(jobMaxBytesPerSecond);
+        return cap is > 0 && measuredBytesPerSecond >= cap.Value * slack;
+    }
+
     private bool IsIdleThrottleActive() =>
         IdleThrottleBytesPerSecond is > 0 && MachineLoad.IsBusy;
+
+    private static void Consider(ref double? cap, double? value)
+    {
+        if (value is > 0 && (cap is null || value < cap))
+        {
+            cap = value;
+        }
+    }
 
     private bool ShouldSkipGlobalThrottle(long now)
     {

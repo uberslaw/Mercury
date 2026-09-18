@@ -325,13 +325,15 @@ public sealed class JobScheduler : IDisposable
                 StageCount = p.StageCount,
                 StageName = p.StageName,
                 StartedUtc = p.StartedUtc ?? job.StartedUtc,
-                StageStartedUtc = p.StageStartedUtc
+                StageStartedUtc = p.StageStartedUtc,
+                TypeSummary = p.TypeSummary
             };
             _progress[job.Id] = filled;
             ProgressChanged?.Invoke(this, filled);
         });
 
         var reportFinal = false;
+        var keepHeartbeat = false;
         try
         {
             Log.Info(job.Id, job.Name, $"Job started. Log: {_paths.JobLogFile(job.Id)}");
@@ -355,7 +357,30 @@ public sealed class JobScheduler : IDisposable
         }
         finally
         {
-            _running.TryRemove(job.Id, out _);
+            if (_running.TryRemove(job.Id, out var finished))
+            {
+                keepHeartbeat = finished.KeepHeartbeatOnCancel;
+            }
+
+            try
+            {
+                if (job.Status is JobStatus.Completed or JobStatus.Incomplete or JobStatus.Failed
+                    || (job.Status == JobStatus.Cancelled && !keepHeartbeat))
+                {
+                    JobHeartbeat.Clear(journal);
+                }
+                else
+                {
+                    var hb = SafeTotals(journal);
+                    var percent = hb.Bytes > 0 ? 100.0 * hb.DoneBytes / hb.Bytes : 0;
+                    JobHeartbeat.Write(journal, job.Id, percent, null);
+                }
+            }
+            catch
+            {
+                // heartbeat must not hide the real result
+            }
+
             journal.Dispose();
             cts.Dispose();
             lock (_queueLock)
@@ -497,10 +522,11 @@ public sealed class JobScheduler : IDisposable
         }
     }
 
-    public void Stop(string jobId)
+    public void Stop(string jobId, bool clearHeartbeat = true)
     {
         if (_running.TryGetValue(jobId, out var running))
         {
+            running.KeepHeartbeatOnCancel = !clearHeartbeat;
             running.Pause.Resume();
             if (_running.Count <= 1)
             {
@@ -511,23 +537,23 @@ public sealed class JobScheduler : IDisposable
         }
     }
 
-    public void StopAll()
+    public void StopAll(bool clearHeartbeat = true)
     {
         foreach (var id in _running.Keys.ToList())
         {
-            Stop(id);
+            Stop(id, clearHeartbeat);
         }
     }
 
     public Job? TryLoadLastJob()
     {
         var id = AppSettingsStore.LoadLastJobId(_paths);
-        if (id is null)
-        {
-            return null;
-        }
+        return id is null ? null : TryLoadJob(id);
+    }
 
-        var dir = _paths.JobDirectory(id);
+    public Job? TryLoadJob(string jobId)
+    {
+        var dir = _paths.JobDirectory(jobId);
         if (!JobJournal.Exists(dir))
         {
             return null;
@@ -542,6 +568,13 @@ public sealed class JobScheduler : IDisposable
         {
             return null;
         }
+    }
+
+    public JobHeartbeatState? FindDirtyHeartbeat() => JobHeartbeat.FindDirty(_paths);
+
+    private sealed record Running(Job Job, JobJournal Journal, PauseGate Pause, CancellationTokenSource Cts)
+    {
+        public bool KeepHeartbeatOnCancel { get; set; }
     }
 
     public JobProgress? GetProgress(string jobId) =>
@@ -825,6 +858,4 @@ public sealed class JobScheduler : IDisposable
         Log.Dispose();
         _lifetime.Dispose();
     }
-
-    private sealed record Running(Job Job, JobJournal Journal, PauseGate Pause, CancellationTokenSource Cts);
 }

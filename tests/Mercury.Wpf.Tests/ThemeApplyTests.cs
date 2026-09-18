@@ -1,4 +1,5 @@
 using System.IO;
+using System.Runtime.ExceptionServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -112,7 +113,7 @@ internal static class WpfSta
         thread.Join();
         if (error is not null)
         {
-            throw error;
+            ExceptionDispatchInfo.Capture(error).Throw();
         }
     }
 

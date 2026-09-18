@@ -24,7 +24,7 @@
         <SolidColorBrush x:Key="CancelButtonBrush" Color="#fadadd"/>
 
         <Style TargetType="Window">
-            <Setter Property="Icon" Value="pack://application:,,,/Assets/Mercury.ico"/>
+            <Setter Property="Icon" Value="pack://application:,,,/MercuryCatcher;component/Assets/Mercury.ico"/>
             <Setter Property="Background" Value="{DynamicResource BgBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
             <Setter Property="FontFamily" Value="Segoe UI"/>

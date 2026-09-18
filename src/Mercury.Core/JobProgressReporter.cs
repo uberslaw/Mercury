@@ -17,6 +17,7 @@ public sealed class JobProgressReporter : IProgress<JobProgress>
     private string? _current;
     private SpeedTracker? _speed;
     private double _reportedBps;
+    private string? _typeSummary;
     private int _filesCopied;
     private int _filesTotal;
     private long _bytesCopied;
@@ -63,7 +64,8 @@ public sealed class JobProgressReporter : IProgress<JobProgress>
         int? filesCopied = null,
         int? filesTotal = null,
         long? bytesCopied = null,
-        long? bytesTotal = null)
+        long? bytesTotal = null,
+        string? typeSummary = null)
     {
         lock (_lock)
         {
@@ -100,6 +102,11 @@ public sealed class JobProgressReporter : IProgress<JobProgress>
             if (bytesTotal is not null)
             {
                 _bytesTotal = bytesTotal.Value;
+            }
+
+            if (typeSummary is not null)
+            {
+                _typeSummary = typeSummary;
             }
         }
 
@@ -212,7 +219,8 @@ public sealed class JobProgressReporter : IProgress<JobProgress>
                 StageCount = _stages.Count,
                 StageName = CopyPipeline.LabelOf(_stages, _kind),
                 StartedUtc = _job.StartedUtc,
-                StageStartedUtc = _stageStarted
+                StageStartedUtc = _stageStarted,
+                TypeSummary = _typeSummary
             };
         }
 

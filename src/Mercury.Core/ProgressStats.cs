@@ -22,6 +22,7 @@ public sealed class ProgressStats
     public StatPair Stage { get; init; } = StatPair.Empty;
     public StatPair Elapsed { get; init; } = StatPair.Empty;
     public StatPair ThisStage { get; init; } = StatPair.Empty;
+    public StatPair Types { get; init; } = StatPair.Empty;
 
     public static ProgressStats From(
         JobProgress e,
@@ -74,7 +75,10 @@ public sealed class ProgressStats
             PauseAfter = pauseAfter ?? StatPair.Empty,
             Stage = stage,
             Elapsed = elapsed,
-            ThisStage = thisStage
+            ThisStage = thisStage,
+            Types = string.IsNullOrWhiteSpace(e.TypeSummary)
+                ? StatPair.Empty
+                : new StatPair("Types", e.TypeSummary)
         };
     }
 }

@@ -257,6 +257,8 @@ public class PackAndVerifyTests
         Assert.True(CompressedMedia.IsAlreadyCompressed("photo.JPG"));
         Assert.True(CompressedMedia.IsAlreadyCompressed("song.mp3"));
         Assert.True(CompressedMedia.IsAlreadyCompressed("pack.zip"));
+        Assert.True(CompressedMedia.IsAlreadyCompressed("disk.iso"));
+        Assert.True(CompressedMedia.IsAlreadyCompressed("drive.vhdx"));
         Assert.False(CompressedMedia.IsAlreadyCompressed("notes.txt"));
         Assert.False(CompressedMedia.IsAlreadyCompressed("slide.docx"));
     }

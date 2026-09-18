@@ -84,7 +84,7 @@ public sealed class JobOptions
     public bool CopyDirectoryTimestamps { get; set; } = true;
     /// <summary>Create empty source folders at dest (/E vs /S). Default on.</summary>
     public bool CopyEmptyDirectories { get; set; } = true;
-    /// <summary>Write-through I/O cousin of /J. Default off. Useful for large video.</summary>
+    /// <summary>Force write-through I/O cousin of /J. Default off. When off, Mercury auto-probes large sequential files.</summary>
     public bool UnbufferedIo { get; set; }
     /// <summary>Copy symbolic links as links (/SL). Default off: skip reparse (current behaviour), do not follow.</summary>
     public bool CopySymbolicLinksAsLinks { get; set; }
@@ -174,6 +174,8 @@ public sealed class JobProgress
     public string? StageName { get; init; }
     public DateTimeOffset? StartedUtc { get; init; }
     public DateTimeOffset? StageStartedUtc { get; init; }
+    /// <summary>Enumerate type mix, e.g. "Video: 40 files, 2.1 TB".</summary>
+    public string? TypeSummary { get; init; }
 
     public double Percent =>
         BytesTotal > 0 ? Math.Clamp(100.0 * BytesCopied / BytesTotal, 0, 100) : 0;

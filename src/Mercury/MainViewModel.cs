@@ -98,6 +98,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private string _networkFingerprint = "";
     private string _networkHint = "Router maps publicIP:publicPort → Catcher LAN:internalPort. Catcher must be listening. Blank bind IP = all interfaces (needed for NAT).";
     private string _networkStatus = "";
+    private bool _closeAfterPause;
+    private bool _keepHeartbeatOnClose;
 
     public MainViewModel() : this(new AppPaths())
     {
@@ -249,6 +251,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public ICommand DeleteCatcherCommand { get; }
 
     public ThemeViewModel Theme { get; }
+
+    public Action? CloseWindowRequested { get; set; }
 
     public string SourcePath
     {
@@ -784,7 +788,110 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public void Closing()
     {
         CatcherSession.Clear();
-        _scheduler.StopAll();
+        _scheduler.StopAll(clearHeartbeat: !_keepHeartbeatOnClose);
+    }
+
+    public void OfferDirtyResume(Window owner)
+    {
+        var dirty = _scheduler.FindDirtyHeartbeat();
+        if (dirty is null)
+        {
+            return;
+        }
+
+        var job = _scheduler.TryLoadJob(dirty.JobId) ?? _scheduler.TryLoadLastJob();
+        if (job is null)
+        {
+            return;
+        }
+
+        SourcePath = job.SourcePath;
+        if (job.Catcher is null)
+        {
+            DestPath = job.DestinationPath;
+        }
+
+        ApplyJobOptions(job.Options);
+        ApplyRundown(job);
+        var answer = MessageBox.Show(
+            owner,
+            JobHeartbeat.UnscheduledStopMessage(dirty),
+            "Mercury",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+        if (answer != MessageBoxResult.Yes)
+        {
+            ResultBanner = "Unscheduled stop left a journal. Use Resume last when you want to continue.";
+            ResultBrush = (Brush)Application.Current.FindResource("WarnBrush");
+            RefreshResume();
+            return;
+        }
+
+        ResumeStoredJob(job);
+    }
+
+    public bool ConfirmClose(Window owner)
+    {
+        if (!_scheduler.HasRunningJob)
+        {
+            return true;
+        }
+
+        var jobId = _runningJobId;
+        if (!string.IsNullOrEmpty(jobId) && _scheduler.CanPauseAfterFile(jobId))
+        {
+            var eta = _scheduler.EstimateCurrentFileEta(jobId);
+            var choice = ChoiceWindow.Show(
+                owner,
+                "Transfers in progress",
+                JobHeartbeat.CloseWhileRunningMessage(eta),
+                JobHeartbeat.WaitForThisFileLabel(eta),
+                "Close now",
+                "Cancel");
+            if (choice == ChoiceResult.Cancel)
+            {
+                return false;
+            }
+
+            if (choice == ChoiceResult.Secondary)
+            {
+                _scheduler.Stop(jobId, clearHeartbeat: false);
+                _keepHeartbeatOnClose = true;
+                return true;
+            }
+
+            if (IsPaused)
+            {
+                _keepHeartbeatOnClose = true;
+                return true;
+            }
+
+            _closeAfterPause = true;
+            _scheduler.RequestPauseAfterFile(jobId);
+            StatusText = "Waiting for the current file to finish, then Mercury will close.";
+            NotifyPauseAfter();
+            return false;
+        }
+
+        var prep = ChoiceWindow.Show(
+            owner,
+            "Transfers in progress",
+            "You have a transfer running. Close now and resume later, or stay open?",
+            "Close now",
+            secondary: null,
+            cancel: "Cancel");
+        if (prep != ChoiceResult.Primary)
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrEmpty(jobId))
+        {
+            _scheduler.Stop(jobId, clearHeartbeat: false);
+        }
+
+        _keepHeartbeatOnClose = true;
+        return true;
     }
 
     public void Dispose()
@@ -894,6 +1001,16 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
 
         last.Options = BuildOptions();
+        ResumeStoredJob(last);
+    }
+
+    private void ResumeStoredJob(Job last)
+    {
+        if (last is null)
+        {
+            return;
+        }
+
         if (!ConfirmPurgeIfJobNeedsIt(last))
         {
             return;
@@ -991,6 +1108,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
         if (_scheduler.IsPauseAfterFilePending(_runningJobId))
         {
+            _closeAfterPause = false;
             _scheduler.CancelPauseAfterFile(_runningJobId);
             StatusText = "Pause after this file cancelled.";
             NotifyPauseAfter();
@@ -1696,6 +1814,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         StatusText = e.Message ?? e.Status.ToString();
         OverallStats = ComposeStats(overall, includeStage: false);
         CloudWarning = e.CloudDestination;
+        if (_closeAfterPause && e.Status == JobStatus.Paused)
+        {
+            _closeAfterPause = false;
+            _keepHeartbeatOnClose = true;
+            CloseWindowRequested?.Invoke();
+            return;
+        }
         if (e.Status is JobStatus.Completed or JobStatus.Incomplete or JobStatus.Cancelled or JobStatus.Failed)
         {
             _elapsedTimer?.Stop();

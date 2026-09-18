@@ -53,11 +53,14 @@ public sealed class CopyEngine : ICopyEngine
 
         using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var heartbeat = reporter.HeartbeatAsync(heartbeatCts.Token);
+        var dirtyPulse = PulseDirtyAsync(job, journal, pause, heartbeatCts.Token);
+        UnbufferedIoSession? io = null;
         try
         {
             reporter.Enter(CopyStageKind.PreparingDestination, JobStatus.Preparing,
                 catcher is null ? "Preparing destination…" : "Preparing Catcher send…");
             journal.SaveJob(job);
+            JobHeartbeat.Write(journal, job.Id, 0, null);
             await PreflightAsync(job, mapping, log, name, cancellationToken).ConfigureAwait(false);
 
             if (!hasJournal)
@@ -73,9 +76,12 @@ public sealed class CopyEngine : ICopyEngine
                 var found = 0;
                 var foundBytes = 0L;
                 var lastPulse = Stopwatch.GetTimestamp();
+                var inventory = new PayloadInventory();
+                var peek = new MagicPeekBudget();
                 foreach (var record in SourceWalker.Walk(mapping, exclude, job.Options))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    inventory.Add(FileClassifier.Classify(record.SourcePath, record.Size, peek), record.Size);
                     journal.UpsertFile(record);
                     found++;
                     foundBytes += record.Size;
@@ -86,7 +92,8 @@ public sealed class CopyEngine : ICopyEngine
                         reporter.Update(
                             $"Enumerating source… {found} files",
                             filesTotal: found,
-                            bytesTotal: foundBytes);
+                            bytesTotal: foundBytes,
+                            typeSummary: inventory.FormatSummary());
                         lastPulse = Stopwatch.GetTimestamp();
                     }
                 }
@@ -94,11 +101,22 @@ public sealed class CopyEngine : ICopyEngine
                 totals = journal.Totals();
                 job.SourceFiles = totals.Files;
                 log.Info(job.Id, name, $"Found {totals.Files} files ({ByteFormatter.ToString(totals.Bytes)}).");
+                var typeSummary = inventory.FormatSummary();
+                if (!string.IsNullOrWhiteSpace(typeSummary))
+                {
+                    log.Info(job.Id, name, typeSummary);
+                }
+
                 log.Info(job.Id, name, FileMetadata.DescribeFlags(job.Options));
                 reporter.Update(
                     $"Enumerating source… {totals.Files} files",
                     filesTotal: totals.Files,
-                    bytesTotal: totals.Bytes);
+                    bytesTotal: totals.Bytes,
+                    typeSummary: typeSummary);
+
+                var ioFromWalk = UnbufferedIoSession.Create(job.Options, inventory, budget);
+                LogIoPlan(job, mapping, ioFromWalk, log, name);
+                io = ioFromWalk;
 
                 if (catcher is null)
                 {
@@ -125,14 +143,31 @@ public sealed class CopyEngine : ICopyEngine
             {
                 log.Info(job.Id, name, $"Resuming journal: {totals.DoneFiles}/{totals.Files} files already done.");
                 log.Info(job.Id, name, FileMetadata.DescribeFlags(job.Options));
-                reporter.Update(filesCopied: totals.DoneFiles, filesTotal: totals.Files, bytesCopied: totals.DoneBytes, bytesTotal: totals.Bytes);
+                var inventory = PayloadInventory.FromFiles(journal.GetFiles());
+                var typeSummary = inventory.FormatSummary();
+                if (!string.IsNullOrWhiteSpace(typeSummary))
+                {
+                    log.Info(job.Id, name, typeSummary);
+                }
+
+                reporter.Update(
+                    filesCopied: totals.DoneFiles,
+                    filesTotal: totals.Files,
+                    bytesCopied: totals.DoneBytes,
+                    bytesTotal: totals.Bytes,
+                    typeSummary: typeSummary);
+                io = UnbufferedIoSession.Create(job.Options, inventory, budget);
+                LogIoPlan(job, mapping, io, log, name);
             }
+
+            io ??= UnbufferedIoSession.Create(job.Options, new PayloadInventory(), budget);
 
             if (job.Options.DryRun)
             {
                 log.Info(job.Id, name, "Dry run — no files will be written.");
                 job.Status = JobStatus.Completed;
                 job.ResultMessage = $"Dry run: {totals.Files} files, {ByteFormatter.ToString(totals.Bytes)}.";
+                JobHeartbeat.Clear(journal);
                 reporter.Enter(CopyStageKind.Rundown, JobStatus.Completed, "Writing rundown…");
                 TransferRundown.Capture(job, journal, mapping, log, name);
                 reporter.Update(job.ResultMessage);
@@ -149,14 +184,14 @@ public sealed class CopyEngine : ICopyEngine
             {
                 reporter.Enter(CopyStageKind.Transferring, JobStatus.Copying, "Packing…");
                 journal.SaveJob(job);
-                await PackWithRetriesAsync(job, mapping, journal, budget, pause, log, name, reporter, cloud, speed, cancellationToken)
+                await PackWithRetriesAsync(job, mapping, journal, budget, pause, log, name, reporter, cloud, speed, cancellationToken, io)
                     .ConfigureAwait(false);
                 if (catcher is null)
                 {
                     reporter.Enter(CopyStageKind.Unpacking, JobStatus.Copying, "Unpacking…");
                     journal.SaveJob(job);
                     await UnpackWithRetriesAsync(
-                            job, mapping, journal, budget, pause, log, name, reporter, cloud, speed, cancellationToken)
+                            job, mapping, journal, budget, pause, log, name, reporter, cloud, speed, cancellationToken, io)
                         .ConfigureAwait(false);
                 }
             }
@@ -187,7 +222,7 @@ public sealed class CopyEngine : ICopyEngine
                     }
 
                     pause.BeginFile(file.RelativePath, file.Size);
-                    var copied = await CopyWithRetriesAsync(job, file, budget, pause, log, name, speed, cancellationToken)
+                    var copied = await CopyWithRetriesAsync(job, file, budget, pause, log, name, speed, cancellationToken, io)
                         .ConfigureAwait(false);
                     pause.EndFile();
                     if (copied.ok)
@@ -220,13 +255,13 @@ public sealed class CopyEngine : ICopyEngine
                         .ConfigureAwait(false);
                     await RetryDeferredCopyAsync(
                             job, journal, deferred, budget, pause, log, name, reporter, speed, fileCount, totalBytes,
-                            afterFile: true, endOfPass: false, cancellationToken)
+                            afterFile: true, endOfPass: false, cancellationToken, io)
                         .ConfigureAwait(false);
                 }
 
                 await RetryDeferredCopyAsync(
                         job, journal, deferred, budget, pause, log, name, reporter, speed, fileCount, totalBytes,
-                        afterFile: false, endOfPass: true, cancellationToken)
+                        afterFile: false, endOfPass: true, cancellationToken, io)
                     .ConfigureAwait(false);
                 deferred.FinalizeFailures();
             }
@@ -307,6 +342,15 @@ public sealed class CopyEngine : ICopyEngine
             try
             {
                 await heartbeat.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // expected
+            }
+
+            try
+            {
+                await dirtyPulse.ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -508,7 +552,8 @@ public sealed class CopyEngine : ICopyEngine
         long totalBytes,
         bool afterFile,
         bool endOfPass,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        UnbufferedIoSession? io = null)
     {
         var largest = deferred.Items.Count == 0 ? 0 : deferred.Items.Max(f => f.Size);
         if (!deferred.ShouldRetry(speed.Bytes, totalBytes, fileCount, afterFile, endOfPass, largest))
@@ -528,7 +573,7 @@ public sealed class CopyEngine : ICopyEngine
             await pause.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
             reporter.Update($"Retrying deferred {file.RelativePath}", file.RelativePath, speed);
             pause.BeginFile(file.RelativePath, file.Size);
-            var copied = await CopyWithRetriesAsync(job, file, budget, pause, log, name, speed, cancellationToken)
+            var copied = await CopyWithRetriesAsync(job, file, budget, pause, log, name, speed, cancellationToken, io)
                 .ConfigureAwait(false);
             pause.EndFile();
             if (copied.ok)
@@ -571,7 +616,8 @@ public sealed class CopyEngine : ICopyEngine
         IJobLog log,
         string name,
         SpeedTracker speed,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        UnbufferedIoSession? io = null)
     {
         var attempts = Math.Max(1, job.Options.RetryCount + 1);
         Exception? last = null;
@@ -580,7 +626,7 @@ public sealed class CopyEngine : ICopyEngine
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                var hash = await CopyOneAsync(job, file, budget, pause, speed, cancellationToken, log, name).ConfigureAwait(false);
+                var hash = await CopyOneAsync(job, file, budget, pause, speed, cancellationToken, log, name, io).ConfigureAwait(false);
                 return (true, hash, null, false);
             }
             catch (OperationCanceledException)
@@ -615,7 +661,8 @@ public sealed class CopyEngine : ICopyEngine
         IProgress<JobProgress>? progress,
         bool cloud,
         SpeedTracker speed,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        UnbufferedIoSession? io = null)
     {
         var zipPath = ZipPack.ZipPath(mapping);
         var files = journal.GetFiles().Where(f => f.Status != FileCopyStatus.Skipped).ToList();
@@ -659,7 +706,7 @@ public sealed class CopyEngine : ICopyEngine
             }
 
             await CopyAlreadyCompressedAsync(
-                    job, journal, budget, pause, log, name, progress, cloud, speed, loose, cancellationToken)
+                    job, journal, budget, pause, log, name, progress, cloud, speed, loose, cancellationToken, io)
                 .ConfigureAwait(false);
             return;
         }
@@ -676,7 +723,7 @@ public sealed class CopyEngine : ICopyEngine
         if (packable.Count == 0)
         {
             await CopyAlreadyCompressedAsync(
-                    job, journal, budget, pause, log, name, progress, cloud, speed, loose, cancellationToken)
+                    job, journal, budget, pause, log, name, progress, cloud, speed, loose, cancellationToken, io)
                 .ConfigureAwait(false);
             return;
         }
@@ -803,7 +850,7 @@ public sealed class CopyEngine : ICopyEngine
                 deferred.FinalizeFailures();
                 log.Info(job.Id, name, $"Packed {packable.Count} files into {zipPath}");
                 await CopyAlreadyCompressedAsync(
-                        job, journal, budget, pause, log, name, progress, cloud, speed, loose, cancellationToken)
+                        job, journal, budget, pause, log, name, progress, cloud, speed, loose, cancellationToken, io)
                     .ConfigureAwait(false);
                 return;
             }
@@ -837,7 +884,8 @@ public sealed class CopyEngine : ICopyEngine
         bool cloud,
         SpeedTracker speed,
         IReadOnlyList<FileRecord> files,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        UnbufferedIoSession? io = null)
     {
         if (files.Count == 0)
         {
@@ -866,7 +914,7 @@ public sealed class CopyEngine : ICopyEngine
             }
 
             pause.BeginFile(file.RelativePath, file.Size);
-            var copied = await CopyWithRetriesAsync(job, file, budget, pause, log, name, speed, cancellationToken)
+            var copied = await CopyWithRetriesAsync(job, file, budget, pause, log, name, speed, cancellationToken, io)
                 .ConfigureAwait(false);
             pause.EndFile();
             if (copied.ok)
@@ -907,7 +955,8 @@ public sealed class CopyEngine : ICopyEngine
         IProgress<JobProgress>? progress,
         bool cloud,
         SpeedTracker speed,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        UnbufferedIoSession? io = null)
     {
         var zipPath = ZipPack.ZipPath(mapping);
         var files = journal.GetFiles().Where(f => f.Status != FileCopyStatus.Skipped).ToList();
@@ -922,7 +971,7 @@ public sealed class CopyEngine : ICopyEngine
         if (zipPending.Count == 0)
         {
             await CopyAlreadyCompressedAsync(
-                    job, journal, budget, pause, log, name, progress, cloud, speed, loosePending, cancellationToken)
+                    job, journal, budget, pause, log, name, progress, cloud, speed, loosePending, cancellationToken, io)
                 .ConfigureAwait(false);
             ZipPack.DeleteTransport(zipPath);
             log.Info(job.Id, name, $"Unpack already recorded; removed transport zip if it was still at {zipPath}.");
@@ -932,7 +981,7 @@ public sealed class CopyEngine : ICopyEngine
         if (!File.Exists(zipPath))
         {
             log.Info(job.Id, name, $"Transport zip missing at {zipPath}; packing again before unpack.");
-            await PackWithRetriesAsync(job, mapping, journal, budget, pause, log, name, progress, cloud, speed, cancellationToken)
+            await PackWithRetriesAsync(job, mapping, journal, budget, pause, log, name, progress, cloud, speed, cancellationToken, io)
                 .ConfigureAwait(false);
             files = journal.GetFiles().Where(f => f.Status != FileCopyStatus.Skipped).ToList();
             pending = files.Where(f => f.Status != FileCopyStatus.Unpacked).ToList();
@@ -945,7 +994,7 @@ public sealed class CopyEngine : ICopyEngine
             if (zipPending.Count == 0)
             {
                 await CopyAlreadyCompressedAsync(
-                        job, journal, budget, pause, log, name, progress, cloud, speed, loosePending, cancellationToken)
+                        job, journal, budget, pause, log, name, progress, cloud, speed, loosePending, cancellationToken, io)
                     .ConfigureAwait(false);
                 ZipPack.DeleteTransport(zipPath);
                 return;
@@ -1049,7 +1098,7 @@ public sealed class CopyEngine : ICopyEngine
 
                 deferred.FinalizeFailures();
                 await CopyAlreadyCompressedAsync(
-                        job, journal, budget, pause, log, name, progress, cloud, speed, loosePending, cancellationToken)
+                        job, journal, budget, pause, log, name, progress, cloud, speed, loosePending, cancellationToken, io)
                     .ConfigureAwait(false);
                 var leftover = journal.GetFiles()
                     .Where(f => f.Status is not FileCopyStatus.Skipped and not FileCopyStatus.Unpacked and not FileCopyStatus.Failed)
@@ -1124,81 +1173,55 @@ public sealed class CopyEngine : ICopyEngine
         SpeedTracker? speed,
         CancellationToken cancellationToken,
         IJobLog? log = null,
-        string? jobName = null)
+        string? jobName = null,
+        UnbufferedIoSession? io = null)
     {
-        var name = jobName ?? (string.IsNullOrWhiteSpace(job.Name) ? job.Id : job.Name);
-        if (job.Options.CopySymbolicLinksAsLinks &&
-            FileMetadata.TryCopySymlinkFile(file.SourcePath, file.DestPath, log, job.Id, name))
+        return await FileCopier.CopyAsync(job, file, budget, pause, speed, cancellationToken, log, jobName, io)
+            .ConfigureAwait(false);
+    }
+
+    private static void LogIoPlan(Job job, CopyMapping mapping, UnbufferedIoSession io, IJobLog log, string name)
+    {
+        log.Info(job.Id, name, io.StartupLine());
+        if (VolumeInfo.IsRemovableOrNetwork(job.SourcePath) ||
+            (job.Catcher is null && VolumeInfo.IsRemovableOrNetwork(mapping.DestRoot)))
         {
-            FileMetadata.ApplyCopiedFile(file.SourcePath, file.DestPath, job.Options, log, job.Id, name);
-            return null;
+            log.Info(job.Id, name,
+                "Source or destination looks like USB or network — unbuffered I/O often helps for large sequential files.");
         }
+    }
 
-        var destDir = Path.GetDirectoryName(file.DestPath);
-        if (!string.IsNullOrEmpty(destDir))
-        {
-            Directory.CreateDirectory(destDir);
-        }
-
-        var temp = file.DestPath + ".mercury.tmp";
-        TryDeleteIncomplete(temp);
-
-        XxHash64? hasher = job.Options.Verify == VerifyLevel.Thorough ? new XxHash64() : null;
-        var buffer = new byte[HashUtil.BufferSize];
-        var io = FileMetadata.SequentialIo(job.Options);
-
+    private static async Task PulseDirtyAsync(
+        Job job,
+        JobJournal journal,
+        PauseGate pause,
+        CancellationToken cancellationToken)
+    {
         try
         {
-            await using (var src = new FileStream(
-                             file.SourcePath,
-                             FileMode.Open,
-                             FileAccess.Read,
-                             FileShare.ReadWrite,
-                             HashUtil.BufferSize,
-                             io))
-            await using (var dst = new FileStream(
-                             temp,
-                             FileMode.Create,
-                             FileAccess.Write,
-                             FileShare.None,
-                             HashUtil.BufferSize,
-                             io))
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+            while (await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
             {
-                int read;
-                while ((read = await src.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken).ConfigureAwait(false)) > 0)
+                try
                 {
-                    if (pause is not null)
-                    {
-                        await pause.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
-                    }
-
-                    // Live speed: Budget + job.Options are read every chunk. Do not snapshot Options.
-                    await budget.ConsumeAsync(job.Id, job.Options.MaxBytesPerSecond, read, cancellationToken)
-                        .ConfigureAwait(false);
-                    await dst.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
-                    hasher?.Append(buffer.AsSpan(0, read));
-                    speed?.Add(read);
-                    pause?.AddFileBytes(read);
+                    var totals = journal.Totals();
+                    var percent = totals.Bytes > 0 ? 100.0 * totals.DoneBytes / totals.Bytes : 0;
+                    JobHeartbeat.Write(journal, job.Id, percent, pause.CurrentFilePath);
                 }
-
-                await dst.FlushAsync(cancellationToken).ConfigureAwait(false);
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch
+                {
+                    // never fail the copy because heartbeat could not flush
+                }
             }
-
-            if (File.Exists(file.DestPath))
-            {
-                File.Delete(file.DestPath);
-            }
-
-            File.Move(temp, file.DestPath);
-            FileMetadata.ApplyCopiedFile(file.SourcePath, file.DestPath, job.Options, log, job.Id, name);
         }
-        catch
+        catch (OperationCanceledException)
         {
-            TryDeleteIncomplete(temp);
-            throw;
+            // run finished
         }
-
-        return hasher is null ? null : HashUtil.ToHex(hasher.GetCurrentHash());
     }
 
     private static void TryDeleteIncomplete(string path)

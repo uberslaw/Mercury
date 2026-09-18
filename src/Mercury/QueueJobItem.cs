@@ -73,7 +73,7 @@ public sealed class QueueJobItem : INotifyPropertyChanged
 
             if (o.UnbufferedIo)
             {
-                flags.Add("unbuffered");
+                flags.Add("force unbuffered");
             }
 
             if (o.PurgeExtraDestFiles)

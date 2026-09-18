@@ -34,6 +34,10 @@ public static class HelpDocument
                 "Pause after this file finishes the file in flight, then pauses — it will not cut the temp mid-stream. " +
                 "The button becomes Remove Pause after while waiting; click it to cancel. " +
                 "If the remaining file will take 10 seconds or more, Mercury shows that wait when you click it, and the Progress header shows a live Pause after this file: ~Xm line.\n\n" +
+                "Stop cancels and keeps progress for Resume last (this is a clean stop — next launch will not prompt). " +
+                "Close (X / Alt+F4) while a job is copying asks: Wait for this file, Close now, or Cancel. " +
+                "Wait for this file uses Pause after this file, then exits. Close now drops the in-flight temp and leaves a dirty heartbeat so the next launch offers resume. " +
+                "A crash, kill, or reboot leaves the same dirty flag.\n\n" +
                 "Stop cancels and keeps progress for Resume. Pause all / Resume all apply to every running job."
         },
         new()
@@ -51,7 +55,7 @@ public static class HelpDocument
                 "Verify Quick checks size + timestamp. Thorough also hashes (xxHash64).\n\n" +
                 "Dry run enumerates only.\n\n" +
                 "Pack as zip writes one uncompressed transport zip (fast on USB / many small files), unpacks a normal folder tree at dest, then deletes the zip. " +
-                "Already-compressed files (video, photos, audio, archives) are copied as-is; the rest go in the zip. Leave off to copy file-by-file.\n\n" +
+                "Already-compressed files (video, photos, audio, archives, disk images) are copied as-is; the rest go in the zip. Leave off to copy file-by-file.\n\n" +
                 "Destination can expand: still logs Need vs free space but does not abort on thin/growable volumes.\n\n" +
                 "RoboFlags (button on this tab) opens native copy checkboxes — see the RoboFlags help section. Timestamps default on so dest keeps source creation time.\n\n" +
                 "Start after: calendar start; hours still apply if enabled."
@@ -69,7 +73,10 @@ public static class HelpDocument
                 "Owner — /COPY:O — owner (default off; may need elevation; fail-soft + log).\n" +
                 "Directory timestamps — /DCOPY:T — folder creation + last-write (default on).\n" +
                 "Empty directories — /E vs /S — create empty source folders (default on).\n" +
-                "Unbuffered I/O — /J — write-through streams for large video (default off).\n" +
+                "Unbuffered I/O — /J — Force unbuffered (write-through, sector-aligned). Default off = auto-probe. " +
+                "When unchecked, Mercury enumerates types (video, ISO, VHD, …) and, if there is large sequential payload, copies a short buffered sample then an unbuffered sample and keeps the faster mode. " +
+                "Small files stay buffered. Probe is skipped if you force unbuffered, if there is no large sequential payload, or if a speed cap (Max MB/s or throttle-when-not-idle) is already limiting the job. " +
+                "Unbuffered tends to help large sequential files on HDD/USB and already-compressed blobs; it hurts thousands of tiny files.\n" +
                 "Copy symbolic links as links — /SL — copy links as links (default off: skip reparse, do not follow).\n" +
                 "FAT 2s times — /FFT — 2-second compare for skip/verify (default off; turn on for FAT dest).\n" +
                 "Exclude hidden/system — /XA:HS — skip hidden and system files/folders (default off).\n" +
@@ -85,7 +92,8 @@ public static class HelpDocument
                 "When two or more jobs are in the queue, an Overall bar sits directly under Current, and file counts show " +
                 "both (example: Files: Current 12/400  Overall 50/2000). With one job, only Current is shown (Overall would duplicate it). " +
                 "Job: 2 of 5 is the running job’s place in the listed queue (Job: 1 of 1 when there is a single job). " +
-                "Stats use key: value (example: Files: 12/400). Speed during packing uses bytes copied over elapsed time when the instantaneous rate is still 0."
+                "Stats use key: value (example: Files: 12/400). Speed during packing uses bytes copied over elapsed time when the instantaneous rate is still 0. " +
+                "During enumerate, Types shows a mix such as Video: 40 files, 2.1 TB."
         },
         new()
         {

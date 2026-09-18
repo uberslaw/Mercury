@@ -13,6 +13,7 @@ public partial class MainWindow : Window
     private ScrollViewer? _consoleScroll;
     private ThemePreviewWindow? _preview;
     private ThemeEditorWindow? _editor;
+    private bool _forceClose;
     private bool _closing;
 
     public MainWindow()
@@ -27,6 +28,11 @@ public partial class MainWindow : Window
         ConsoleList.Loaded += ConsoleList_Loaded;
         vm.Theme.OpenPreviewRequested = OpenThemePreview;
         vm.Theme.PopOutEditorRequested = OpenThemeEditor;
+        vm.CloseWindowRequested = () =>
+        {
+            _forceClose = true;
+            Close();
+        };
     }
 
     private MainViewModel Vm => (MainViewModel)DataContext;
@@ -293,8 +299,19 @@ public partial class MainWindow : Window
         }
     }
 
+    private void Window_Loaded(object sender, RoutedEventArgs e)
+    {
+        Vm.OfferDirtyResume(this);
+    }
+
     private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
     {
+        if (!_forceClose && !Vm.ConfirmClose(this))
+        {
+            e.Cancel = true;
+            return;
+        }
+
         _closing = true;
         if (_consoleScroll is not null)
         {
