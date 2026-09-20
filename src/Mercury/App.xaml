@@ -234,6 +234,23 @@
             <Setter Property="Foreground" Value="{DynamicResource BarFillBrush}"/>
             <Setter Property="Background" Value="{DynamicResource BarTrackBrush}"/>
             <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ProgressBar">
+                        <Grid SnapsToDevicePixels="True">
+                            <Border Background="{TemplateBinding Background}"
+                                    CornerRadius="7"
+                                    Height="{TemplateBinding Height}"/>
+                            <Border x:Name="PART_Track" Background="Transparent"/>
+                            <Decorator x:Name="PART_Indicator" HorizontalAlignment="Left">
+                                <Border Background="{TemplateBinding Foreground}"
+                                        CornerRadius="7"
+                                        Height="{TemplateBinding Height}"/>
+                            </Decorator>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
         <Style TargetType="StatusBar">
             <Setter Property="Background" Value="{DynamicResource StatusBarBrush}"/>

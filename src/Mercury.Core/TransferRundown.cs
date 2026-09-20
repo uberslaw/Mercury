@@ -47,9 +47,16 @@ public sealed class TransferRundown
         var filesMatch = job.SourceFiles == job.DestFiles;
         var foldersMatch = job.SourceFolders == job.DestFolders;
         var countsMatch = filesMatch && foldersMatch;
-        var highlight = Classify(job.Status, countsMatch);
-        var matchText = MatchMessage(job.Status, filesMatch, foldersMatch, job.SourceFiles, job.DestFiles,
-            job.SourceFolders, job.DestFolders);
+        var dryRun = job.Options.DryRun;
+        var highlight = dryRun
+            ? (job.Status == JobStatus.Cancelled ? RundownHighlight.Warn : RundownHighlight.Ok)
+            : Classify(job.Status, countsMatch);
+        var matchText = dryRun
+            ? (job.Status == JobStatus.Cancelled
+                ? "Stopped — dry run (nothing written)"
+                : "Dry run — enumerated only (nothing written)")
+            : MatchMessage(job.Status, filesMatch, foldersMatch, job.SourceFiles, job.DestFiles,
+                job.SourceFolders, job.DestFolders);
         var elapsedText = ByteFormatter.Duration(elapsed);
         var speedText = ByteFormatter.Speed(job.AverageBytesPerSecond);
         var filesText = FormatPair(job.SourceFiles, job.DestFiles);
@@ -115,7 +122,7 @@ public sealed class TransferRundown
 
         return new TransferRundown
         {
-            IsVisible = true,
+            IsVisible = job.SourceFiles > 0 || job.DestFiles > 0 || job.BytesCopied > 0,
             StartedText = started,
             EndedText = "—",
             ElapsedText = elapsedText,
@@ -129,7 +136,13 @@ public sealed class TransferRundown
         };
     }
 
-    public static void Capture(Job job, JobJournal journal, CopyMapping? mapping, IJobLog? log, string name)
+    public static void Capture(
+        Job job,
+        JobJournal journal,
+        CopyMapping? mapping,
+        IJobLog? log,
+        string name,
+        CancellationToken cancellationToken = default)
     {
         if (job.StartedUtc is null)
         {
@@ -143,14 +156,20 @@ public sealed class TransferRundown
         job.SourceFiles = totals.Files;
         job.BytesCopied = totals.DoneBytes;
 
+        var skipTree = job.Options.DryRun
+            || job.Status == JobStatus.Cancelled
+            || cancellationToken.IsCancellationRequested;
+
         TreeCounts dest = default;
-        TreeCounts sourceFolders = default;
-        if (job.Catcher is not null && mapping is not null && mapping.SingleFile)
+        TreeCounts sourceFolders = job.SourceFolders > 0
+            ? new TreeCounts(job.SourceFiles, job.SourceFolders)
+            : default;
+        if (!skipTree && mapping is not null && job.Catcher is not null && mapping.SingleFile)
         {
             dest = new TreeCounts(1, 0);
             sourceFolders = new TreeCounts(1, 0);
         }
-        else if (mapping is not null && ZipPack.Applies(job, mapping) && job.Catcher is not null)
+        else if (!skipTree && mapping is not null && ZipPack.Applies(job, mapping) && job.Catcher is not null)
         {
             dest = ZipPack.CountPacked(ZipPack.ZipPath(mapping));
             try
@@ -162,31 +181,78 @@ public sealed class TransferRundown
                 sourceFolders = new TreeCounts(totals.Files, 0);
             }
         }
-        else if (mapping is not null)
+        else if (!skipTree && mapping is not null)
         {
             try
             {
-                dest = SourceWalker.CountDest(mapping);
+                cancellationToken.ThrowIfCancellationRequested();
+                dest = SourceWalker.CountDest(mapping, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                SaveSummary(job, journal, dest, sourceFolders, ended, log, name, stopped: true);
+                throw;
             }
             catch
             {
                 dest = default;
             }
 
-            try
+            if (sourceFolders.Folders == 0)
             {
-                sourceFolders = SourceWalker.CountSource(mapping, job.Options);
-            }
-            catch
-            {
-                sourceFolders = default;
+                try
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    sourceFolders = SourceWalker.CountSource(mapping, job.Options, cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    SaveSummary(job, journal, dest, sourceFolders, ended, log, name, stopped: true);
+                    throw;
+                }
+                catch
+                {
+                    sourceFolders = default;
+                }
             }
         }
 
-        job.DestFiles = dest.Files;
-        job.DestFolders = dest.Folders;
-        job.SourceFolders = sourceFolders.Folders;
-        var elapsed = ended - job.StartedUtc.Value;
+        if (cancellationToken.IsCancellationRequested)
+        {
+            SaveSummary(job, journal, dest, sourceFolders, ended, log, name, stopped: true);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+
+        SaveSummary(job, journal, dest, sourceFolders, ended, log, name, stopped: job.Status == JobStatus.Cancelled);
+    }
+
+    private static void SaveSummary(
+        Job job,
+        JobJournal journal,
+        TreeCounts dest,
+        TreeCounts sourceFolders,
+        DateTimeOffset ended,
+        IJobLog? log,
+        string name,
+        bool stopped)
+    {
+        if (job.Options.DryRun || stopped)
+        {
+            job.DestFiles = job.Options.DryRun ? 0 : dest.Files;
+            job.DestFolders = job.Options.DryRun ? 0 : dest.Folders;
+        }
+        else
+        {
+            job.DestFiles = dest.Files;
+            job.DestFolders = dest.Folders;
+        }
+
+        if (sourceFolders.Folders > 0 || job.SourceFolders == 0)
+        {
+            job.SourceFolders = sourceFolders.Folders;
+        }
+
+        var elapsed = ended - job.StartedUtc!.Value;
         if (elapsed < TimeSpan.Zero)
         {
             elapsed = TimeSpan.Zero;
@@ -198,6 +264,11 @@ public sealed class TransferRundown
         if (log is null)
         {
             return;
+        }
+
+        if (stopped)
+        {
+            log.Info(job.Id, name, "Stopped — rundown skipped.");
         }
 
         var display = From(job);
@@ -350,6 +421,12 @@ public sealed class TransferRundown
         job.DestFolders = 0;
         job.BytesCopied = 0;
         job.AverageBytesPerSecond = 0;
+    }
+
+    public static void MarkResumed(Job job)
+    {
+        job.EndedUtc = null;
+        job.StartedUtc ??= DateTimeOffset.UtcNow;
     }
 
     public static string FormatLocal(DateTimeOffset utc) =>

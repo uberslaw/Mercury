@@ -81,6 +81,11 @@ public sealed class QueueJobItem : INotifyPropertyChanged
                 flags.Add("purge extra dest");
             }
 
+            if (!o.IncludeSourceFolderName)
+            {
+                flags.Add("contents only");
+            }
+
             var robo = flags.Count == 0 ? "RoboFlags defaults" : "RoboFlags: " + string.Join(", ", flags);
             return $"{speed}. {hours}. {verify}. {dry}. {expand}. {robo}. {start}.";
         }

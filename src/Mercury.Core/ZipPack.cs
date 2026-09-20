@@ -81,6 +81,9 @@ public static class ZipPack
         return folders.Count;
     }
 
+    public static void NoteFolders(HashSet<string> folders, string relativePath) =>
+        AddFolderPrefixes(folders, EntryName(relativePath));
+
     public static async Task PackAsync(
         string zipPath,
         IReadOnlyList<FileRecord> files,

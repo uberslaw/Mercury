@@ -32,6 +32,10 @@ public static class CopyPipeline
                 stages.Add(new(CopyStageKind.CheckingDestinationSpace, "Checking destination space"));
             }
         }
+        else if (job.ScanSourceOnResume)
+        {
+            stages.Add(new(CopyStageKind.EnumeratingSource, "Checking source for changes"));
+        }
 
         if (!job.Options.DryRun)
         {

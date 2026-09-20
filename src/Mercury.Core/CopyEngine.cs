@@ -31,7 +31,7 @@ public sealed class CopyEngine : ICopyEngine
         }
 
         var destForShape = catcher is null ? job.DestinationPath : journal.Directory;
-        var mapping = CopyShape.Resolve(job.SourcePath, destForShape);
+        var mapping = CopyShape.Resolve(job.SourcePath, destForShape, job.Options.IncludeSourceFolderName);
         job.SourceKind = mapping.Kind;
         job.VolumeSerial ??= VolumeInfo.GetSerial(job.SourcePath);
 
@@ -78,10 +78,12 @@ public sealed class CopyEngine : ICopyEngine
                 var lastPulse = Stopwatch.GetTimestamp();
                 var inventory = new PayloadInventory();
                 var peek = new MagicPeekBudget();
+                var folders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var record in SourceWalker.Walk(mapping, exclude, job.Options))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     inventory.Add(FileClassifier.Classify(record.SourcePath, record.Size, peek), record.Size);
+                    ZipPack.NoteFolders(folders, record.RelativePath);
                     journal.UpsertFile(record);
                     found++;
                     foundBytes += record.Size;
@@ -100,6 +102,7 @@ public sealed class CopyEngine : ICopyEngine
 
                 totals = journal.Totals();
                 job.SourceFiles = totals.Files;
+                job.SourceFolders = folders.Count;
                 log.Info(job.Id, name, $"Found {totals.Files} files ({ByteFormatter.ToString(totals.Bytes)}).");
                 var typeSummary = inventory.FormatSummary();
                 if (!string.IsNullOrWhiteSpace(typeSummary))
@@ -142,6 +145,34 @@ public sealed class CopyEngine : ICopyEngine
             else
             {
                 log.Info(job.Id, name, $"Resuming journal: {totals.DoneFiles}/{totals.Files} files already done.");
+                if (job.ScanSourceOnResume)
+                {
+                    reporter.Enter(CopyStageKind.EnumeratingSource, JobStatus.Enumerating, "Checking source for changes…");
+                    log.Info(job.Id, name, "Checking source for new, changed, or deleted files vs the journal.");
+                    var exclude = new List<string>();
+                    if (pack)
+                    {
+                        exclude.AddRange(ZipPack.ExcludePaths(mapping));
+                    }
+
+                    var scan = JournalReconcile.Scan(
+                        mapping,
+                        journal,
+                        job.Options,
+                        exclude,
+                        (seen, file) => reporter.Update(
+                            $"Checking source for changes… {seen} files",
+                            file,
+                            filesTotal: Math.Max(seen, totals.Files),
+                            bytesTotal: totals.Bytes),
+                        cancellationToken);
+                    log.Info(job.Id, name,
+                        $"Source check: {scan.Added} new, {scan.Changed} changed, {scan.Removed} gone, {scan.Unchanged} unchanged.");
+                    totals = journal.Totals();
+                    job.SourceFiles = totals.Files;
+                    job.ScanSourceOnResume = false;
+                    journal.SaveJob(job);
+                }
                 log.Info(job.Id, name, FileMetadata.DescribeFlags(job.Options));
                 var inventory = PayloadInventory.FromFiles(journal.GetFiles());
                 var typeSummary = inventory.FormatSummary();
@@ -164,12 +195,14 @@ public sealed class CopyEngine : ICopyEngine
 
             if (job.Options.DryRun)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 log.Info(job.Id, name, "Dry run — no files will be written.");
                 job.Status = JobStatus.Completed;
                 job.ResultMessage = $"Dry run: {totals.Files} files, {ByteFormatter.ToString(totals.Bytes)}.";
                 JobHeartbeat.Clear(journal);
                 reporter.Enter(CopyStageKind.Rundown, JobStatus.Completed, "Writing rundown…");
-                TransferRundown.Capture(job, journal, mapping, log, name);
+                TransferRundown.Capture(job, journal, mapping, log, name, cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
                 reporter.Update(job.ResultMessage);
                 return;
             }
@@ -333,7 +366,8 @@ public sealed class CopyEngine : ICopyEngine
             }
 
             reporter.Enter(CopyStageKind.Rundown, job.Status, "Writing rundown…");
-            TransferRundown.Capture(job, journal, mapping, log, name);
+            TransferRundown.Capture(job, journal, mapping, log, name, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             reporter.Update(job.ResultMessage);
         }
         finally

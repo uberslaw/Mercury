@@ -59,7 +59,7 @@ public class TransferRundownTests
         }, now);
 
         Assert.Equal("Stage: 2 of 6 — Enumerating source", stats.Stage.Display);
-        Assert.Equal("Job: 1 of 1", stats.Job.Display);
+        Assert.False(stats.Job.HasValue);
         Assert.Equal("Elapsed", stats.Elapsed.Key);
         Assert.Contains("this stage", stats.ThisStage.Key, StringComparison.OrdinalIgnoreCase);
     }
@@ -71,7 +71,7 @@ public class TransferRundownTests
         var overall = new JobProgress { FilesCopied = 50, FilesTotal = 2000 };
         var one = ProgressStats.From(current, jobIndex: 1, jobCount: 1, overall: overall);
         Assert.Equal("12/400", one.Files.Value);
-        Assert.Equal("1 of 1", one.Job.Value);
+        Assert.False(one.Job.HasValue);
 
         var many = ProgressStats.From(current, jobIndex: 2, jobCount: 5, overall: overall);
         Assert.Equal("Current 12/400  Overall 50/2000", many.Files.Value);

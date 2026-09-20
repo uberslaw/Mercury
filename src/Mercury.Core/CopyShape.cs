@@ -2,40 +2,40 @@ namespace Mercury;
 
 public static class CopyShape
 {
-    public static CopyMapping Resolve(string sourcePath, string destPath)
+    public static CopyMapping Resolve(string sourcePath, string destPath, bool includeSourceFolderName = true)
     {
         var source = PathNormalizer.Normalize(sourcePath);
-        var dest = PathNormalizer.Normalize(destPath);
+        var dest = PathNormalizer.DirectoryPath(destPath);
 
         if (File.Exists(source))
         {
             var fileName = Path.GetFileName(source);
-            if (Directory.Exists(dest) || dest.EndsWith('\\') || dest.EndsWith('/'))
+            var destNormalized = PathNormalizer.Normalize(destPath);
+            if (Directory.Exists(destNormalized) || destNormalized.EndsWith('\\') || destNormalized.EndsWith('/'))
             {
-                var destDir = dest.TrimEnd('\\', '/');
                 return new CopyMapping
                 {
                     Kind = SourceKind.File,
                     SourceRoot = Path.GetDirectoryName(source) ?? source,
-                    DestRoot = destDir,
+                    DestRoot = dest,
                     SingleFile = true,
                     SingleFileName = fileName
                 };
             }
 
-            var destParent = Path.GetDirectoryName(dest);
+            var destParent = Path.GetDirectoryName(destNormalized);
             if (string.IsNullOrEmpty(destParent))
             {
-                throw new InvalidOperationException($"Destination is not a writable path: {dest}");
+                throw new InvalidOperationException($"Destination is not a writable path: {destNormalized}");
             }
 
             return new CopyMapping
             {
                 Kind = SourceKind.File,
                 SourceRoot = Path.GetDirectoryName(source) ?? source,
-                DestRoot = destParent,
+                DestRoot = PathNormalizer.DirectoryPath(destParent),
                 SingleFile = true,
-                SingleFileName = Path.GetFileName(dest)
+                SingleFileName = Path.GetFileName(destNormalized)
             };
         }
 
@@ -50,17 +50,26 @@ public static class CopyShape
             {
                 Kind = SourceKind.DriveRoot,
                 SourceRoot = source,
-                DestRoot = dest.TrimEnd('\\', '/'),
+                DestRoot = dest,
                 SingleFile = false
             };
         }
 
-        var folderName = Path.GetFileName(source.TrimEnd('\\', '/'));
+        var destRoot = dest;
+        if (includeSourceFolderName)
+        {
+            var folderName = Path.GetFileName(source.TrimEnd('\\', '/'));
+            if (!string.IsNullOrEmpty(folderName))
+            {
+                destRoot = Path.Combine(dest, folderName);
+            }
+        }
+
         return new CopyMapping
         {
             Kind = SourceKind.Folder,
             SourceRoot = source,
-            DestRoot = Path.Combine(dest.TrimEnd('\\', '/'), folderName),
+            DestRoot = destRoot,
             SingleFile = false
         };
     }
@@ -80,4 +89,68 @@ public static class CopyShape
 
         return SourceKind.Folder;
     }
+
+    /// <summary>
+    /// Live dest preview (does not require the source to exist). Folder sources land in dest\FolderName when
+    /// <paramref name="includeSourceFolderName"/> is on; drive roots dump contents into dest; files land as dest\file.
+    /// </summary>
+    public static string PreviewLandingPath(string sourcePath, string destPath, bool includeSourceFolderName = true)
+    {
+        if (string.IsNullOrWhiteSpace(sourcePath) || string.IsNullOrWhiteSpace(destPath))
+        {
+            return "";
+        }
+
+        try
+        {
+            var dest = PathNormalizer.DirectoryPath(destPath);
+            string source;
+            try
+            {
+                source = PathNormalizer.Normalize(sourcePath);
+            }
+            catch (Exception)
+            {
+                return "";
+            }
+
+            if (File.Exists(source))
+            {
+                var destNormalized = PathNormalizer.Normalize(destPath);
+                if (Directory.Exists(destNormalized) || destNormalized.EndsWith('\\') || destNormalized.EndsWith('/'))
+                {
+                    return Path.Combine(dest, Path.GetFileName(source));
+                }
+
+                return destNormalized;
+            }
+
+            if (PathNormalizer.IsDriveRoot(source))
+            {
+                return dest;
+            }
+
+            if (!includeSourceFolderName)
+            {
+                return dest;
+            }
+
+            var folderName = Path.GetFileName(source.TrimEnd('\\', '/'));
+            if (string.IsNullOrEmpty(folderName))
+            {
+                return dest;
+            }
+
+            return Path.Combine(dest, folderName);
+        }
+        catch (Exception)
+        {
+            return "";
+        }
+    }
+
+    public static string LandingPath(CopyMapping mapping) =>
+        mapping.SingleFile
+            ? Path.Combine(mapping.DestRoot, mapping.SingleFileName ?? "")
+            : mapping.DestRoot;
 }

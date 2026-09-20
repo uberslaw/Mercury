@@ -50,6 +50,10 @@ public sealed class JobScheduler : IDisposable
 
     public bool HasRunningJob => !_running.IsEmpty;
 
+    /// <summary>True while a job is actually running (not merely winding down after Stop).</summary>
+    public bool BlocksStart =>
+        _running.Values.Any(r => !r.Cts.IsCancellationRequested);
+
     public Job? TryGetRunningJob(string? jobId = null)
     {
         if (jobId is not null && _running.TryGetValue(jobId, out var named))
@@ -534,6 +538,14 @@ public sealed class JobScheduler : IDisposable
             }
 
             running.Cts.Cancel();
+            if (running.Job.Status is not JobStatus.Completed and not JobStatus.Failed
+                and not JobStatus.Incomplete and not JobStatus.Cancelled)
+            {
+                running.Job.Status = JobStatus.Cancelled;
+                running.Job.ResultMessage = "Stopping…";
+            }
+
+            ReportFinal(running.Job);
         }
     }
 
@@ -567,6 +579,98 @@ public sealed class JobScheduler : IDisposable
         catch
         {
             return null;
+        }
+    }
+
+    /// <summary>Journal totals + heartbeat for the Progress header after a restart.</summary>
+    public JobProgress? TrySnapshotProgress(Job job)
+    {
+        try
+        {
+            var dir = _paths.JobDirectory(job.Id);
+            FileTotals totals = default;
+            JobHeartbeatState? heartbeat = null;
+            if (JobJournal.Exists(dir))
+            {
+                using var journal = JobJournal.Open(dir);
+                totals = journal.Totals();
+                heartbeat = JobHeartbeat.Read(journal, job.Id);
+                if (totals.Files > job.SourceFiles)
+                {
+                    job.SourceFiles = totals.Files;
+                }
+
+                if (totals.DoneFiles > job.DestFiles)
+                {
+                    job.DestFiles = totals.DoneFiles;
+                }
+
+                if (totals.DoneBytes > job.BytesCopied)
+                {
+                    job.BytesCopied = totals.DoneBytes;
+                }
+            }
+
+            if (totals.Files == 0 && job.SourceFiles == 0 && job.BytesCopied == 0)
+            {
+                return null;
+            }
+
+            return new JobProgress
+            {
+                JobId = job.Id,
+                JobName = string.IsNullOrWhiteSpace(job.Name) ? job.Id : job.Name,
+                Status = job.Status,
+                CurrentFile = heartbeat?.File,
+                BytesCopied = totals.DoneBytes > 0 ? totals.DoneBytes : job.BytesCopied,
+                BytesTotal = totals.Bytes,
+                FilesCopied = totals.DoneFiles > 0 ? totals.DoneFiles : job.DestFiles,
+                FilesTotal = totals.Files > 0 ? totals.Files : job.SourceFiles,
+                Message = job.ResultMessage,
+                StartedUtc = job.StartedUtc
+            };
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Journal file rows for the folder tree (running job first, else last job on disk).</summary>
+    public IReadOnlyList<FileRecord> LoadJournalFiles(string? jobId)
+    {
+        if (!string.IsNullOrEmpty(jobId) && _running.TryGetValue(jobId, out var running))
+        {
+            try
+            {
+                return running.Journal.GetFiles();
+            }
+            catch
+            {
+                return [];
+            }
+        }
+
+        var id = jobId ?? AppSettingsStore.LoadLastJobId(_paths);
+        if (id is null)
+        {
+            return [];
+        }
+
+        var dir = _paths.JobDirectory(id);
+        if (!JobJournal.Exists(dir))
+        {
+            return [];
+        }
+
+        try
+        {
+            using var journal = JobJournal.Open(dir);
+            return journal.GetFiles();
+        }
+        catch
+        {
+            return [];
         }
     }
 
@@ -818,7 +922,7 @@ public sealed class JobScheduler : IDisposable
         CopyMapping? mapping = null;
         try
         {
-            mapping = CopyShape.Resolve(job.SourcePath, job.DestinationPath);
+            mapping = CopyShape.Resolve(job.SourcePath, job.DestinationPath, job.Options.IncludeSourceFolderName);
         }
         catch
         {
@@ -826,7 +930,7 @@ public sealed class JobScheduler : IDisposable
         }
 
         var name = string.IsNullOrWhiteSpace(job.Name) ? job.Id[..8] : job.Name;
-        TransferRundown.Capture(job, journal, mapping, Log, name);
+        TransferRundown.Capture(job, journal, mapping, Log, name, CancellationToken.None);
     }
 
     private static FileTotals SafeTotals(JobJournal journal)

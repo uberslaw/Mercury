@@ -14,6 +14,7 @@ public class RoboFlagsTests
         Assert.False(options.CopyOwner);
         Assert.True(options.CopyDirectoryTimestamps);
         Assert.True(options.CopyEmptyDirectories);
+        Assert.True(options.IncludeSourceFolderName);
         Assert.False(options.UnbufferedIo);
         Assert.False(options.CopySymbolicLinksAsLinks);
         Assert.False(options.FatTimestampTolerance);
@@ -29,6 +30,7 @@ public class RoboFlagsTests
         Assert.True(options.CopyAttributes);
         Assert.True(options.CopyDirectoryTimestamps);
         Assert.True(options.CopyEmptyDirectories);
+        Assert.True(options.IncludeSourceFolderName);
         Assert.False(options.PurgeExtraDestFiles);
     }
 
@@ -51,6 +53,26 @@ public class RoboFlagsTests
         Assert.Contains("/PURGE", section.Body, StringComparison.Ordinal);
         Assert.Contains("does not run robocopy.exe", section.Body, StringComparison.OrdinalIgnoreCase);
         Assert.Contains(HelpDocument.Search("creation time"), s => s.Id == "roboflags");
+    }
+
+    [Fact]
+    public void HelpMentionsWillLandInPreview()
+    {
+        var section = HelpDocument.Sections.Single(s => s.Id == "transfer");
+        Assert.Contains("Will land in", section.Body, StringComparison.Ordinal);
+        Assert.Contains("dest\\FolderName", section.Body, StringComparison.Ordinal);
+        Assert.Contains("check the source for changes", section.Body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void HelpMentionsTreeTab()
+    {
+        var section = HelpDocument.Sections.Single(s => s.Id == "tree");
+        Assert.Contains("Folders only", section.Body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Files", section.Body, StringComparison.Ordinal);
+        Assert.Contains("Subdirs", section.Body, StringComparison.Ordinal);
+        Assert.Contains("ETA", section.Body, StringComparison.Ordinal);
+        Assert.Contains(HelpDocument.Search("Tree"), s => s.Id == "tree");
     }
 
     [Fact]

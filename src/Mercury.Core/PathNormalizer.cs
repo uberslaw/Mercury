@@ -73,6 +73,21 @@ public static class PathNormalizer
             StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Directory to combine into. Keeps <c>X:\</c> (trimming that slash would make <c>X:name</c> drive-relative).
+    /// </summary>
+    public static string DirectoryPath(string path)
+    {
+        var full = Normalize(path);
+        if (IsDriveRoot(full))
+        {
+            var root = Path.GetPathRoot(full);
+            return string.IsNullOrEmpty(root) ? full : root;
+        }
+
+        return full.TrimEnd('\\', '/');
+    }
+
     public static bool IsUnder(string child, string parent)
     {
         var p = Normalize(parent).TrimEnd('\\') + "\\";

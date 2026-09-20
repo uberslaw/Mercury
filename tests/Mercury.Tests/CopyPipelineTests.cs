@@ -94,6 +94,15 @@ public class CopyPipelineTests
             ],
             stages.Select(s => s.Label));
     }
+
+    [Fact]
+    public void ResumeWithSourceScanAddsCheckingStage()
+    {
+        var job = new Job { ScanSourceOnResume = true };
+        var stages = CopyPipeline.For(job, hasJournalFiles: true, pack: false);
+        Assert.Contains(stages, s => s.Label == "Checking source for changes");
+        Assert.DoesNotContain(stages, s => s.Label == "Enumerating source");
+    }
 }
 
 public class HistoryStoreTests

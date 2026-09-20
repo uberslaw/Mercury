@@ -51,6 +51,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private bool _copyOwner;
     private bool _copyDirectoryTimestamps = true;
     private bool _copyEmptyDirectories = true;
+    private bool _includeSourceFolderName = true;
     private bool _unbufferedIo;
     private bool _copySymbolicLinksAsLinks;
     private bool _fatTimestampTolerance;
@@ -100,6 +101,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private string _networkStatus = "";
     private bool _closeAfterPause;
     private bool _keepHeartbeatOnClose;
+    private bool _folderTreeEmpty = true;
+    private DateTime _folderTreeRefreshUtc;
+    private string? _folderTreeJobId;
+    private readonly HashSet<string> _expandedFolders = new(StringComparer.OrdinalIgnoreCase);
 
     public MainViewModel() : this(new AppPaths())
     {
@@ -187,19 +192,15 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
         _lastJob = _scheduler.TryLoadLastJob();
         RefreshResume();
-        if (_lastJob is { Status: JobStatus.Copying or JobStatus.Preparing or JobStatus.Enumerating or JobStatus.Paused or JobStatus.PausedOutsideHours or JobStatus.Cancelled or JobStatus.Incomplete or JobStatus.Failed })
+        if (_lastJob is { } last && IsResumable(last.Status))
         {
-            SourcePath = _lastJob.SourcePath;
-            DestPath = _lastJob.DestinationPath;
-            ApplyJobOptions(_lastJob.Options);
-            ResultBanner = $"Last job: {_lastJob.Status}. Use Resume last to continue.";
-            ResultBrush = (Brush)Application.Current.FindResource("WarnBrush");
-            ApplyRundown(_lastJob);
+            SourcePath = last.SourcePath;
+            DestPath = last.DestinationPath;
+            ApplyJobOptions(last.Options);
+            ApplyResumableSnapshot(last);
         }
-        else if (_lastJob is { Status: JobStatus.Completed })
-        {
-            ApplyResult(_lastJob);
-        }
+
+        RefreshFolderTree(force: true);
 
         _scheduler.Kick();
         Theme = new ThemeViewModel();
@@ -216,6 +217,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public ObservableCollection<CatcherEnvelope> CatcherTemplates { get; } = [];
     public ObservableCollection<SettingsPathItem> DataPaths { get; } = [];
     public ObservableCollection<HelpSection> HelpSections { get; } = [];
+    public ObservableCollection<FolderTreeItem> FolderTree { get; } = [];
     public ICollectionView ConsoleView { get; private set; } = CollectionViewSource.GetDefaultView(Array.Empty<ConsoleLine>());
 
     public ICommand StartCommand { get; }
@@ -262,6 +264,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             if (SetField(ref _sourcePath, value))
             {
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasPaths)));
+                RaiseLandingPreview();
                 RaiseRunCommands();
             }
         }
@@ -276,6 +279,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             {
                 CloudWarning = DestIsFolder && CloudPath.LooksLikeCloudFolder(value);
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasPaths)));
+                RaiseLandingPreview();
                 RaiseRunCommands();
             }
         }
@@ -293,6 +297,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DestIsFolder)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasPaths)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CatcherTransferHint)));
+                RaiseLandingPreview();
                 RaiseRunCommands();
                 EnsureCatcherProbe();
             }
@@ -319,6 +324,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasPaths)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CatcherTransferHint)));
+                RaiseLandingPreview();
                 RaiseRunCommands();
                 (ExportCatcherCommand as RelayCommand)?.RaiseCanExecuteChanged();
                 (DeleteCatcherCommand as RelayCommand)?.RaiseCanExecuteChanged();
@@ -398,6 +404,17 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool CopyOwner { get => _copyOwner; set => SetField(ref _copyOwner, value); }
     public bool CopyDirectoryTimestamps { get => _copyDirectoryTimestamps; set => SetField(ref _copyDirectoryTimestamps, value); }
     public bool CopyEmptyDirectories { get => _copyEmptyDirectories; set => SetField(ref _copyEmptyDirectories, value); }
+    public bool IncludeSourceFolderName
+    {
+        get => _includeSourceFolderName;
+        set
+        {
+            if (SetField(ref _includeSourceFolderName, value))
+            {
+                RaiseLandingPreview();
+            }
+        }
+    }
     public bool UnbufferedIo { get => _unbufferedIo; set => SetField(ref _unbufferedIo, value); }
     public bool CopySymbolicLinksAsLinks { get => _copySymbolicLinksAsLinks; set => SetField(ref _copySymbolicLinksAsLinks, value); }
     public bool FatTimestampTolerance { get => _fatTimestampTolerance; set => SetField(ref _fatTimestampTolerance, value); }
@@ -519,7 +536,17 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     }
 
     public string StatusText { get => _statusText; set => SetField(ref _statusText, value); }
-    public string ResultBanner { get => _resultBanner; set => SetField(ref _resultBanner, value); }
+    public string ResultBanner
+    {
+        get => _resultBanner;
+        set
+        {
+            if (SetField(ref _resultBanner, value))
+            {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowProgressDetail)));
+            }
+        }
+    }
     public Brush ResultBrush { get => _resultBrush; set => SetField(ref _resultBrush, value); }
     public string CurrentFile { get => _currentFile; set => SetField(ref _currentFile, value); }
     public ProgressStats JobStats
@@ -530,6 +557,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             if (SetField(ref _jobStats, value))
             {
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderStats)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowProgressDetail)));
             }
         }
     }
@@ -542,6 +570,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             if (SetField(ref _rundown, value))
             {
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderRundown)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderRundownLine)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowHeaderRundown)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowProgressDetail)));
             }
         }
     }
@@ -560,6 +591,21 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool ShowOverallProgress => ProgressHeader.ShowOverall(QueueJobs.Count);
     public ProgressStats HeaderStats => JobStats;
     public TransferRundown HeaderRundown => Rundown;
+    public string HeaderRundownLine => Rundown.OneLine;
+    public bool ShowHeaderRundown => ShowProgressDetail && !string.IsNullOrWhiteSpace(Rundown.OneLine);
+    public bool ShowProgressDetail =>
+        IsRunning
+        || !string.IsNullOrWhiteSpace(ResultBanner)
+        || Rundown.IsVisible
+        || JobPercent > 0.05
+        || JobStats.Files.HasValue
+        || JobStats.Bytes.HasValue;
+
+    public bool FolderTreeEmpty
+    {
+        get => _folderTreeEmpty;
+        private set => SetField(ref _folderTreeEmpty, value);
+    }
 
     public string PauseAfterThisFileLabel =>
         PauseAfterFileArmed ? "Remove Pause after" : "Pause after this file";
@@ -626,6 +672,51 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         (DestIsCatcher ? SelectedCatcherTemplate is not null : !string.IsNullOrWhiteSpace(DestPath));
     public bool DestIsCatcher => DestKindIndex == 1;
     public bool DestIsFolder => !DestIsCatcher;
+    public bool IncludeSourceFolderNameApplies
+    {
+        get
+        {
+            if (!DestIsFolder || string.IsNullOrWhiteSpace(SourcePath))
+            {
+                return false;
+            }
+
+            try
+            {
+                return CopyShape.DetectKind(SourcePath) == SourceKind.Folder;
+            }
+            catch (Exception)
+            {
+                return true;
+            }
+        }
+    }
+
+    public string LandingPreview
+    {
+        get
+        {
+            if (DestIsCatcher)
+            {
+                if (string.IsNullOrWhiteSpace(SourcePath) || SelectedCatcherTemplate is null)
+                {
+                    return "";
+                }
+
+                return "Will land in: Catcher receive folder (named source folders keep their top folder).";
+            }
+
+            if (string.IsNullOrWhiteSpace(SourcePath) || string.IsNullOrWhiteSpace(DestPath))
+            {
+                return "";
+            }
+
+            var path = CopyShape.PreviewLandingPath(SourcePath, DestPath, IncludeSourceFolderName);
+            return string.IsNullOrEmpty(path) ? "" : "Will land in: " + path;
+        }
+    }
+
+    public bool ShowLandingPreview => !string.IsNullOrEmpty(LandingPreview);
     public bool HasCatcherTemplates => CatcherTemplates.Count > 0;
     public bool HasQueueJobs => QueueJobs.Count > 0;
     public bool HasHistoryItems => HistoryItems.Count > 0;
@@ -734,6 +825,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             if (SetField(ref _isRunning, value))
             {
                 RaiseRunCommands();
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowProgressDetail)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowHeaderRundown)));
             }
         }
     }
@@ -1035,12 +1128,66 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 return;
             }
         }
+
+        var scan = OfferSourceScan(last);
+        if (scan is null)
+        {
+            StatusText = "Resume cancelled.";
+            return;
+        }
+
         last.Status = JobStatus.Pending;
         last.ScheduledStart = null;
-        ClearPreviousRunPresentation();
-        TransferRundown.MarkStarted(last);
+        last.ScanSourceOnResume = scan.Value;
+        TransferRundown.MarkResumed(last);
         ShowStartingStage(last, resume: true);
-        EnqueueJob(last, "Resuming last job…", startNow: true);
+        EnqueueJob(
+            last,
+            scan.Value ? "Resuming — checking source for changes…" : "Resuming last job…",
+            startNow: true);
+        RefreshFolderTree(force: true);
+    }
+
+    private static bool IsResumable(JobStatus status) =>
+        status is not JobStatus.Completed;
+
+    private void ApplyResumableSnapshot(Job last)
+    {
+        var snap = _scheduler.TrySnapshotProgress(last);
+        if (snap is null)
+        {
+            return;
+        }
+
+        _lastProgress = snap;
+        JobPercent = snap.Percent;
+        CurrentFile = snap.CurrentFile ?? "";
+        JobStats = ComposeStats(snap);
+        OverallStats = ComposeStats(snap, includeStage: false);
+        Rundown = TransferRundown.From(last);
+        StatusText = "Resume last to continue this job.";
+        NotifyHeader();
+    }
+
+    private bool? OfferSourceScan(Job last)
+    {
+        var owner = Application.Current?.Windows.OfType<Window>().FirstOrDefault(w => w.IsActive)
+            ?? Application.Current?.MainWindow;
+        var result = ChoiceWindow.Show(
+            owner,
+            "Resume last",
+            string.IsNullOrWhiteSpace(last.SourcePath)
+                ? "Check source for changes first?\n\nYes walks the source against the journal (new, changed, or gone files). Stop cancels that walk. No resumes the journal as-is."
+                : $"Check source for changes first?\n\nYes walks {last.SourcePath} against the journal (new, changed, or gone files). Stop cancels that walk. No resumes the journal as-is.",
+            "Yes",
+            "No",
+            "Cancel");
+        return result switch
+        {
+            ChoiceResult.Primary => true,
+            ChoiceResult.Secondary => false,
+            _ => null
+        };
     }
 
     private void ShowStartingStage(Job job, bool resume = false)
@@ -1193,6 +1340,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
         IsGlobalPaused = false;
         StatusText = "Stopping…";
+        RefreshRunState();
     }
 
     private Job BuildJob()
@@ -1276,6 +1424,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             CopyOwner = CopyOwner,
             CopyDirectoryTimestamps = CopyDirectoryTimestamps,
             CopyEmptyDirectories = CopyEmptyDirectories,
+            IncludeSourceFolderName = IncludeSourceFolderName,
             UnbufferedIo = UnbufferedIo,
             CopySymbolicLinksAsLinks = CopySymbolicLinksAsLinks,
             FatTimestampTolerance = FatTimestampTolerance,
@@ -1336,6 +1485,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             CopyOwner = options.CopyOwner;
             CopyDirectoryTimestamps = options.CopyDirectoryTimestamps;
             CopyEmptyDirectories = options.CopyEmptyDirectories;
+            IncludeSourceFolderName = options.IncludeSourceFolderName;
             UnbufferedIo = options.UnbufferedIo;
             CopySymbolicLinksAsLinks = options.CopySymbolicLinksAsLinks;
             FatTimestampTolerance = options.FatTimestampTolerance;
@@ -1851,6 +2001,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         NotifyHeader();
         RefreshRunState();
         NotifyPauseAfter();
+        RefreshFolderTree(force: e.Status is JobStatus.Completed or JobStatus.Incomplete or JobStatus.Cancelled or JobStatus.Failed);
     }
 
     private void EnsureCatcherProbe()
@@ -2005,6 +2156,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowOverallProgress)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderStats)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderRundown)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderRundownLine)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowHeaderRundown)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowProgressDetail)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JobPercent)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(OverallPercent)));
     }
@@ -2040,10 +2194,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     {
         var running = _scheduler.TryGetRunningJob();
         _runningJobId = running?.Id;
-        IsRunning = _scheduler.HasRunningJob;
+        IsRunning = _scheduler.BlocksStart;
         IsPaused = running is { Status: JobStatus.Paused };
         IsGlobalPaused = _scheduler.GlobalPause.IsPaused;
         RaiseRunCommands();
+        NotifyHeader();
     }
 
     private void PauseQueueJob(QueueJobItem? item)
@@ -2172,6 +2327,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         JobStats = ProgressStats.Idle;
         OverallStats = ProgressStats.Idle;
         CurrentFile = "";
+        FolderTree.Clear();
+        FolderTreeEmpty = true;
         EnsureElapsedTimer();
         _elapsedTimer?.Start();
     }
@@ -2238,6 +2395,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
         NotifyHeader();
         NotifyPauseAfter();
+        RefreshFolderTree();
     }
 
     private void Dispatch(Action action)
@@ -2276,6 +2434,71 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         _lastJob = _scheduler.TryLoadLastJob();
         CanResumeLast = _lastJob is { Status: not JobStatus.Completed };
         (ResumeLastCommand as RelayCommand)?.RaiseCanExecuteChanged();
+    }
+
+    private void RefreshFolderTree(bool force = false)
+    {
+        var now = DateTime.UtcNow;
+        if (!force && now - _folderTreeRefreshUtc < TimeSpan.FromSeconds(1.5))
+        {
+            return;
+        }
+
+        _folderTreeRefreshUtc = now;
+        var jobId = _runningJobId ?? _lastProgress?.JobId ?? _lastJob?.Id;
+        if (!string.Equals(jobId, _folderTreeJobId, StringComparison.OrdinalIgnoreCase))
+        {
+            _expandedFolders.Clear();
+            _folderTreeJobId = jobId;
+        }
+        else
+        {
+            _expandedFolders.Clear();
+            FolderTreeItem.CollectExpanded(FolderTree, _expandedFolders);
+        }
+
+        IReadOnlyList<FileRecord> files;
+        try
+        {
+            files = _scheduler.LoadJournalFiles(jobId);
+        }
+        catch
+        {
+            files = [];
+        }
+
+        if (files.Count == 0)
+        {
+            FolderTree.Clear();
+            FolderTreeEmpty = true;
+            return;
+        }
+
+        var bps = 0d;
+        if (_lastProgress is { } progress)
+        {
+            var elapsed = progress.StartedUtc is { } started
+                ? DateTimeOffset.UtcNow - started
+                : TimeSpan.Zero;
+            bps = ByteFormatter.EffectiveRate(progress.BytesPerSecond, progress.BytesCopied, elapsed);
+        }
+
+        var sourceName = Path.GetFileName((_lastJob?.SourcePath ?? SourcePath).TrimEnd('\\', '/'));
+        var nodes = Mercury.FolderTree.Build(files, bps, string.IsNullOrEmpty(sourceName) ? null : sourceName);
+        FolderTree.Clear();
+        foreach (var node in nodes)
+        {
+            FolderTree.Add(new FolderTreeItem(node, _expandedFolders));
+        }
+
+        FolderTreeEmpty = FolderTree.Count == 0;
+    }
+
+    private void RaiseLandingPreview()
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LandingPreview)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowLandingPreview)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IncludeSourceFolderNameApplies)));
     }
 
     private void RaiseRunCommands()

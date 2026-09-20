@@ -29,46 +29,48 @@
         </Border>
 
         <Border DockPanel.Dock="Top" Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="HeaderBrush">
-            <Border Background="{DynamicResource HeaderBrush}" Padding="14,12" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
+            <Border Background="{DynamicResource HeaderBrush}" Padding="10,6" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
                 <StackPanel>
                     <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Body">
-                        <TextBlock Text="Progress" FontWeight="SemiBold" Margin="0,0,0,6" Foreground="{DynamicResource OnHeaderBrush}"
+                        <TextBlock Text="Progress" FontWeight="SemiBold" Margin="0,0,0,2" Foreground="{DynamicResource OnHeaderBrush}"
                                    FontFamily="{DynamicResource BodyFontFamily}" FontSize="{DynamicResource BodyFontSize}"/>
                     </Border>
-                    <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Body">
-                        <TextBlock Text="Current" FontWeight="SemiBold" Margin="0,0,0,4" HorizontalAlignment="Left"
-                                   Foreground="{DynamicResource OnHeaderBrush}"
-                                   FontFamily="{DynamicResource BodyFontFamily}" FontSize="{DynamicResource BodyFontSize}"/>
-                    </Border>
-                    <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="HeaderBarFillBrush,HeaderBarTrackBrush">
-                        <ProgressBar Value="{Binding JobPercent, Mode=OneWay}" Maximum="100"
-                                     Foreground="{DynamicResource HeaderBarFillBrush}"
-                                     Background="{DynamicResource HeaderBarTrackBrush}"/>
-                    </Border>
-                    <StackPanel Visibility="{Binding ShowOverallProgress, Converter={StaticResource BoolToVis}}">
-                        <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Body">
-                            <TextBlock Text="Overall" FontWeight="SemiBold" Margin="0,8,0,4" HorizontalAlignment="Left"
-                                       Foreground="{DynamicResource OnHeaderBrush}"
-                                       FontFamily="{DynamicResource BodyFontFamily}" FontSize="{DynamicResource BodyFontSize}"/>
-                        </Border>
+                    <StackPanel Visibility="{Binding ShowProgressDetail, Converter={StaticResource BoolToVis}}">
                         <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="HeaderBarFillBrush,HeaderBarTrackBrush">
-                            <ProgressBar Value="{Binding OverallPercent, Mode=OneWay}" Maximum="100"
+                            <ProgressBar Value="{Binding JobPercent, Mode=OneWay}" Maximum="100" Height="10"
                                          Foreground="{DynamicResource HeaderBarFillBrush}"
                                          Background="{DynamicResource HeaderBarTrackBrush}"/>
                         </Border>
+                        <StackPanel Visibility="{Binding ShowOverallProgress, Converter={StaticResource BoolToVis}}">
+                            <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Body">
+                                <TextBlock Text="Overall" FontWeight="SemiBold" Margin="0,4,0,2" HorizontalAlignment="Left"
+                                           Foreground="{DynamicResource OnHeaderBrush}"
+                                           FontFamily="{DynamicResource BodyFontFamily}" FontSize="{DynamicResource BodyFontSize}"/>
+                            </Border>
+                            <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="HeaderBarFillBrush,HeaderBarTrackBrush">
+                                <ProgressBar Value="{Binding OverallPercent, Mode=OneWay}" Maximum="100" Height="10"
+                                             Foreground="{DynamicResource HeaderBarFillBrush}"
+                                             Background="{DynamicResource HeaderBarTrackBrush}"/>
+                            </Border>
+                        </StackPanel>
+                        <local:ProgressStatsLine DataContext="{Binding HeaderStats}" Foreground="{DynamicResource OnHeaderBrush}"/>
+                        <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OkBrush,DangerBrush">
+                            <TextBlock Text="{Binding ResultBanner}" Foreground="{Binding ResultBrush}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                        </Border>
+                        <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Progress">
+                            <TextBlock Text="{Binding HeaderRundownLine}" TextWrapping="Wrap" Margin="0,2,0,0"
+                                       Foreground="{DynamicResource OnHeaderBrush}"
+                                       FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}"
+                                       Visibility="{Binding ShowHeaderRundown, Converter={StaticResource BoolToVis}}"/>
+                        </Border>
+                        <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="WarnBrush">
+                            <TextBlock Text="This destination looks like a cloud-synced folder. Mercury verifies the local copy, not the cloud upload."
+                                       Foreground="{DynamicResource WarnBrush}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0"
+                                       Visibility="{Binding CloudWarning, Converter={StaticResource BoolToVis}}"/>
+                        </Border>
                     </StackPanel>
-                    <local:ProgressStatsLine DataContext="{Binding HeaderStats}" Foreground="{DynamicResource OnHeaderBrush}"/>
-                    <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OkBrush,DangerBrush">
-                        <TextBlock Text="{Binding ResultBanner}" Foreground="{Binding ResultBrush}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,4,0,0"/>
-                    </Border>
-                    <local:TransferRundownBlock DataContext="{Binding HeaderRundown}" Foreground="{DynamicResource OnHeaderBrush}"/>
-                    <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="WarnBrush">
-                        <TextBlock Text="This destination looks like a cloud-synced folder. Mercury verifies the local copy, not the cloud upload."
-                                   Foreground="{DynamicResource WarnBrush}"
-                                   TextWrapping="Wrap"
-                                   Margin="0,6,0,0"
-                                   Visibility="{Binding CloudWarning, Converter={StaticResource BoolToVis}}"/>
-                    </Border>
                 </StackPanel>
             </Border>
         </Border>
@@ -159,6 +161,19 @@
                     <TextBlock Text="{Binding CatcherTransferHint}" TextWrapping="Wrap" Margin="0,4,0,0"
                                Foreground="{DynamicResource MutedBrush}"/>
                                 </StackPanel>
+
+                                <CheckBox Margin="90,8,0,0"
+                                          Content="Include source folder name"
+                                          IsChecked="{Binding IncludeSourceFolderName}"
+                                          IsEnabled="{Binding IncludeSourceFolderNameApplies}"
+                                          Visibility="{Binding DestIsFolder, Converter={StaticResource BoolToVis}}"
+                                          ToolTip="On (default, like Explorer): dest gets a folder named after the source. Off: files and subfolders land directly in dest (robocopy style). Drive roots always dump contents into dest. Single files always land as dest\filename."/>
+                                <TextBlock Margin="90,6,0,8"
+                                           Text="{Binding LandingPreview}"
+                                           TextWrapping="Wrap"
+                                           Foreground="{DynamicResource MutedBrush}"
+                                           Visibility="{Binding ShowLandingPreview, Converter={StaticResource BoolToVis}}"
+                                           ToolTip="Where this job will create the top folder or file. If you browse Destination inside a previous copy, this path nests the source folder name again."/>
                             </StackPanel>
                         </GroupBox>
                         </Border>
@@ -434,6 +449,65 @@
                         </ListBox.ItemTemplate>
                     </ListBox>
                     </Border>
+                </DockPanel>
+            </TabItem>
+            <TabItem Header="Tree">
+                <DockPanel Margin="10">
+                    <TextBlock DockPanel.Dock="Top"
+                               Text="No job yet. Start or resume a copy to see source folders here."
+                               Foreground="{DynamicResource MutedBrush}"
+                               Margin="0,8,0,0"
+                               Visibility="{Binding FolderTreeEmpty, Converter={StaticResource BoolToVis}}"/>
+                    <DockPanel Visibility="{Binding FolderTreeEmpty, Converter={StaticResource InverseBoolToVis}}">
+                        <Grid DockPanel.Dock="Top" Margin="20,0,8,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="72"/>
+                                <ColumnDefinition Width="72"/>
+                                <ColumnDefinition Width="56"/>
+                                <ColumnDefinition Width="72"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Folder" FontWeight="SemiBold" Foreground="{DynamicResource MutedBrush}"/>
+                            <TextBlock Grid.Column="1" Text="Files" FontWeight="SemiBold" TextAlignment="Right" Foreground="{DynamicResource MutedBrush}"/>
+                            <TextBlock Grid.Column="2" Text="Subdirs" FontWeight="SemiBold" TextAlignment="Right" Foreground="{DynamicResource MutedBrush}"/>
+                            <TextBlock Grid.Column="3" Text="Done" FontWeight="SemiBold" TextAlignment="Right" Foreground="{DynamicResource MutedBrush}"/>
+                            <TextBlock Grid.Column="4" Text="ETA" FontWeight="SemiBold" TextAlignment="Right" Foreground="{DynamicResource MutedBrush}"/>
+                        </Grid>
+                        <TreeView ItemsSource="{Binding FolderTree}"
+                                  Background="Transparent"
+                                  BorderThickness="0"
+                                  Foreground="{DynamicResource TextBrush}"
+                                  FontFamily="{DynamicResource BodyFontFamily}"
+                                  FontSize="12"
+                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <TreeView.ItemContainerStyle>
+                                <Style TargetType="TreeViewItem">
+                                    <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+                                    <Setter Property="Padding" Value="0,1"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                </Style>
+                            </TreeView.ItemContainerStyle>
+                            <TreeView.ItemTemplate>
+                                <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                                    <Grid Margin="0,1">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="72"/>
+                                            <ColumnDefinition Width="72"/>
+                                            <ColumnDefinition Width="56"/>
+                                            <ColumnDefinition Width="72"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding FilesText}" TextAlignment="Right" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding SubdirsText}" TextAlignment="Right" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="3" Text="{Binding PercentText}" TextAlignment="Right" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="4" Text="{Binding EtaText}" TextAlignment="Right" VerticalAlignment="Center"/>
+                                    </Grid>
+                                </HierarchicalDataTemplate>
+                            </TreeView.ItemTemplate>
+                        </TreeView>
+                    </DockPanel>
                 </DockPanel>
             </TabItem>
             <TabItem Header="Console">

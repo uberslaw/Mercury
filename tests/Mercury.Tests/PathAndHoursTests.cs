@@ -36,10 +36,124 @@ public class CopyShapeTests
             var mapping = CopyShape.Resolve(src, dest);
             Assert.Equal(SourceKind.Folder, mapping.Kind);
             Assert.Equal(Path.Combine(dest, Path.GetFileName(src)), mapping.DestRoot, ignoreCase: true);
+            Assert.Equal(mapping.DestRoot, CopyShape.LandingPath(mapping), ignoreCase: true);
         }
         finally
         {
             Directory.Delete(src, true);
+            Directory.Delete(dest, true);
+        }
+    }
+
+    [Fact]
+    public void FolderContentsOnlyWhenIncludeSourceFolderNameOff()
+    {
+        var src = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "mercury-shape-src-" + Guid.NewGuid().ToString("N")[..8])).FullName;
+        var dest = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "mercury-shape-dst-" + Guid.NewGuid().ToString("N")[..8])).FullName;
+        try
+        {
+            var mapping = CopyShape.Resolve(src, dest, includeSourceFolderName: false);
+            Assert.Equal(SourceKind.Folder, mapping.Kind);
+            Assert.Equal(dest, mapping.DestRoot, ignoreCase: true);
+        }
+        finally
+        {
+            Directory.Delete(src, true);
+            Directory.Delete(dest, true);
+        }
+    }
+
+    [Fact]
+    public void DriveRootDumpsContentsIntoDest()
+    {
+        var dest = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "mercury-shape-drv-" + Guid.NewGuid().ToString("N")[..8])).FullName;
+        try
+        {
+            var mapping = CopyShape.Resolve(@"C:\", dest);
+            Assert.Equal(SourceKind.DriveRoot, mapping.Kind);
+            Assert.False(mapping.SingleFile);
+            Assert.Equal(dest, mapping.DestRoot, ignoreCase: true);
+        }
+        finally
+        {
+            Directory.Delete(dest, true);
+        }
+    }
+
+    [Fact]
+    public void FolderOntoDriveRootKeepsSeparator()
+    {
+        var src = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "mercury-shape-root-" + Guid.NewGuid().ToString("N")[..8])).FullName;
+        try
+        {
+            var mapping = CopyShape.Resolve(src, @"C:\");
+            var expected = Path.Combine(@"C:\", Path.GetFileName(src));
+            Assert.Equal(expected, mapping.DestRoot, ignoreCase: true);
+            Assert.StartsWith(@"C:\", mapping.DestRoot, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            Directory.Delete(src, true);
+        }
+    }
+
+    [Fact]
+    public void NestedFilesLandUnderSourceFolderName()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mercury-nest-" + Guid.NewGuid().ToString("N"));
+        var src = Path.Combine(root, "src");
+        var dest = Path.Combine(root, "dest");
+        Directory.CreateDirectory(Path.Combine(src, "A", "B"));
+        Directory.CreateDirectory(dest);
+        File.WriteAllText(Path.Combine(src, "A", "B", "c.txt"), "x");
+        try
+        {
+            var wrapped = CopyShape.Resolve(src, dest);
+            var wrappedFiles = SourceWalker.Walk(wrapped).ToList();
+            Assert.Single(wrappedFiles);
+            Assert.Equal(Path.Combine("A", "B", "c.txt"), wrappedFiles[0].RelativePath);
+            Assert.Equal(Path.Combine(dest, "src", "A", "B", "c.txt"), wrappedFiles[0].DestPath, ignoreCase: true);
+
+            var contents = CopyShape.Resolve(src, dest, includeSourceFolderName: false);
+            var contentFiles = SourceWalker.Walk(contents).ToList();
+            Assert.Single(contentFiles);
+            Assert.Equal(Path.Combine(dest, "A", "B", "c.txt"), contentFiles[0].DestPath, ignoreCase: true);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void PreviewShowsNestedFolderWhenDestIsInsidePreviousCopy()
+    {
+        var preview = CopyShape.PreviewLandingPath(
+            @"D:\story bridge",
+            @"X:\x\story bridge photos",
+            includeSourceFolderName: true);
+        Assert.Equal(@"X:\x\story bridge photos\story bridge", preview, ignoreCase: true);
+    }
+
+    [Fact]
+    public void PreviewDriveRootAndFile()
+    {
+        Assert.Equal(
+            @"E:\backup",
+            CopyShape.PreviewLandingPath(@"D:\", @"E:\backup"),
+            ignoreCase: true);
+
+        var dir = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "mercury-prev-" + Guid.NewGuid().ToString("N")[..8])).FullName;
+        var dest = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "mercury-prev-dst-" + Guid.NewGuid().ToString("N")[..8])).FullName;
+        var file = Path.Combine(dir, "note.txt");
+        File.WriteAllText(file, "hi");
+        try
+        {
+            Assert.Equal(Path.Combine(dest, "note.txt"), CopyShape.PreviewLandingPath(file, dest), ignoreCase: true);
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
             Directory.Delete(dest, true);
         }
     }

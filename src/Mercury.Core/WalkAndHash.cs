@@ -311,7 +311,10 @@ public static class SourceWalker
         return false;
     }
 
-    public static TreeCounts CountSource(CopyMapping mapping, JobOptions? options = null)
+    public static TreeCounts CountSource(
+        CopyMapping mapping,
+        JobOptions? options = null,
+        CancellationToken cancellationToken = default)
     {
         if (mapping.SingleFile)
         {
@@ -342,10 +345,10 @@ public static class SourceWalker
             excludes.Add(mapping.DestRoot);
         }
 
-        return CountTree(mapping.SourceRoot, excludes, skipMercuryTemp: false, options);
+        return CountTree(mapping.SourceRoot, excludes, skipMercuryTemp: false, options, cancellationToken);
     }
 
-    public static TreeCounts CountDest(CopyMapping mapping)
+    public static TreeCounts CountDest(CopyMapping mapping, CancellationToken cancellationToken = default)
     {
         if (mapping.SingleFile)
         {
@@ -353,14 +356,15 @@ public static class SourceWalker
             return File.Exists(destFile) ? new TreeCounts(1, 0) : default;
         }
 
-        return CountTree(mapping.DestRoot, extraExcludeRoots: null, skipMercuryTemp: true, options: null);
+        return CountTree(mapping.DestRoot, extraExcludeRoots: null, skipMercuryTemp: true, options: null, cancellationToken);
     }
 
     public static TreeCounts CountTree(
         string root,
         IEnumerable<string>? extraExcludeRoots = null,
         bool skipMercuryTemp = false,
-        JobOptions? options = null)
+        JobOptions? options = null,
+        CancellationToken cancellationToken = default)
     {
         if (File.Exists(root))
         {
@@ -375,7 +379,7 @@ public static class SourceWalker
         var excludes = extraExcludeRoots?.ToList() ?? [];
         var files = 0;
         var folders = 0;
-        CountDirectory(root, excludes, skipMercuryTemp, options, ref files, ref folders);
+        CountDirectory(root, excludes, skipMercuryTemp, options, ref files, ref folders, cancellationToken);
         return new TreeCounts(files, folders);
     }
 
@@ -385,8 +389,10 @@ public static class SourceWalker
         bool skipMercuryTemp,
         JobOptions? options,
         ref int files,
-        ref int folders)
+        ref int folders,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         IEnumerable<string> filePaths;
         try
         {
@@ -454,7 +460,7 @@ public static class SourceWalker
                 continue;
             }
 
-            CountDirectory(info.FullName, excludes, skipMercuryTemp, options, ref files, ref folders);
+            CountDirectory(info.FullName, excludes, skipMercuryTemp, options, ref files, ref folders, cancellationToken);
         }
     }
 

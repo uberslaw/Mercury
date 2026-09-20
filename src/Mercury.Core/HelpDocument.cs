@@ -20,7 +20,7 @@ public static class HelpDocument
                 "Jobs can pause, resume, and verify that destination files match. There is no installer.\n\n" +
                 "Data defaults to %APPDATA%\\Mercury so journals survive swapping the exe. Open the Settings tab for every file Mercury writes. " +
                 "Use portable mode (beside the exe) only if you want a USB toolkit copy.\n\n" +
-                "This Help tab is searchable. Sections: Transfer, Job options, RoboFlags, Progress, Queue, Console, History, Network, Catcher setup, Theme, Settings."
+                "This Help tab is searchable. Sections: Transfer, Job options, RoboFlags, Progress, Tree, Queue, Console, History, Network, Catcher setup, Theme, Settings."
         },
         new()
         {
@@ -29,7 +29,9 @@ public static class HelpDocument
             Body =
                 "Source and Destination accept browse, paste, or drag-drop. Destination can be a folder or Catcher (HTTPS). " +
                 "Browse Source remembers the last Source folder; Browse Destination remembers the last Destination. Recents stay independent.\n\n" +
-                "Start runs the job now. Add to queue stores it for later. Resume last continues the journal of the last job (including deferred files).\n\n" +
+                "A selected folder copies as dest\\FolderName (Explorer-style) — pick the parent destination; the Will land in line under Destination shows the full path before Start, so browsing into a previous copy will nest FolderName again.\n\n" +
+                "Start runs the job now. Add to queue stores it for later. Resume last continues the journal of the last job (including deferred files). " +
+                "Before resume, Mercury asks whether to check the source for changes first (Yes = walk vs journal, cancellable; No = journal as-is).\n\n" +
                 "Pause stops between chunks of the current file (temp .mercury.tmp stays until you Resume). " +
                 "Pause after this file finishes the file in flight, then pauses — it will not cut the temp mid-stream. " +
                 "The button becomes Remove Pause after while waiting; click it to cancel. " +
@@ -89,11 +91,22 @@ public static class HelpDocument
             Title = "Progress header",
             Body =
                 "The pink header is Progress. Current is always the running job (bar, files, bytes, speed, ETA, stage). " +
+                "With no running or resumable job the header stays collapsed — no 0/0 files or empty rundown. A part-way last job still shows its last percent and counts so you can Resume last. " +
                 "When two or more jobs are in the queue, an Overall bar sits directly under Current, and file counts show " +
                 "both (example: Files: Current 12/400  Overall 50/2000). With one job, only Current is shown (Overall would duplicate it). " +
-                "Job: 2 of 5 is the running job’s place in the listed queue (Job: 1 of 1 when there is a single job). " +
+                "Job: 2 of 5 is the running job’s place in the listed queue (omitted when there is a single job). " +
                 "Stats use key: value (example: Files: 12/400). Speed during packing uses bytes copied over elapsed time when the instantaneous rate is still 0. " +
                 "During enumerate, Types shows a mix such as Video: 40 files, 2.1 TB."
+        },
+        new()
+        {
+            Id = "tree",
+            Title = "Tree tab",
+            Body =
+                "Folders only from the current or last job journal — not 125k file nodes. Each row: folder name, Files, Subdirs, Done %, ETA. " +
+                "Expand a folder for the same columns on child folders. Leaf folders show Subdirs as 0. Starts collapsed at the source’s immediate child folders. " +
+                "Done % is copied/unpacked/skipped bytes in that subtree versus the enumerated total there (file count if sizes are 0). " +
+                "ETA is remaining subtree bytes ÷ job speed, or — until speed exists. Idle with no job is empty."
         },
         new()
         {

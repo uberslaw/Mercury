@@ -84,6 +84,12 @@ public sealed class JobOptions
     public bool CopyDirectoryTimestamps { get; set; } = true;
     /// <summary>Create empty source folders at dest (/E vs /S). Default on.</summary>
     public bool CopyEmptyDirectories { get; set; } = true;
+    /// <summary>
+    /// Explorer-style: a selected folder copies as dest\FolderName\... Default on.
+    /// Drive roots (X:\) always dump contents into dest. Single files always dest\filename.
+    /// Off = robocopy-style: contents of the source folder land directly in dest.
+    /// </summary>
+    public bool IncludeSourceFolderName { get; set; } = true;
     /// <summary>Force write-through I/O cousin of /J. Default off. When off, Mercury auto-probes large sequential files.</summary>
     public bool UnbufferedIo { get; set; }
     /// <summary>Copy symbolic links as links (/SL). Default off: skip reparse (current behaviour), do not follow.</summary>
@@ -134,6 +140,8 @@ public sealed class Job
     public DateTimeOffset? ScheduledStart { get; set; }
     /// <summary>Queued job stays in list order but is skipped by auto-start until Unhold or Resume.</summary>
     public bool OnHold { get; set; }
+    /// <summary>One-shot resume: walk source vs journal before copying. Not a sticky default.</summary>
+    public bool ScanSourceOnResume { get; set; }
 
     /// <summary>
     /// When set, destination is a Catcher HTTPS listener instead of a folder.

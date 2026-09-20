@@ -11,13 +11,25 @@ public readonly record struct StatPair(string Key, string Value)
 
 public sealed class ProgressStats
 {
-    public static ProgressStats Idle { get; } = From(new JobProgress());
+    public static ProgressStats Idle { get; } = new()
+    {
+        Job = StatPair.Empty,
+        Files = StatPair.Empty,
+        Bytes = StatPair.Empty,
+        Speed = StatPair.Empty,
+        Eta = StatPair.Empty,
+        PauseAfter = StatPair.Empty,
+        Stage = StatPair.Empty,
+        Elapsed = StatPair.Empty,
+        ThisStage = StatPair.Empty,
+        Types = StatPair.Empty
+    };
 
-    public StatPair Job { get; init; } = new("Job", "1 of 1");
-    public StatPair Files { get; init; } = new("Files", "0/0");
-    public StatPair Bytes { get; init; } = new("Bytes", "0 B / 0 B");
-    public StatPair Speed { get; init; } = new("Speed", "0 B/s");
-    public StatPair Eta { get; init; } = new("ETA", "—");
+    public StatPair Job { get; init; } = StatPair.Empty;
+    public StatPair Files { get; init; } = StatPair.Empty;
+    public StatPair Bytes { get; init; } = StatPair.Empty;
+    public StatPair Speed { get; init; } = StatPair.Empty;
+    public StatPair Eta { get; init; } = StatPair.Empty;
     public StatPair PauseAfter { get; init; } = StatPair.Empty;
     public StatPair Stage { get; init; } = StatPair.Empty;
     public StatPair Elapsed { get; init; } = StatPair.Empty;
@@ -54,6 +66,9 @@ public sealed class ProgressStats
 
         var count = Math.Max(1, jobCount);
         var index = Math.Clamp(jobIndex, 1, count);
+        var jobPair = count > 1
+            ? new StatPair("Job", $"{index} of {count}")
+            : StatPair.Empty;
         var files = ProgressHeader.ShowOverall(jobCount) && overall is not null
             ? new StatPair("Files", $"Current {e.FilesCopied}/{e.FilesTotal}  Overall {overall.FilesCopied}/{overall.FilesTotal}")
             : new StatPair("Files", $"{e.FilesCopied}/{e.FilesTotal}");
@@ -65,13 +80,29 @@ public sealed class ProgressStats
             eta = TimeSpan.FromSeconds((e.BytesTotal - e.BytesCopied) / rate);
         }
 
+        var idleCounts = !live && e.FilesTotal == 0 && e.BytesTotal == 0 && e.FilesCopied == 0 && e.BytesCopied == 0;
+        if (idleCounts)
+        {
+            return new ProgressStats
+            {
+                Job = jobPair,
+                PauseAfter = pauseAfter ?? StatPair.Empty,
+                Stage = stage,
+                Elapsed = elapsed,
+                ThisStage = thisStage,
+                Types = string.IsNullOrWhiteSpace(e.TypeSummary)
+                    ? StatPair.Empty
+                    : new StatPair("Types", e.TypeSummary)
+            };
+        }
+
         return new ProgressStats
         {
-            Job = new StatPair("Job", $"{index} of {count}"),
+            Job = jobPair,
             Files = files,
             Bytes = new StatPair("Bytes", $"{ByteFormatter.ToString(e.BytesCopied)} / {ByteFormatter.ToString(e.BytesTotal)}"),
-            Speed = new StatPair("Speed", ByteFormatter.Speed(rate)),
-            Eta = new StatPair("ETA", ByteFormatter.Eta(eta)),
+            Speed = live ? new StatPair("Speed", ByteFormatter.Speed(rate)) : StatPair.Empty,
+            Eta = live ? new StatPair("ETA", ByteFormatter.Eta(eta)) : StatPair.Empty,
             PauseAfter = pauseAfter ?? StatPair.Empty,
             Stage = stage,
             Elapsed = elapsed,
