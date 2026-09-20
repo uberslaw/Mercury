@@ -74,8 +74,63 @@ public class TransferRundownTests
         Assert.False(one.Job.HasValue);
 
         var many = ProgressStats.From(current, jobIndex: 2, jobCount: 5, overall: overall);
-        Assert.Equal("Current 12/400  Overall 50/2000", many.Files.Value);
+        Assert.Equal("12/400", many.Files.Value);
+        Assert.Equal("50/2000", many.OverallFiles.Value);
         Assert.Equal("2 of 5", many.Job.Value);
+        Assert.Contains(many.TableCells, p => p.Key == "Job");
+        Assert.Contains(many.TableCells, p => p.Key == "Overall files");
+    }
+
+    [Fact]
+    public void RundownStatsUseFileRateAndAvoidDashEta()
+    {
+        var stats = ProgressStats.From(new JobProgress
+        {
+            Status = JobStatus.Completed,
+            Message = CopyPipeline.RundownMessage,
+            StageIndex = 6,
+            StageCount = 6,
+            StageName = CopyPipeline.RundownLabel,
+            FilesCopied = 12591,
+            FilesTotal = 12591,
+            BytesCopied = 1000,
+            BytesTotal = 1000,
+            RundownDone = 4000,
+            RundownTotal = 12591,
+            RundownPerSecond = 80,
+            Eta = TimeSpan.FromSeconds(107),
+            StartedUtc = DateTimeOffset.UtcNow.AddMinutes(-8),
+            StageStartedUtc = DateTimeOffset.UtcNow.AddSeconds(-20)
+        });
+
+        Assert.Equal("Stage: 6 of 6 — Writing rundown", stats.Stage.Display);
+        Assert.Equal("80 files/s", stats.Speed.Value);
+        Assert.DoesNotContain("—", stats.Eta.Value, StringComparison.Ordinal);
+        Assert.InRange(new JobProgress
+        {
+            StageName = CopyPipeline.RundownLabel,
+            RundownDone = 4000,
+            RundownTotal = 12591
+        }.Percent, 31, 33);
+    }
+
+    [Fact]
+    public void RundownEtaShowsEllipsisUntilRateExists()
+    {
+        var stats = ProgressStats.From(new JobProgress
+        {
+            Status = JobStatus.Completed,
+            Message = CopyPipeline.RundownMessage,
+            StageName = CopyPipeline.RundownLabel,
+            StageIndex = 6,
+            StageCount = 6,
+            RundownDone = 0,
+            RundownTotal = 100,
+            StartedUtc = DateTimeOffset.UtcNow
+        });
+
+        Assert.Equal("…", stats.Eta.Value);
+        Assert.Equal("…", stats.Speed.Value);
     }
 
     [Fact]
@@ -84,6 +139,9 @@ public class TransferRundownTests
         var progress = HelpDocument.Sections.Single(s => s.Id == "progress");
         Assert.Contains("Files: 12/400", progress.Body, StringComparison.Ordinal);
         Assert.Contains("Job: 2 of 5", progress.Body, StringComparison.Ordinal);
+        Assert.Contains("Job n of m is which queue item", progress.Body, StringComparison.Ordinal);
+        Assert.Contains("Stage is that job", progress.Body, StringComparison.Ordinal);
+        Assert.Contains("Rundown running in background", HelpDocument.Sections.Single(s => s.Id == "console").Body, StringComparison.Ordinal);
         Assert.DoesNotContain("Files; ", progress.Body, StringComparison.Ordinal);
 
         var options = HelpDocument.Sections.Single(s => s.Id == "options");

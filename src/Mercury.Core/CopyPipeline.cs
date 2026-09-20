@@ -16,6 +16,13 @@ public readonly record struct CopyStage(CopyStageKind Kind, string Label);
 
 public static class CopyPipeline
 {
+    public const string RundownLabel = "Writing rundown";
+    public const string RundownMessage = "Writing rundown…";
+
+    public static bool IsRundown(string? stageName, string? message = null) =>
+        string.Equals(stageName, RundownLabel, StringComparison.Ordinal)
+        || string.Equals(message, RundownMessage, StringComparison.Ordinal);
+
     public static IReadOnlyList<CopyStage> For(Job job, bool hasJournalFiles, bool pack)
     {
         var catcher = job.Catcher is not null;
@@ -60,7 +67,7 @@ public static class CopyPipeline
             stages.Add(new(CopyStageKind.Verifying, "Verifying"));
         }
 
-        stages.Add(new(CopyStageKind.Rundown, "Writing rundown"));
+        stages.Add(new(CopyStageKind.Rundown, RundownLabel));
         return stages;
     }
 

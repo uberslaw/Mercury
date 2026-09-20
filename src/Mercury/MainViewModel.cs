@@ -75,6 +75,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private double _jobPercent;
     private double _overallPercent;
     private bool _isRunning;
+    private bool _hasBackgroundRundown;
     private bool _isPaused;
     private bool _portableData;
     private string _helpSearch = "";
@@ -158,12 +159,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         PauseCommand = new RelayCommand(Pause, () => IsRunning && !IsPaused);
         PauseAfterThisFileCommand = new RelayCommand(PauseAfterThisFile, CanPauseAfterThisFile);
         ResumePausedCommand = new RelayCommand(ResumePaused, () => IsRunning && IsPaused);
-        StopCommand = new RelayCommand(Stop, () => IsRunning);
+        StopCommand = new RelayCommand(Stop, () => IsRunning || HasBackgroundRundown);
         ResumeLastCommand = new RelayCommand(ResumeLast, () => !IsRunning && CanResumeLast);
-        BrowseSourceCommand = new RelayCommand(BrowseSource);
-        BrowseDestCommand = new RelayCommand(BrowseDest);
-        PickRecentSourceCommand = new RelayCommand(p => ApplyRecent(isSource: true, p as string));
-        PickRecentDestCommand = new RelayCommand(p => ApplyRecent(isSource: false, p as string));
+        BrowseSourceCommand = new RelayCommand(BrowseSource, () => PathsEditable);
+        BrowseDestCommand = new RelayCommand(BrowseDest, () => PathsEditable);
         PauseAllCommand = new RelayCommand(PauseAll, () => IsRunning && !IsGlobalPaused);
         ResumeAllCommand = new RelayCommand(ResumeAll, () => IsRunning && IsGlobalPaused);
         SaveJobCommand = new RelayCommand(SaveCurrentJob, () => !string.IsNullOrWhiteSpace(SourcePath) && (DestIsCatcher ? SelectedCatcherTemplate is not null : !string.IsNullOrWhiteSpace(DestPath)));
@@ -231,8 +230,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public ICommand ResumeLastCommand { get; }
     public ICommand BrowseSourceCommand { get; }
     public ICommand BrowseDestCommand { get; }
-    public ICommand PickRecentSourceCommand { get; }
-    public ICommand PickRecentDestCommand { get; }
     public ICommand SaveJobCommand { get; }
     public ICommand ToggleRoboFlagsCommand { get; }
     public ICommand LoadSavedJobCommand { get; }
@@ -579,14 +576,30 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public double JobPercent
     {
         get => _jobPercent;
-        set => SetField(ref _jobPercent, value);
+        set
+        {
+            if (SetField(ref _jobPercent, value))
+            {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JobPercentText)));
+            }
+        }
     }
 
     public double OverallPercent
     {
         get => _overallPercent;
-        set => SetField(ref _overallPercent, value);
+        set
+        {
+            if (SetField(ref _overallPercent, value))
+            {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(OverallPercentText)));
+            }
+        }
     }
+
+    public string JobPercentText => ProgressHeader.PercentLabel(JobPercent);
+
+    public string OverallPercentText => ProgressHeader.PercentLabel(OverallPercent);
 
     public bool ShowOverallProgress => ProgressHeader.ShowOverall(QueueJobs.Count);
     public ProgressStats HeaderStats => JobStats;
@@ -595,6 +608,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool ShowHeaderRundown => ShowProgressDetail && !string.IsNullOrWhiteSpace(Rundown.OneLine);
     public bool ShowProgressDetail =>
         IsRunning
+        || HasBackgroundRundown
         || !string.IsNullOrWhiteSpace(ResultBanner)
         || Rundown.IsVisible
         || JobPercent > 0.05
@@ -604,7 +618,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool FolderTreeEmpty
     {
         get => _folderTreeEmpty;
-        private set => SetField(ref _folderTreeEmpty, value);
+        internal set => SetField(ref _folderTreeEmpty, value);
     }
 
     public string PauseAfterThisFileLabel =>
@@ -789,33 +803,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public bool HasSelectedHistoryItem => SelectedHistoryItem is not null;
 
-    public string? PickedRecentSource
-    {
-        get => null;
-        set
-        {
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                ApplyRecent(isSource: true, value);
-            }
-
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PickedRecentSource)));
-        }
-    }
-
-    public string? PickedRecentDest
-    {
-        get => null;
-        set
-        {
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                ApplyRecent(isSource: false, value);
-            }
-
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PickedRecentDest)));
-        }
-    }
+    public bool PathsEditable => !IsRunning || IsPaused;
 
     public bool IsRunning
     {
@@ -827,6 +815,20 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 RaiseRunCommands();
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowProgressDetail)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowHeaderRundown)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PathsEditable)));
+            }
+        }
+    }
+
+    public bool HasBackgroundRundown
+    {
+        get => _hasBackgroundRundown;
+        set
+        {
+            if (SetField(ref _hasBackgroundRundown, value))
+            {
+                RaiseRunCommands();
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowProgressDetail)));
             }
         }
     }
@@ -839,6 +841,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             if (SetField(ref _isPaused, value))
             {
                 RaiseRunCommands();
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PathsEditable)));
             }
         }
     }
@@ -868,12 +871,22 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public void SetDroppedSource(string path)
     {
+        if (!PathsEditable)
+        {
+            return;
+        }
+
         SourcePath = path;
         RememberPath(isSource: true, path);
     }
 
     public void SetDroppedDest(string path)
     {
+        if (!PathsEditable)
+        {
+            return;
+        }
+
         DestPath = path;
         RememberPath(isSource: false, path);
     }
@@ -1745,23 +1758,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         return file.ShowDialog() == true ? file.FileName : null;
     }
 
-    private void ApplyRecent(bool isSource, string? path)
-    {
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            return;
-        }
-
-        if (isSource)
-        {
-            SourcePath = path;
-        }
-        else
-        {
-            DestPath = path;
-        }
-    }
-
     private void RememberPath(bool isSource, string path)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -1870,10 +1866,44 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private static void Replace<T>(ObservableCollection<T> target, IEnumerable<T> items)
     {
-        target.Clear();
-        foreach (var item in items)
+        var next = items as IList<T> ?? items.ToList();
+        var comparer = EqualityComparer<T>.Default;
+        var same = target.Count == next.Count;
+        if (same)
         {
-            target.Add(item);
+            for (var i = 0; i < next.Count; i++)
+            {
+                if (!comparer.Equals(target[i], next[i]))
+                {
+                    same = false;
+                    break;
+                }
+            }
+        }
+
+        if (same)
+        {
+            return;
+        }
+
+        for (var i = 0; i < next.Count; i++)
+        {
+            if (i < target.Count)
+            {
+                if (!comparer.Equals(target[i], next[i]))
+                {
+                    target[i] = next[i];
+                }
+            }
+            else
+            {
+                target.Add(next[i]);
+            }
+        }
+
+        while (target.Count > next.Count)
+        {
+            target.RemoveAt(target.Count - 1);
         }
     }
 
@@ -1956,6 +1986,18 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
 
         _lastProgress = e;
+        if (e.IsRundownStage && _scheduler.BlocksStart)
+        {
+            var copy = _scheduler.TryGetRunningJob();
+            if (copy is not null && copy.Id != e.JobId)
+            {
+                var rundownRow = QueueJobs.FirstOrDefault(j => j.Job.Id == e.JobId);
+                rundownRow?.ApplyProgress(e);
+                RefreshRunState();
+                return;
+            }
+        }
+
         JobStats = ComposeStats(e);
         var overall = _scheduler.GetOverallProgress();
         JobPercent = e.Percent;
@@ -1971,7 +2013,19 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             CloseWindowRequested?.Invoke();
             return;
         }
-        if (e.Status is JobStatus.Completed or JobStatus.Incomplete or JobStatus.Cancelled or JobStatus.Failed)
+        if (e.IsRundownStage)
+        {
+            var running = _scheduler.TryGetRunningJob(e.JobId) ?? _scheduler.TryGetRundownJob(e.JobId)
+                          ?? _scheduler.TryGetRunningJob() ?? _scheduler.TryGetRundownJob();
+            if (running is not null)
+            {
+                Rundown = TransferRundown.From(running);
+            }
+
+            EnsureElapsedTimer();
+            _elapsedTimer?.Start();
+        }
+        else if (e.Status is JobStatus.Completed or JobStatus.Incomplete or JobStatus.Cancelled or JobStatus.Failed)
         {
             _elapsedTimer?.Stop();
             var finished = QueueJobs.FirstOrDefault(j => j.Job.Id == e.JobId)?.Job
@@ -2001,7 +2055,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         NotifyHeader();
         RefreshRunState();
         NotifyPauseAfter();
-        RefreshFolderTree(force: e.Status is JobStatus.Completed or JobStatus.Incomplete or JobStatus.Cancelled or JobStatus.Failed);
+        RefreshFolderTree(force: !e.IsRundownStage && e.Status is JobStatus.Completed or JobStatus.Incomplete or JobStatus.Cancelled or JobStatus.Failed);
     }
 
     private void EnsureCatcherProbe()
@@ -2161,6 +2215,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowProgressDetail)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JobPercent)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(OverallPercent)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JobPercentText)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(OverallPercentText)));
     }
 
     private ProgressStats ComposeStats(JobProgress current, bool includeStage = true)
@@ -2193,8 +2249,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private void RefreshRunState()
     {
         var running = _scheduler.TryGetRunningJob();
-        _runningJobId = running?.Id;
+        var rundown = running is null ? _scheduler.TryGetRundownJob() : null;
+        _runningJobId = running?.Id ?? rundown?.Id;
         IsRunning = _scheduler.BlocksStart;
+        HasBackgroundRundown = _scheduler.HasBackgroundRundown;
         IsPaused = running is { Status: JobStatus.Paused };
         IsGlobalPaused = _scheduler.GlobalPause.IsPaused;
         RaiseRunCommands();
@@ -2521,6 +2579,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         (MoveQueueJobDownCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (ExportCatcherCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (DeleteCatcherCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (BrowseSourceCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (BrowseDestCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 
     private bool SetField<T>(ref T field, T value, [CallerMemberName] string? name = null)

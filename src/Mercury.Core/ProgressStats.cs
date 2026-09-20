@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Mercury;
 
 public readonly record struct StatPair(string Key, string Value)
@@ -35,6 +37,19 @@ public sealed class ProgressStats
     public StatPair Elapsed { get; init; } = StatPair.Empty;
     public StatPair ThisStage { get; init; } = StatPair.Empty;
     public StatPair Types { get; init; } = StatPair.Empty;
+    public StatPair OverallFiles { get; init; } = StatPair.Empty;
+
+    public IReadOnlyList<StatPair> TableCells
+    {
+        get
+        {
+            StatPair[] all =
+            [
+                Job, Stage, Elapsed, ThisStage, Files, OverallFiles, Bytes, Speed, Eta, PauseAfter, Types
+            ];
+            return all.Where(p => p.HasValue).ToArray();
+        }
+    }
 
     public static ProgressStats From(
         JobProgress e,
@@ -48,7 +63,7 @@ public sealed class ProgressStats
         var clock = now ?? DateTimeOffset.UtcNow;
         var live = e.Status is JobStatus.Preparing or JobStatus.Enumerating or JobStatus.Copying
             or JobStatus.Verifying or JobStatus.Paused or JobStatus.PausedOutsideHours
-            || string.Equals(e.Message, "Writing rundown…", StringComparison.Ordinal)
+            || e.IsRundownStage
             || string.Equals(e.Message, "Retrying deferred files", StringComparison.Ordinal);
         var showStage = includeStage && live && e.StageIndex > 0 && e.StageCount > 0 && !string.IsNullOrWhiteSpace(e.StageName);
         var stageName = string.Equals(e.Message, "Retrying deferred files", StringComparison.Ordinal)
@@ -69,16 +84,27 @@ public sealed class ProgressStats
         var jobPair = count > 1
             ? new StatPair("Job", $"{index} of {count}")
             : StatPair.Empty;
-        var files = ProgressHeader.ShowOverall(jobCount) && overall is not null
-            ? new StatPair("Files", $"Current {e.FilesCopied}/{e.FilesTotal}  Overall {overall.FilesCopied}/{overall.FilesTotal}")
-            : new StatPair("Files", $"{e.FilesCopied}/{e.FilesTotal}");
+        var files = new StatPair("Files", $"{e.FilesCopied}/{e.FilesTotal}");
+        var overallFiles = ProgressHeader.ShowOverall(jobCount) && overall is not null
+            ? new StatPair("Overall files", $"{overall.FilesCopied}/{overall.FilesTotal}")
+            : StatPair.Empty;
 
+        var rundown = e.IsRundownStage;
         var rate = ByteFormatter.EffectiveRate(e.BytesPerSecond, e.BytesCopied, e.ElapsedAt(clock));
         var eta = e.Eta;
-        if (eta is null && rate >= 1 && e.BytesTotal > e.BytesCopied)
+        if (!rundown && eta is null && rate >= 1 && e.BytesTotal > e.BytesCopied)
         {
             eta = TimeSpan.FromSeconds((e.BytesTotal - e.BytesCopied) / rate);
         }
+
+        var speedPair = !live
+            ? StatPair.Empty
+            : rundown
+                ? new StatPair("Speed", FormatRundownSpeed(e.RundownPerSecond))
+                : new StatPair("Speed", ByteFormatter.Speed(rate));
+        var etaPair = !live
+            ? StatPair.Empty
+            : new StatPair("ETA", rundown && eta is null ? "…" : ByteFormatter.Eta(eta));
 
         var idleCounts = !live && e.FilesTotal == 0 && e.BytesTotal == 0 && e.FilesCopied == 0 && e.BytesCopied == 0;
         if (idleCounts)
@@ -100,9 +126,10 @@ public sealed class ProgressStats
         {
             Job = jobPair,
             Files = files,
+            OverallFiles = overallFiles,
             Bytes = new StatPair("Bytes", $"{ByteFormatter.ToString(e.BytesCopied)} / {ByteFormatter.ToString(e.BytesTotal)}"),
-            Speed = live ? new StatPair("Speed", ByteFormatter.Speed(rate)) : StatPair.Empty,
-            Eta = live ? new StatPair("ETA", ByteFormatter.Eta(eta)) : StatPair.Empty,
+            Speed = speedPair,
+            Eta = etaPair,
             PauseAfter = pauseAfter ?? StatPair.Empty,
             Stage = stage,
             Elapsed = elapsed,
@@ -111,5 +138,20 @@ public sealed class ProgressStats
                 ? StatPair.Empty
                 : new StatPair("Types", e.TypeSummary)
         };
+    }
+
+    private static string FormatRundownSpeed(double filesPerSecond)
+    {
+        if (filesPerSecond < 0.05)
+        {
+            return "…";
+        }
+
+        if (filesPerSecond >= 10)
+        {
+            return filesPerSecond.ToString("0", CultureInfo.InvariantCulture) + " files/s";
+        }
+
+        return filesPerSecond.ToString("0.0", CultureInfo.InvariantCulture) + " files/s";
     }
 }

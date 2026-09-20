@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO.Hashing;
 
 namespace Mercury;
@@ -314,7 +315,8 @@ public static class SourceWalker
     public static TreeCounts CountSource(
         CopyMapping mapping,
         JobOptions? options = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Action<int, int>? progress = null)
     {
         if (mapping.SingleFile)
         {
@@ -336,6 +338,7 @@ public static class SourceWalker
                 return default;
             }
 
+            progress?.Invoke(1, 0);
             return new TreeCounts(1, 0);
         }
 
@@ -345,18 +348,23 @@ public static class SourceWalker
             excludes.Add(mapping.DestRoot);
         }
 
-        return CountTree(mapping.SourceRoot, excludes, skipMercuryTemp: false, options, cancellationToken);
+        return CountTree(mapping.SourceRoot, excludes, skipMercuryTemp: false, options, cancellationToken, progress);
     }
 
-    public static TreeCounts CountDest(CopyMapping mapping, CancellationToken cancellationToken = default)
+    public static TreeCounts CountDest(
+        CopyMapping mapping,
+        CancellationToken cancellationToken = default,
+        Action<int, int>? progress = null)
     {
         if (mapping.SingleFile)
         {
             var destFile = Path.Combine(mapping.DestRoot, mapping.SingleFileName!);
-            return File.Exists(destFile) ? new TreeCounts(1, 0) : default;
+            var counts = File.Exists(destFile) ? new TreeCounts(1, 0) : default;
+            progress?.Invoke(counts.Files, counts.Folders);
+            return counts;
         }
 
-        return CountTree(mapping.DestRoot, extraExcludeRoots: null, skipMercuryTemp: true, options: null, cancellationToken);
+        return CountTree(mapping.DestRoot, extraExcludeRoots: null, skipMercuryTemp: true, options: null, cancellationToken, progress);
     }
 
     public static TreeCounts CountTree(
@@ -364,10 +372,12 @@ public static class SourceWalker
         IEnumerable<string>? extraExcludeRoots = null,
         bool skipMercuryTemp = false,
         JobOptions? options = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Action<int, int>? progress = null)
     {
         if (File.Exists(root))
         {
+            progress?.Invoke(1, 0);
             return new TreeCounts(1, 0);
         }
 
@@ -379,7 +389,9 @@ public static class SourceWalker
         var excludes = extraExcludeRoots?.ToList() ?? [];
         var files = 0;
         var folders = 0;
-        CountDirectory(root, excludes, skipMercuryTemp, options, ref files, ref folders, cancellationToken);
+        var lastPulse = Stopwatch.GetTimestamp();
+        CountDirectory(root, excludes, skipMercuryTemp, options, ref files, ref folders, cancellationToken, progress, ref lastPulse);
+        progress?.Invoke(files, folders);
         return new TreeCounts(files, folders);
     }
 
@@ -390,7 +402,9 @@ public static class SourceWalker
         JobOptions? options,
         ref int files,
         ref int folders,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<int, int>? progress,
+        ref long lastPulse)
     {
         cancellationToken.ThrowIfCancellationRequested();
         IEnumerable<string> filePaths;
@@ -425,6 +439,7 @@ public static class SourceWalker
             }
 
             files++;
+            PulseCount(files, folders, progress, ref lastPulse);
         }
 
         IEnumerable<string> dirs;
@@ -460,8 +475,28 @@ public static class SourceWalker
                 continue;
             }
 
-            CountDirectory(info.FullName, excludes, skipMercuryTemp, options, ref files, ref folders, cancellationToken);
+            CountDirectory(info.FullName, excludes, skipMercuryTemp, options, ref files, ref folders, cancellationToken, progress, ref lastPulse);
         }
+    }
+
+    private static void PulseCount(int files, int folders, Action<int, int>? progress, ref long lastPulse)
+    {
+        if (progress is null)
+        {
+            return;
+        }
+
+        if (files % 50 != 0)
+        {
+            var elapsed = (Stopwatch.GetTimestamp() - lastPulse) / (double)Stopwatch.Frequency;
+            if (elapsed < 0.2)
+            {
+                return;
+            }
+        }
+
+        lastPulse = Stopwatch.GetTimestamp();
+        progress(files, folders);
     }
 
     private static bool PathsEqual(string left, string right)

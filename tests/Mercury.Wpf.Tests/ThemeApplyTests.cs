@@ -94,10 +94,14 @@ public sealed class WpfStaFixture;
 
 internal static class WpfSta
 {
+    private static readonly object Gate = new();
+    private static Dispatcher? _dispatcher;
+
     public static void Run(Action action)
     {
+        EnsureDispatcher();
         Exception? error = null;
-        var thread = new Thread(() =>
+        _dispatcher!.Invoke(() =>
         {
             try
             {
@@ -108,9 +112,6 @@ internal static class WpfSta
                 error = ex;
             }
         });
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-        thread.Join();
         if (error is not null)
         {
             ExceptionDispatchInfo.Capture(error).Throw();
@@ -129,4 +130,28 @@ internal static class WpfSta
 
     public static void Flush() =>
         Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
+
+    private static void EnsureDispatcher()
+    {
+        lock (Gate)
+        {
+            if (_dispatcher is not null)
+            {
+                return;
+            }
+
+            var ready = new ManualResetEventSlim(false);
+            var thread = new Thread(() =>
+            {
+                _dispatcher = Dispatcher.CurrentDispatcher;
+                ready.Set();
+                Dispatcher.Run();
+            });
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.IsBackground = true;
+            thread.Name = "Mercury-WpfSta";
+            thread.Start();
+            ready.Wait();
+        }
+    }
 }

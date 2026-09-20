@@ -1,0 +1,162 @@
+<UserControl x:Class="Mercury.FolderTreePanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <Style x:Key="FolderTreeExpander" TargetType="ToggleButton">
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Width" Value="16"/>
+            <Setter Property="Height" Value="16"/>
+            <Setter Property="Margin" Value="0,0,4,0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border Background="Transparent" Width="16" Height="16">
+                            <Path x:Name="Arrow"
+                                  Data="M 4,3 L 12,8 L 4,13 Z"
+                                  Fill="{DynamicResource MutedBrush}"
+                                  Stretch="None"
+                                  HorizontalAlignment="Center"
+                                  VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Arrow" Property="Data" Value="M 3,5 L 8,13 L 13,5 Z"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+    <DockPanel>
+        <TextBlock DockPanel.Dock="Top"
+                   Text="No job yet. Start or resume a copy to see source folders here."
+                   Foreground="{DynamicResource MutedBrush}"
+                   Margin="0,8,0,0"
+                   Visibility="{Binding FolderTreeEmpty, Converter={StaticResource BoolToVis}}"/>
+        <Grid Visibility="{Binding FolderTreeEmpty, Converter={StaticResource InverseBoolToVis}}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <Border x:Name="HeaderBand"
+                    Grid.Row="0"
+                    Background="{DynamicResource PanelAltBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}"
+                    BorderThickness="0,0,0,1"
+                    Padding="4,6,4,6"
+                    SnapsToDevicePixels="True">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="72"/>
+                        <ColumnDefinition Width="72"/>
+                        <ColumnDefinition Width="56"/>
+                        <ColumnDefinition Width="72"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Folder"
+                               FontWeight="SemiBold"
+                               FontFamily="{DynamicResource LabelFontFamily}"
+                               FontSize="{DynamicResource LabelFontSize}"
+                               Foreground="{DynamicResource MutedBrush}"
+                               VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="1" Text="Files" FontWeight="SemiBold" TextAlignment="Right"
+                               FontFamily="{DynamicResource LabelFontFamily}" FontSize="{DynamicResource LabelFontSize}"
+                               Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="2" Text="Subdirs" FontWeight="SemiBold" TextAlignment="Right"
+                               FontFamily="{DynamicResource LabelFontFamily}" FontSize="{DynamicResource LabelFontSize}"
+                               Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="3" Text="Done" FontWeight="SemiBold" TextAlignment="Right"
+                               FontFamily="{DynamicResource LabelFontFamily}" FontSize="{DynamicResource LabelFontSize}"
+                               Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="4" Text="ETA" FontWeight="SemiBold" TextAlignment="Right"
+                               FontFamily="{DynamicResource LabelFontFamily}" FontSize="{DynamicResource LabelFontSize}"
+                               Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center"/>
+                    <FrameworkElement Grid.Column="5"
+                                      Width="{DynamicResource {x:Static SystemParameters.VerticalScrollBarWidthKey}}"/>
+                </Grid>
+            </Border>
+            <TreeView x:Name="FolderTreeView"
+                      Grid.Row="1"
+                      ItemsSource="{Binding FolderTree}"
+                      Background="Transparent"
+                      BorderThickness="0"
+                      Padding="4,4,4,4"
+                      ClipToBounds="True"
+                      Foreground="{DynamicResource TextBrush}"
+                      FontFamily="{DynamicResource BodyFontFamily}"
+                      FontSize="12"
+                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                      ScrollViewer.VerticalScrollBarVisibility="Auto">
+                <TreeView.ItemContainerStyle>
+                    <Style TargetType="TreeViewItem">
+                        <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+                        <Setter Property="Padding" Value="0"/>
+                        <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                        <Setter Property="Background" Value="Transparent"/>
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                        <Setter Property="HorizontalAlignment" Value="Stretch"/>
+                        <Setter Property="OverridesDefaultStyle" Value="True"/>
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="TreeViewItem">
+                                    <StackPanel>
+                                        <Border x:Name="Bd"
+                                                Background="{TemplateBinding Background}"
+                                                Padding="0,2">
+                                            <ContentPresenter x:Name="PART_Header"
+                                                              ContentSource="Header"
+                                                              HorizontalAlignment="Stretch"/>
+                                        </Border>
+                                        <ItemsPresenter x:Name="ItemsHost" Visibility="Collapsed"/>
+                                    </StackPanel>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsExpanded" Value="True">
+                                            <Setter TargetName="ItemsHost" Property="Visibility" Value="Visible"/>
+                                        </Trigger>
+                                        <Trigger Property="IsSelected" Value="True">
+                                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AccentBrush}"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource AccentForegroundBrush}"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </TreeView.ItemContainerStyle>
+                <TreeView.ItemTemplate>
+                    <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                        <Grid Margin="0,1">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="72"/>
+                                <ColumnDefinition Width="72"/>
+                                <ColumnDefinition Width="56"/>
+                                <ColumnDefinition Width="72"/>
+                            </Grid.ColumnDefinitions>
+                            <DockPanel>
+                                <FrameworkElement DockPanel.Dock="Left" Width="{Binding IndentWidth}"/>
+                                <ToggleButton DockPanel.Dock="Left"
+                                              Style="{StaticResource FolderTreeExpander}"
+                                              IsChecked="{Binding IsExpanded, Mode=TwoWay}"
+                                              Visibility="{Binding HasChildren, Converter={StaticResource BoolToVis}}"/>
+                                <FrameworkElement DockPanel.Dock="Left" Width="20"
+                                                  Visibility="{Binding HasChildren, Converter={StaticResource InverseBoolToVis}}"/>
+                                <TextBlock Text="{Binding Name}"
+                                           TextTrimming="CharacterEllipsis"
+                                           VerticalAlignment="Center"/>
+                            </DockPanel>
+                            <TextBlock Grid.Column="1" Text="{Binding FilesText}" TextAlignment="Right" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="2" Text="{Binding SubdirsText}" TextAlignment="Right" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="3" Text="{Binding PercentText}" TextAlignment="Right" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="4" Text="{Binding EtaText}" TextAlignment="Right" VerticalAlignment="Center"/>
+                        </Grid>
+                    </HierarchicalDataTemplate>
+                </TreeView.ItemTemplate>
+            </TreeView>
+        </Grid>
+    </DockPanel>
+</UserControl>

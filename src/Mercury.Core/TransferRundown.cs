@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 
 namespace Mercury;
@@ -142,7 +143,8 @@ public sealed class TransferRundown
         CopyMapping? mapping,
         IJobLog? log,
         string name,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Action<RundownProgress>? progress = null)
     {
         if (job.StartedUtc is null)
         {
@@ -155,6 +157,10 @@ public sealed class TransferRundown
         var totals = SafeTotals(journal);
         job.SourceFiles = totals.Files;
         job.BytesCopied = totals.DoneBytes;
+        if (job.DestFiles < totals.DoneFiles)
+        {
+            job.DestFiles = totals.DoneFiles;
+        }
 
         var skipTree = job.Options.DryRun
             || job.Status == JobStatus.Cancelled
@@ -164,10 +170,31 @@ public sealed class TransferRundown
         TreeCounts sourceFolders = job.SourceFolders > 0
             ? new TreeCounts(job.SourceFiles, job.SourceFolders)
             : default;
+        var clock = Stopwatch.StartNew();
+        var expected = Math.Max(1, Math.Max(job.SourceFiles, totals.Files));
+        var destDone = 0;
+        void Emit(int done, int total, string phase)
+        {
+            total = Math.Max(total, Math.Max(done, 1));
+            var rate = clock.Elapsed.TotalSeconds >= 0.25 ? done / clock.Elapsed.TotalSeconds : 0;
+            TimeSpan? eta = null;
+            if (total <= done)
+            {
+                eta = TimeSpan.Zero;
+            }
+            else if (rate >= 0.5)
+            {
+                eta = TimeSpan.FromSeconds((total - done) / rate);
+            }
+
+            progress?.Invoke(new RundownProgress(done, total, rate, eta, phase));
+        }
+
         if (!skipTree && mapping is not null && job.Catcher is not null && mapping.SingleFile)
         {
             dest = new TreeCounts(1, 0);
             sourceFolders = new TreeCounts(1, 0);
+            Emit(1, 1, "destination");
         }
         else if (!skipTree && mapping is not null && ZipPack.Applies(job, mapping) && job.Catcher is not null)
         {
@@ -180,13 +207,18 @@ public sealed class TransferRundown
             {
                 sourceFolders = new TreeCounts(totals.Files, 0);
             }
+
+            Emit(Math.Max(dest.Files, 1), Math.Max(dest.Files, 1), "destination");
         }
         else if (!skipTree && mapping is not null)
         {
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                dest = SourceWalker.CountDest(mapping, cancellationToken);
+                dest = SourceWalker.CountDest(mapping, cancellationToken, (files, _) =>
+                    Emit(files, Math.Max(expected, files), "destination"));
+                destDone = dest.Files;
+                Emit(destDone, Math.Max(expected, destDone), "destination");
             }
             catch (OperationCanceledException)
             {
@@ -203,7 +235,10 @@ public sealed class TransferRundown
                 try
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    sourceFolders = SourceWalker.CountSource(mapping, job.Options, cancellationToken);
+                    var sourceExpected = Math.Max(expected, destDone);
+                    sourceFolders = SourceWalker.CountSource(mapping, job.Options, cancellationToken, (files, _) =>
+                        Emit(destDone + files, destDone + Math.Max(sourceExpected, files), "source"));
+                    Emit(destDone + sourceFolders.Files, destDone + Math.Max(sourceExpected, sourceFolders.Files), "source");
                 }
                 catch (OperationCanceledException)
                 {
@@ -215,6 +250,10 @@ public sealed class TransferRundown
                     sourceFolders = default;
                 }
             }
+        }
+        else
+        {
+            Emit(1, 1, "log");
         }
 
         if (cancellationToken.IsCancellationRequested)
@@ -236,12 +275,17 @@ public sealed class TransferRundown
         string name,
         bool stopped)
     {
-        if (job.Options.DryRun || stopped)
+        if (job.Options.DryRun)
         {
-            job.DestFiles = job.Options.DryRun ? 0 : dest.Files;
-            job.DestFolders = job.Options.DryRun ? 0 : dest.Folders;
+            job.DestFiles = 0;
+            job.DestFolders = 0;
         }
-        else
+        else if (dest.Files > 0 || dest.Folders > 0)
+        {
+            job.DestFiles = dest.Files;
+            job.DestFolders = dest.Folders;
+        }
+        else if (!stopped)
         {
             job.DestFiles = dest.Files;
             job.DestFolders = dest.Folders;
@@ -446,4 +490,38 @@ public sealed class TransferRundown
             return default;
         }
     }
+}
+
+public readonly record struct RundownProgress(
+    int Done,
+    int Total,
+    double UnitsPerSecond,
+    TimeSpan? Eta,
+    string Phase);
+
+public interface IRundownCapture
+{
+    void Capture(
+        Job job,
+        JobJournal journal,
+        CopyMapping? mapping,
+        IJobLog? log,
+        string name,
+        CancellationToken cancellationToken,
+        Action<RundownProgress>? progress);
+}
+
+public sealed class DefaultRundownCapture : IRundownCapture
+{
+    public static DefaultRundownCapture Instance { get; } = new();
+
+    public void Capture(
+        Job job,
+        JobJournal journal,
+        CopyMapping? mapping,
+        IJobLog? log,
+        string name,
+        CancellationToken cancellationToken,
+        Action<RundownProgress>? progress) =>
+        TransferRundown.Capture(job, journal, mapping, log, name, cancellationToken, progress);
 }

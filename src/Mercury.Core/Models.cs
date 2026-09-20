@@ -184,9 +184,40 @@ public sealed class JobProgress
     public DateTimeOffset? StageStartedUtc { get; init; }
     /// <summary>Enumerate type mix, e.g. "Video: 40 files, 2.1 TB".</summary>
     public string? TypeSummary { get; init; }
+    /// <summary>Rundown walk units done (dest+source files counted).</summary>
+    public int RundownDone { get; init; }
+    public int RundownTotal { get; init; }
+    public double RundownPerSecond { get; init; }
 
-    public double Percent =>
-        BytesTotal > 0 ? Math.Clamp(100.0 * BytesCopied / BytesTotal, 0, 100) : 0;
+    public bool IsRundownStage => CopyPipeline.IsRundown(StageName, Message);
+
+    public double Percent
+    {
+        get
+        {
+            if (IsRundownStage)
+            {
+                if (RundownTotal <= 0)
+                {
+                    return 0;
+                }
+
+                return Math.Clamp(100.0 * RundownDone / RundownTotal, 0, 100);
+            }
+
+            if (BytesTotal > 0)
+            {
+                return Math.Clamp(100.0 * BytesCopied / BytesTotal, 0, 100);
+            }
+
+            if (FilesTotal > 0)
+            {
+                return Math.Clamp(100.0 * FilesCopied / FilesTotal, 0, 100);
+            }
+
+            return 0;
+        }
+    }
 
     public TimeSpan ElapsedAt(DateTimeOffset now) =>
         Duration(StartedUtc, now);

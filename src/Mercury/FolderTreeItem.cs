@@ -32,6 +32,23 @@ public sealed class FolderTreeItem : INotifyPropertyChanged
     public string PercentText { get; }
     public string EtaText { get; }
     public bool IsLeaf { get; }
+    public bool HasChildren => Children.Count > 0;
+    public double IndentWidth
+    {
+        get
+        {
+            var depth = 0;
+            foreach (var c in RelativePath)
+            {
+                if (c is '\\' or '/')
+                {
+                    depth++;
+                }
+            }
+
+            return depth * 16;
+        }
+    }
     public ObservableCollection<FolderTreeItem> Children { get; } = [];
 
     public bool IsExpanded

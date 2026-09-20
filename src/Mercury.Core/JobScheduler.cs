@@ -6,7 +6,9 @@ public sealed class JobScheduler : IDisposable
 {
     private readonly AppPaths _paths;
     private readonly ICopyEngine _engine;
+    private readonly IRundownCapture _rundownCapture;
     private readonly ConcurrentDictionary<string, Running> _running = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, RundownWork> _rundowns = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, JobProgress> _progress = new(StringComparer.Ordinal);
     private readonly object _queueLock = new();
     private readonly List<Job> _queue = [];
@@ -14,10 +16,11 @@ public sealed class JobScheduler : IDisposable
     private int _pumping;
     private string? _forceStartId;
 
-    public JobScheduler(AppPaths paths, ICopyEngine? engine = null)
+    public JobScheduler(AppPaths paths, ICopyEngine? engine = null, IRundownCapture? rundown = null)
     {
         _paths = paths;
         _engine = engine ?? new CopyEngine();
+        _rundownCapture = rundown ?? DefaultRundownCapture.Instance;
         Log = new FileJobLog(paths);
         Budget = new BandwidthBudget();
         Budget.Apply(AppSettingsStore.Load(paths));
@@ -25,6 +28,7 @@ public sealed class JobScheduler : IDisposable
         _ = ScheduleLoopAsync(_lifetime.Token);
     }
 
+    /// <summary>One copy at a time in v1. Background rundown does not consume this slot.</summary>
     public int MaxConcurrentJobs { get; set; } = 1;
     public BandwidthBudget Budget { get; }
     public PauseGate GlobalPause { get; } = new();
@@ -48,9 +52,13 @@ public sealed class JobScheduler : IDisposable
 
     public IReadOnlyList<string> RunningJobIds => _running.Keys.ToList();
 
+    public IReadOnlyList<string> RundownJobIds => _rundowns.Keys.ToList();
+
     public bool HasRunningJob => !_running.IsEmpty;
 
-    /// <summary>True while a job is actually running (not merely winding down after Stop).</summary>
+    public bool HasBackgroundRundown => !_rundowns.IsEmpty;
+
+    /// <summary>True while a copy is running. Rundown in the background does not block Start.</summary>
     public bool BlocksStart =>
         _running.Values.Any(r => !r.Cts.IsCancellationRequested);
 
@@ -64,6 +72,16 @@ public sealed class JobScheduler : IDisposable
         return _running.Values.Select(r => r.Job).FirstOrDefault();
     }
 
+    public Job? TryGetRundownJob(string? jobId = null)
+    {
+        if (jobId is not null && _rundowns.TryGetValue(jobId, out var named))
+        {
+            return named.Job;
+        }
+
+        return _rundowns.Values.Select(r => r.Job).FirstOrDefault();
+    }
+
     public void Enqueue(Job job, bool startNow = false)
     {
         EnsureName(job);
@@ -74,7 +92,7 @@ public sealed class JobScheduler : IDisposable
 
         lock (_queueLock)
         {
-            if (_running.ContainsKey(job.Id))
+            if (_running.ContainsKey(job.Id) || _rundowns.ContainsKey(job.Id))
             {
                 return;
             }
@@ -104,7 +122,7 @@ public sealed class JobScheduler : IDisposable
 
     public void Remove(string jobId)
     {
-        if (_running.ContainsKey(jobId))
+        if (_running.ContainsKey(jobId) || _rundowns.ContainsKey(jobId))
         {
             Stop(jobId);
         }
@@ -223,7 +241,8 @@ public sealed class JobScheduler : IDisposable
 
             var active = _queue.FindIndex(j =>
                 j.Status is JobStatus.Preparing or JobStatus.Enumerating or JobStatus.Copying
-                    or JobStatus.Verifying or JobStatus.Paused or JobStatus.PausedOutsideHours);
+                    or JobStatus.Verifying or JobStatus.Paused or JobStatus.PausedOutsideHours
+                || _rundowns.ContainsKey(j.Id));
             if (active >= 0)
             {
                 return (active + 1, _queue.Count);
@@ -238,6 +257,10 @@ public sealed class JobScheduler : IDisposable
         if (_running.TryGetValue(job.Id, out var running))
         {
             running.Journal.SaveJob(running.Job);
+        }
+        else if (_rundowns.TryGetValue(job.Id, out var rundown))
+        {
+            rundown.Journal.SaveJob(rundown.Job);
         }
 
         lock (_queueLock)
@@ -258,10 +281,16 @@ public sealed class JobScheduler : IDisposable
 
     public async Task StartAsync(Job job, bool resumeJournal, CancellationToken cancellationToken)
     {
+        await RunCopyCoreAsync(job, resumeJournal, cancellationToken).ConfigureAwait(false);
+        await WaitForRundownAsync(job.Id).ConfigureAwait(false);
+    }
+
+    private async Task RunCopyCoreAsync(Job job, bool resumeJournal, CancellationToken cancellationToken)
+    {
         if (_running.Count >= MaxConcurrentJobs)
         {
             throw new InvalidOperationException(
-                $"v1 runs one job at a time ({MaxConcurrentJobs} concurrent). Stop the current job or wait for it to finish.");
+                $"v1 runs one copy at a time ({MaxConcurrentJobs} concurrent). Stop the current copy or wait for it to finish.");
         }
 
         EnsureName(job);
@@ -302,42 +331,11 @@ public sealed class JobScheduler : IDisposable
             journal.SaveJob(job);
         }
 
-        var progress = new Progress<JobProgress>(p =>
-        {
-            var totals = SafeTotals(journal);
-            var copied = Math.Max(p.BytesCopied, totals.DoneBytes);
-            var total = Math.Max(p.BytesTotal, totals.Bytes);
-            var started = p.StartedUtc ?? job.StartedUtc;
-            var elapsed = started is { } startAt ? DateTimeOffset.UtcNow - startAt : TimeSpan.Zero;
-            var rate = ByteFormatter.EffectiveRate(p.BytesPerSecond, copied, elapsed);
-            var filled = new JobProgress
-            {
-                JobId = p.JobId,
-                JobName = p.JobName,
-                Status = p.Status,
-                CurrentFile = p.CurrentFile,
-                Message = p.Message,
-                CloudDestination = p.CloudDestination,
-                BytesCopied = copied,
-                BytesTotal = total,
-                FilesCopied = Math.Max(p.FilesCopied, totals.DoneFiles),
-                FilesTotal = Math.Max(p.FilesTotal, totals.Files),
-                IssueCount = Math.Max(p.IssueCount, totals.Failed),
-                BytesPerSecond = rate,
-                Eta = EstimateEta(copied, total, rate),
-                StageIndex = p.StageIndex,
-                StageCount = p.StageCount,
-                StageName = p.StageName,
-                StartedUtc = p.StartedUtc ?? job.StartedUtc,
-                StageStartedUtc = p.StageStartedUtc,
-                TypeSummary = p.TypeSummary
-            };
-            _progress[job.Id] = filled;
-            ProgressChanged?.Invoke(this, filled);
-        });
+        var progress = new Progress<JobProgress>(p => FillProgress(job, journal, p));
 
         var reportFinal = false;
         var keepHeartbeat = false;
+        var rundownOwnsJournal = false;
         try
         {
             Log.Info(job.Id, job.Name, $"Job started. Log: {_paths.JobLogFile(job.Id)}");
@@ -348,7 +346,6 @@ public sealed class JobScheduler : IDisposable
             job.Status = JobStatus.Cancelled;
             job.ResultMessage = "Stopped. Progress is saved; you can Resume.";
             Log.Info(job.Id, job.Name, job.ResultMessage);
-            CaptureRundown(job, journal);
             reportFinal = true;
         }
         catch (Exception ex)
@@ -356,7 +353,6 @@ public sealed class JobScheduler : IDisposable
             job.Status = JobStatus.Failed;
             job.ResultMessage = ex.Message;
             Log.Error(job.Id, job.Name, ex.ToString());
-            CaptureRundown(job, journal);
             reportFinal = true;
         }
         finally
@@ -385,8 +381,9 @@ public sealed class JobScheduler : IDisposable
                 // heartbeat must not hide the real result
             }
 
-            journal.Dispose();
             cts.Dispose();
+            BeginRundown(job, journal, progress);
+            rundownOwnsJournal = true;
             lock (_queueLock)
             {
                 SaveQueue();
@@ -395,23 +392,22 @@ public sealed class JobScheduler : IDisposable
             RaiseQueueChanged();
         }
 
-        if (job.Status is JobStatus.Completed or JobStatus.Incomplete or JobStatus.Cancelled or JobStatus.Failed)
-        {
-            try
-            {
-                HistoryStore.Record(_paths, job);
-                HistoryChanged?.Invoke(this, EventArgs.Empty);
-            }
-            catch
-            {
-                // history is best-effort; the job itself already finished
-            }
-        }
-
-        // Report after leaving _running so Start is enabled on the Failed/Cancelled progress event.
         if (reportFinal)
         {
             ReportFinal(job);
+        }
+
+        if (!rundownOwnsJournal)
+        {
+            journal.Dispose();
+        }
+    }
+
+    private async Task WaitForRundownAsync(string jobId)
+    {
+        if (_rundowns.TryGetValue(jobId, out var work))
+        {
+            await work.Task.ConfigureAwait(false);
         }
     }
 
@@ -546,12 +542,23 @@ public sealed class JobScheduler : IDisposable
             }
 
             ReportFinal(running.Job);
+            return;
+        }
+
+        if (_rundowns.TryGetValue(jobId, out var rundown))
+        {
+            rundown.Cts.Cancel();
         }
     }
 
     public void StopAll(bool clearHeartbeat = true)
     {
         foreach (var id in _running.Keys.ToList())
+        {
+            Stop(id, clearHeartbeat);
+        }
+
+        foreach (var id in _rundowns.Keys.ToList())
         {
             Stop(id, clearHeartbeat);
         }
@@ -651,6 +658,18 @@ public sealed class JobScheduler : IDisposable
             }
         }
 
+        if (!string.IsNullOrEmpty(jobId) && _rundowns.TryGetValue(jobId, out var rundown))
+        {
+            try
+            {
+                return rundown.Journal.GetFiles();
+            }
+            catch
+            {
+                return [];
+            }
+        }
+
         var id = jobId ?? AppSettingsStore.LoadLastJobId(_paths);
         if (id is null)
         {
@@ -679,6 +698,24 @@ public sealed class JobScheduler : IDisposable
     private sealed record Running(Job Job, JobJournal Journal, PauseGate Pause, CancellationTokenSource Cts)
     {
         public bool KeepHeartbeatOnCancel { get; set; }
+    }
+
+    private sealed class RundownWork
+    {
+        public required Job Job { get; init; }
+        public required JobJournal Journal { get; init; }
+        public required CancellationTokenSource Cts { get; init; }
+        public required IProgress<JobProgress> Progress { get; init; }
+        public Task Task { get; set; } = Task.CompletedTask;
+        public int StageCount { get; init; }
+        public DateTimeOffset? StartedUtc { get; init; }
+        public DateTimeOffset StageStartedUtc { get; init; } = DateTimeOffset.UtcNow;
+        public long BytesCopied { get; init; }
+        public long BytesTotal { get; init; }
+        public int FilesCopied { get; init; }
+        public int FilesTotal { get; init; }
+        public string? TypeSummary { get; init; }
+        public bool Cloud { get; init; }
     }
 
     public JobProgress? GetProgress(string jobId) =>
@@ -800,7 +837,7 @@ public sealed class JobScheduler : IDisposable
                 var resume = JobJournal.Exists(_paths.JobDirectory(next.Id));
                 try
                 {
-                    await StartAsync(next, resume, _lifetime.Token).ConfigureAwait(false);
+                    await RunCopyCoreAsync(next, resume, _lifetime.Token).ConfigureAwait(false);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -910,27 +947,176 @@ public sealed class JobScheduler : IDisposable
     {
         foreach (var key in _progress.Keys.ToList())
         {
-            if (!_running.ContainsKey(key))
+            if (!_running.ContainsKey(key) && !_rundowns.ContainsKey(key))
             {
                 _progress.TryRemove(key, out _);
             }
         }
     }
 
-    private void CaptureRundown(Job job, JobJournal journal)
+    private void FillProgress(Job job, JobJournal journal, JobProgress p)
     {
-        CopyMapping? mapping = null;
+        var rundown = p.IsRundownStage;
+        var totals = SafeTotals(journal);
+        var copied = Math.Max(p.BytesCopied, totals.DoneBytes);
+        var total = Math.Max(p.BytesTotal, totals.Bytes);
+        var started = p.StartedUtc ?? job.StartedUtc;
+        var elapsed = started is { } startAt ? DateTimeOffset.UtcNow - startAt : TimeSpan.Zero;
+        var rate = ByteFormatter.EffectiveRate(p.BytesPerSecond, copied, elapsed);
+        var filled = new JobProgress
+        {
+            JobId = p.JobId,
+            JobName = p.JobName,
+            Status = p.Status,
+            CurrentFile = p.CurrentFile,
+            Message = p.Message,
+            CloudDestination = p.CloudDestination,
+            BytesCopied = copied,
+            BytesTotal = total,
+            FilesCopied = rundown ? p.FilesCopied : Math.Max(p.FilesCopied, totals.DoneFiles),
+            FilesTotal = rundown ? p.FilesTotal : Math.Max(p.FilesTotal, totals.Files),
+            IssueCount = Math.Max(p.IssueCount, totals.Failed),
+            BytesPerSecond = rundown ? 0 : rate,
+            Eta = rundown ? p.Eta : EstimateEta(copied, total, rate),
+            StageIndex = p.StageIndex,
+            StageCount = p.StageCount,
+            StageName = p.StageName,
+            StartedUtc = started,
+            StageStartedUtc = p.StageStartedUtc,
+            TypeSummary = p.TypeSummary,
+            RundownDone = p.RundownDone,
+            RundownTotal = p.RundownTotal,
+            RundownPerSecond = p.RundownPerSecond
+        };
+        _progress[job.Id] = filled;
+        ProgressChanged?.Invoke(this, filled);
+    }
+
+    private void BeginRundown(Job job, JobJournal journal, IProgress<JobProgress> progress)
+    {
+        var last = GetProgress(job.Id);
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        var work = new RundownWork
+        {
+            Job = job,
+            Journal = journal,
+            Cts = cts,
+            Progress = progress,
+            StageCount = last is { StageCount: > 0 } ? last.StageCount : CopyPipeline.For(job, true, job.Options.PackAsZip).Count,
+            StartedUtc = last?.StartedUtc ?? job.StartedUtc,
+            StageStartedUtc = DateTimeOffset.UtcNow,
+            BytesCopied = last?.BytesCopied ?? job.BytesCopied,
+            BytesTotal = last?.BytesTotal ?? 0,
+            FilesCopied = last?.FilesCopied ?? job.DestFiles,
+            FilesTotal = last?.FilesTotal ?? job.SourceFiles,
+            TypeSummary = last?.TypeSummary,
+            Cloud = last?.CloudDestination ?? false
+        };
+        work.Task = Task.Run(() => ExecuteRundown(work));
+        _rundowns[job.Id] = work;
+    }
+
+    private void ExecuteRundown(RundownWork work)
+    {
+        var job = work.Job;
+        var name = string.IsNullOrWhiteSpace(job.Name) ? job.Id[..8] : job.Name;
+        var token = work.Cts.Token;
         try
         {
-            mapping = CopyShape.Resolve(job.SourcePath, job.DestinationPath, job.Options.IncludeSourceFolderName);
-        }
-        catch
-        {
-            mapping = null;
-        }
+            Log.Info(job.Id, name, "Rundown running in background");
+            ReportRundown(work, new RundownProgress(0, Math.Max(1, job.SourceFiles), 0, null, "destination"));
+            CopyMapping? mapping = null;
+            try
+            {
+                mapping = CopyShape.Resolve(job.SourcePath, job.DestinationPath, job.Options.IncludeSourceFolderName);
+            }
+            catch
+            {
+                mapping = null;
+            }
 
+            _rundownCapture.Capture(job, work.Journal, mapping, Log, name, token, p => ReportRundown(work, p));
+        }
+        catch (OperationCanceledException)
+        {
+            // Capture already saved a stopped summary when it can
+        }
+        catch (Exception ex)
+        {
+            Log.Error(job.Id, name, ex.ToString());
+        }
+        finally
+        {
+            try
+            {
+                work.Journal.Dispose();
+            }
+            catch
+            {
+                // journal already closed
+            }
+
+            try
+            {
+                work.Cts.Dispose();
+            }
+            catch
+            {
+                // ignore
+            }
+
+            _rundowns.TryRemove(job.Id, out _);
+            if (job.Status is JobStatus.Completed or JobStatus.Incomplete or JobStatus.Cancelled or JobStatus.Failed)
+            {
+                try
+                {
+                    HistoryStore.Record(_paths, job);
+                    HistoryChanged?.Invoke(this, EventArgs.Empty);
+                }
+                catch
+                {
+                    // history is best-effort; the job itself already finished
+                }
+            }
+
+            lock (_queueLock)
+            {
+                SaveQueue();
+            }
+
+            RaiseQueueChanged();
+            ReportFinal(job);
+        }
+    }
+
+    private void ReportRundown(RundownWork work, RundownProgress pulse)
+    {
+        var job = work.Job;
         var name = string.IsNullOrWhiteSpace(job.Name) ? job.Id[..8] : job.Name;
-        TransferRundown.Capture(job, journal, mapping, Log, name, CancellationToken.None);
+        var total = Math.Max(pulse.Total, Math.Max(pulse.Done, 1));
+        work.Progress.Report(new JobProgress
+        {
+            JobId = job.Id,
+            JobName = name,
+            Status = job.Status,
+            Message = CopyPipeline.RundownMessage,
+            CloudDestination = work.Cloud,
+            BytesCopied = work.BytesCopied,
+            BytesTotal = work.BytesTotal,
+            FilesCopied = work.FilesCopied,
+            FilesTotal = work.FilesTotal,
+            IssueCount = job.IssueCount,
+            Eta = pulse.Eta,
+            StageIndex = work.StageCount,
+            StageCount = work.StageCount,
+            StageName = CopyPipeline.RundownLabel,
+            StartedUtc = work.StartedUtc,
+            StageStartedUtc = work.StageStartedUtc,
+            TypeSummary = work.TypeSummary,
+            RundownDone = pulse.Done,
+            RundownTotal = total,
+            RundownPerSecond = pulse.UnitsPerSecond
+        });
     }
 
     private static FileTotals SafeTotals(JobJournal journal)
@@ -959,6 +1145,19 @@ public sealed class JobScheduler : IDisposable
     {
         _lifetime.Cancel();
         StopAll();
+        var tasks = _rundowns.Values.Select(w => w.Task).ToArray();
+        if (tasks.Length > 0)
+        {
+            try
+            {
+                Task.WaitAll(tasks, TimeSpan.FromSeconds(3));
+            }
+            catch
+            {
+                // shutting down
+            }
+        }
+
         Log.Dispose();
         _lifetime.Dispose();
     }

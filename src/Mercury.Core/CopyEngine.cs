@@ -200,9 +200,6 @@ public sealed class CopyEngine : ICopyEngine
                 job.Status = JobStatus.Completed;
                 job.ResultMessage = $"Dry run: {totals.Files} files, {ByteFormatter.ToString(totals.Bytes)}.";
                 JobHeartbeat.Clear(journal);
-                reporter.Enter(CopyStageKind.Rundown, JobStatus.Completed, "Writing rundown…");
-                TransferRundown.Capture(job, journal, mapping, log, name, cancellationToken);
-                cancellationToken.ThrowIfCancellationRequested();
                 reporter.Update(job.ResultMessage);
                 return;
             }
@@ -365,9 +362,6 @@ public sealed class CopyEngine : ICopyEngine
                 log.Error(job.Id, name, job.ResultMessage);
             }
 
-            reporter.Enter(CopyStageKind.Rundown, job.Status, "Writing rundown…");
-            TransferRundown.Capture(job, journal, mapping, log, name, cancellationToken);
-            cancellationToken.ThrowIfCancellationRequested();
             reporter.Update(job.ResultMessage);
         }
         finally

@@ -90,13 +90,16 @@ public static class HelpDocument
             Id = "progress",
             Title = "Progress header",
             Body =
-                "The pink header is Progress. Current is always the running job (bar, files, bytes, speed, ETA, stage). " +
+                "The pink header is Progress. Current is the running copy (or rundown if no copy is in flight). " +
+                "Job n of m is which queue item (example: 3 of 3). Stage is that job’s pipeline step: enumerate, copy, verify, writing rundown. " +
                 "With no running or resumable job the header stays collapsed — no 0/0 files or empty rundown. A part-way last job still shows its last percent and counts so you can Resume last. " +
-                "When two or more jobs are in the queue, an Overall bar sits directly under Current, and file counts show " +
-                "both (example: Files: Current 12/400  Overall 50/2000). With one job, only Current is shown (Overall would duplicate it). " +
+                "When two or more jobs are in the queue, Current and Overall bars sit on one row (each shows its percent in the middle), and the stats table includes Overall files " +
+                "(example: Files: 12/400). With one job, only Current is shown (Overall would duplicate it). " +
                 "Job: 2 of 5 is the running job’s place in the listed queue (omitted when there is a single job). " +
-                "Stats use key: value (example: Files: 12/400). Speed during packing uses bytes copied over elapsed time when the instantaneous rate is still 0. " +
-                "During enumerate, Types shows a mix such as Video: 40 files, 2.1 TB."
+                "Stats sit under the bars in a table (key: value). Speed during packing uses bytes copied over elapsed time when the instantaneous rate is still 0. " +
+                "During enumerate, Types shows a mix such as Video: 40 files, 2.1 TB. " +
+                "Writing rundown runs in the background after copy and verify so the next queued job can start transferring. " +
+                "The copier stays one job at a time; Start is enabled when that copy slot is free. Stop during rundown is immediate."
         },
         new()
         {
@@ -113,8 +116,9 @@ public static class HelpDocument
             Id = "queue",
             Title = "Queue tab",
             Body =
-                "Jobs wait here until due. One job runs at a time, in listed order: only the first not-on-hold Pending job auto-starts " +
-                "(a later job will not jump a not-due job ahead of it). Hold marks a queued job On hold so it never auto-starts; it stays until you Unhold or Resume that row. " +
+                "Jobs wait here until due. One copy runs at a time, in listed order: only the first not-on-hold Pending job auto-starts " +
+                "(a later job will not jump a not-due job ahead of it). Writing rundown for a finished job can continue in the background while the next copy starts. " +
+                "Hold marks a queued job On hold so it never auto-starts; it stays until you Unhold or Resume that row. " +
                 "Per-row Pause / Resume / Stop / Hold / Remove / Up / Down. " +
                 "Speed on a queued job can be edited while it is pending or running. Pause all affects every active job."
         },
@@ -125,7 +129,8 @@ public static class HelpDocument
             Body =
                 "Live log of the current session. Search filters lines; Follow stays on the newest line; Errors only hides info. " +
                 "Copy copies the view. Open logs folder opens the logs directory. " +
-                "A daily error log (mercury-YYYYMMDD.log) is also written under Settings so you can check failures later."
+                "A daily error log (mercury-YYYYMMDD.log) is also written under Settings so you can check failures later. " +
+                "When a finished job is writing its rundown off the copy slot, the console logs Rundown running in background."
         },
         new()
         {

@@ -30,7 +30,10 @@ public sealed class QueueJobItem : INotifyPropertyChanged
 
     public string Route => $"{Job.SourcePath}  →  {Job.DestinationPath}";
 
-    public string StatusLabel => JobDue.StatusLabel(Job, DateTimeOffset.Now);
+    private bool _writingRundown;
+
+    public string StatusLabel =>
+        _writingRundown ? CopyPipeline.RundownLabel : JobDue.StatusLabel(Job, DateTimeOffset.Now);
 
     public TransferRundown Rundown => TransferRundown.From(Job);
 
@@ -116,11 +119,13 @@ public sealed class QueueJobItem : INotifyPropertyChanged
     }
 
     public bool IsActive =>
-        Job.Status is JobStatus.Preparing or JobStatus.Enumerating or JobStatus.Copying or JobStatus.Verifying
+        _writingRundown
+        || Job.Status is JobStatus.Preparing or JobStatus.Enumerating or JobStatus.Copying or JobStatus.Verifying
             or JobStatus.Paused or JobStatus.PausedOutsideHours;
 
     public bool CanPause =>
-        Job.Status is JobStatus.Enumerating or JobStatus.Copying or JobStatus.Verifying;
+        !_writingRundown
+        && Job.Status is JobStatus.Enumerating or JobStatus.Copying or JobStatus.Verifying;
 
     public bool CanResume =>
         Job.OnHold
@@ -189,6 +194,7 @@ public sealed class QueueJobItem : INotifyPropertyChanged
 
     public void ApplyProgress(JobProgress progress)
     {
+        _writingRundown = progress.IsRundownStage;
         Percent = progress.Percent;
         Stats = ProgressStats.From(progress);
         RaiseComputed();

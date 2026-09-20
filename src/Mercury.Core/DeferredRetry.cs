@@ -221,4 +221,7 @@ public static class ProgressHeader
     public static bool ShowOverall(int queuedJobCount) => queuedJobCount >= 2;
 
     public static bool ShowOverallTab(int queuedJobCount) => ShowOverall(queuedJobCount);
+
+    public static string PercentLabel(double percent) =>
+        $"{Math.Clamp((int)Math.Round(percent), 0, 100).ToString(System.Globalization.CultureInfo.InvariantCulture)}%";
 }

@@ -3,10 +3,15 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:Mercury"
              Foreground="{DynamicResource TextBrush}">
-    <StackPanel Orientation="Horizontal">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" MinWidth="52"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
         <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Label">
             <TextBlock FontFamily="{DynamicResource ProgressFontFamily}"
                        FontSize="{DynamicResource ProgressFontSize}"
+                       TextWrapping="NoWrap"
                        TextTrimming="CharacterEllipsis">
                 <Run Text="{Binding Key, Mode=OneWay}"
                      FontWeight="SemiBold"
@@ -20,9 +25,10 @@
                      Foreground="{DynamicResource MutedBrush}"/>
             </TextBlock>
         </Border>
-        <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Value">
+        <Border Grid.Column="1" Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Value">
             <TextBlock FontFamily="{DynamicResource ProgressFontFamily}"
                        FontSize="{DynamicResource ProgressFontSize}"
+                       TextWrapping="NoWrap"
                        TextTrimming="CharacterEllipsis">
                 <Run Text="{Binding Value, Mode=OneWay}"
                      FontFamily="{DynamicResource ValueFontFamily}"
@@ -30,5 +36,5 @@
                      Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
             </TextBlock>
         </Border>
-    </StackPanel>
+    </Grid>
 </UserControl>
