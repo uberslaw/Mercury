@@ -120,6 +120,18 @@
                         <TextBlock Text="Copy failed — access denied." FontWeight="SemiBold" Margin="0,4,0,0"
                                    Foreground="{DynamicResource DangerBrush}"/>
                     </Border>
+                    <WrapPanel Margin="0,8,0,0">
+                        <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="AccentBrush,AccentForegroundBrush">
+                            <Button Content="Start" Style="{StaticResource AccentButton}"/>
+                        </Border>
+                        <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="ButtonBrush,ButtonForegroundBrush,HeaderBarTrackBrush,OnHeaderBrush">
+                            <Button Content="Pause" Style="{StaticResource HeaderButton}" Margin="0,0,8,0"/>
+                        </Border>
+                        <Button Content="Pause after this file" Style="{StaticResource HeaderButton}" Margin="0,0,8,0"/>
+                        <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="CancelButtonBrush,AccentForegroundBrush">
+                            <Button Content="Stop" Style="{StaticResource CancelButton}"/>
+                        </Border>
+                    </WrapPanel>
                 </StackPanel>
             </Border>
         </Border>
@@ -146,15 +158,10 @@
                             </Border>
                             <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Button">
                             <WrapPanel Margin="0,0,0,8">
-                                <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="AccentBrush,AccentForegroundBrush">
-                                    <Button Content="Start" Style="{StaticResource AccentButton}"/>
-                                </Border>
                                 <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="ButtonBrush,ButtonForegroundBrush">
-                                    <Button Content="Pause" Style="{StaticResource ToolbarButton}"/>
+                                    <Button Content="Add to queue" Style="{StaticResource ToolbarButton}"/>
                                 </Border>
-                                <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="CancelButtonBrush,AccentForegroundBrush">
-                                    <Button Content="Stop" Style="{StaticResource CancelButton}"/>
-                                </Border>
+                                <Button Content="Save job" Style="{StaticResource CompactButton}"/>
                             </WrapPanel>
                             </Border>
                             <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="ButtonHoverBrush" Margin="0,0,0,8">

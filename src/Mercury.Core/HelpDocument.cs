@@ -34,9 +34,10 @@ public static class HelpDocument
                 "Uncheck it only for contents-only (robocopy-style) so children such as compressed land directly in dest. " +
                 "Drive roots always dump contents into dest (no extra D). Dest already containing a child folder does not uncheck wrap. " +
                 "Browsing Destination inside a previous copy will nest FolderName again.\n\n" +
-                "Start runs the job now. If Source/Dest match a stopped, incomplete, or queued job, Start resumes that same job id instead of creating a duplicate. Add to queue stores a new Pending row and does not start it. Resume last continues the journal of the last job (including deferred files). " +
+                "Start, Pause, Pause after this file, and Stop live at the bottom of the Progress header, under the file currently copying. Add to queue and Save job stay at the bottom of this tab. " +
+                "Start runs the job now. If the job is paused, Start relabels to Resume and continues that same job — it does not mint a duplicate. If Source/Dest match a stopped, incomplete, or queued job, Start resumes that same job id instead of creating a duplicate. Add to queue stores a new Pending row and does not start it. Resume last (Queue tab) continues the journal of the last job (including deferred files). " +
                 "Before resume, Mercury asks whether to check the source for changes first (Yes = walk vs journal, cancellable; No = journal as-is).\n\n" +
-                "Pause stops between chunks of the current file (temp .mercury.tmp stays until you Resume). " +
+                "Pause stops between chunks of the current file (temp .mercury.tmp stays until you Resume). Elapsed freezes and Speed shows 0 B/s while paused. " +
                 "Stop or Close now also keeps .mercury.tmp for large files so Resume last continues from the last written offset instead of recopying from byte 0. " +
                 "Pause after this file finishes the file in flight, then pauses — it will not cut the temp mid-stream. " +
                 "The button becomes Remove Pause after while waiting; click it to cancel. " +
@@ -45,7 +46,7 @@ public static class HelpDocument
                 "Close (X / Alt+F4) while a job is copying asks: Wait for this file, Close now, or Cancel. " +
                 "Wait for this file uses Pause after this file, then exits. Close now keeps the in-flight .mercury.tmp (offset resume) and leaves a dirty heartbeat so the next launch offers resume. " +
                 "A crash, kill, or reboot leaves the same dirty flag.\n\n" +
-                "Stop cancels and keeps progress for Resume. Pause all / Resume all apply to every running job."
+                "Stop cancels and keeps progress for Resume last. Pause all / Resume all on the Queue tab apply to every running job."
         },
         new()
         {
@@ -108,6 +109,7 @@ public static class HelpDocument
                 "When two or more jobs are in the queue, the stats table includes Overall files (example: Files: 12/400). " +
                 "Job: 2 of 5 is the running job’s place in the listed queue (omitted when there is a single job). " +
                 "Stats sit under the bars in a table (key: value), including the current File name. Status text lives in this header — the Transfer tab no longer repeats them. " +
+                "Start, Pause, Pause after this file, and Stop sit under that file name at the bottom of this header. When paused, Start reads Resume. " +
                 "During enumerate, Types shows a mix such as Video: 40 files, 2.1 TB. " +
                 "Writing rundown runs in the background after copy and verify so the next queued job can start transferring. " +
                 "The copier stays one job at a time; Start is enabled when that copy slot is free. Stop during rundown is immediate."
@@ -136,14 +138,14 @@ public static class HelpDocument
                 "One copy runs at a time, in listed order: after a job finishes, the first not-on-hold Pending job that is due starts next " +
                 "(a later job will not jump a not-due job ahead of it). Writing rundown for a finished job can continue in the background while the next copy starts. " +
                 "Hold marks a queued job On hold so it never auto-starts; it stays until you Unhold or Start/Resume that row. " +
-                "Pause all affects every active job."
+                "Pause all affects every active job. Resume all continues every paused job. Resume last continues the last job’s journal."
         },
         new()
         {
             Id = "console",
             Title = "Console tab",
             Body =
-                "Live log of the current session. Search filters lines; Follow stays on the newest line; Errors only hides info. " +
+                "Live log of the current session. Each line starts with the local date and 24-hour time (not UTC, not 12-hour). Search filters lines; Follow stays on the newest line; Errors only hides info. " +
                 "Copy copies the view. Open logs folder opens the logs directory. " +
                 "A daily error log (mercury-YYYYMMDD.log) is also written under Settings so you can check failures later. " +
                 "When a finished job is writing its rundown off the copy slot, the console logs Rundown running in background."

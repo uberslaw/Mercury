@@ -64,6 +64,8 @@ public class RoboFlagsTests
         Assert.Contains("Include source folder name is on by default", section.Body, StringComparison.Ordinal);
         Assert.Contains("contents-only", section.Body, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("check the source for changes", section.Body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("bottom of the Progress header", section.Body, StringComparison.Ordinal);
+        Assert.Contains("Add to queue and Save job stay at the bottom", section.Body, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -84,6 +86,7 @@ public class RoboFlagsTests
         Assert.Contains("Job Options", section.Body, StringComparison.Ordinal);
         Assert.Contains("Contents only", section.Body, StringComparison.Ordinal);
         Assert.Contains("Include source folder name", section.Body, StringComparison.Ordinal);
+        Assert.Contains("Resume last", section.Body, StringComparison.Ordinal);
         var options = HelpDocument.Sections.Single(s => s.Id == "options");
         Assert.Contains("Include source folder name (default on)", options.Body, StringComparison.Ordinal);
     }

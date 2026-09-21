@@ -232,6 +232,7 @@ public sealed class JobProgressReporter : IProgress<JobProgress>
                 StageCount = _stages.Count,
                 StageName = CopyPipeline.LabelOf(_stages, _kind),
                 StartedUtc = _job.StartedUtc,
+                PausedUtc = _job.PausedUtc,
                 StageStartedUtc = _stageStarted,
                 TypeSummary = _typeSummary
             };

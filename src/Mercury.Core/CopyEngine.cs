@@ -642,6 +642,7 @@ public sealed class CopyEngine : ICopyEngine
         }
 
         job.Status = JobStatus.Paused;
+        TransferRundown.MarkPaused(job);
         TryJournal(journal, () => journal.SaveJob(job), log, job.Id, name);
         log.Info(job.Id, name, $"Paused after completing {relativePath}.");
         reporter.Update($"Paused after completing {relativePath}");
@@ -649,6 +650,7 @@ public sealed class CopyEngine : ICopyEngine
         if (job.Status == JobStatus.Paused)
         {
             job.Status = JobStatus.Copying;
+            TransferRundown.MarkUnpaused(job);
             TryJournal(journal, () => journal.SaveJob(job), log, job.Id, name);
             log.Info(job.Id, name, "Resumed.");
         }
@@ -1464,6 +1466,7 @@ public sealed class CopyEngine : ICopyEngine
                 logged = true;
                 var previous = job.Status;
                 job.Status = JobStatus.PausedOutsideHours;
+                TransferRundown.MarkPaused(job);
                 log.Info(job.Id, name, $"Paused — outside hours ({job.Options.HoursStart:HH:mm}–{job.Options.HoursEnd:HH:mm}).");
                 Report(progress, job, name, cloud, "Paused — outside hours");
                 job.Status = previous;
@@ -1475,6 +1478,7 @@ public sealed class CopyEngine : ICopyEngine
         if (logged)
         {
             job.Status = JobStatus.Copying;
+            TransferRundown.MarkUnpaused(job);
             log.Info(job.Id, name, "Inside hours — resuming copy.");
         }
     }

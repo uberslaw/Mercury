@@ -128,6 +128,24 @@
                                        Visibility="{Binding CloudWarning, Converter={StaticResource BoolToVis}}"/>
                         </Border>
                     </StackPanel>
+                    <WrapPanel Margin="0,8,0,0">
+                        <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="AccentBrush,AccentForegroundBrush">
+                            <Button Content="{Binding StartButtonLabel}" Style="{StaticResource AccentButton}"
+                                    Command="{Binding StartCommand}"
+                                    ToolTip="Start copies now. When paused, Resume continues the same job."/>
+                        </Border>
+                        <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="ButtonBrush,ButtonForegroundBrush,HeaderBarTrackBrush,OnHeaderBrush">
+                            <Button Content="Pause" Style="{StaticResource HeaderButton}" Command="{Binding PauseCommand}"
+                                    Margin="0,0,8,0"/>
+                        </Border>
+                        <Button Content="{Binding PauseAfterThisFileLabel}" Style="{StaticResource HeaderButton}"
+                                Command="{Binding PauseAfterThisFileCommand}"
+                                ToolTip="{Binding PauseAfterThisFileToolTip}"
+                                Margin="0,0,8,0"/>
+                        <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="CancelButtonBrush,AccentForegroundBrush">
+                            <Button Content="Stop" Style="{StaticResource CancelButton}" Command="{Binding StopCommand}"/>
+                        </Border>
+                    </WrapPanel>
                 </StackPanel>
             </Border>
         </Border>
@@ -296,25 +314,9 @@
 
                         <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Button" Margin="0,4,0,12">
                         <StackPanel Orientation="Horizontal">
-                            <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="AccentBrush,AccentForegroundBrush">
-                                <Button Content="Start" Style="{StaticResource AccentButton}" Command="{Binding StartCommand}"/>
-                            </Border>
                             <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="ButtonBrush,ButtonForegroundBrush">
                                 <Button Content="Add to queue" Style="{StaticResource ToolbarButton}" Command="{Binding AddToQueueCommand}"/>
                             </Border>
-                            <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="ButtonHoverBrush">
-                                <Button Content="Pause" Style="{StaticResource ToolbarButton}" Command="{Binding PauseCommand}"/>
-                            </Border>
-                            <Button Content="{Binding PauseAfterThisFileLabel}" Style="{StaticResource ToolbarButton}"
-                                    Command="{Binding PauseAfterThisFileCommand}"
-                                    ToolTip="{Binding PauseAfterThisFileToolTip}"/>
-                            <Button Content="Resume" Style="{StaticResource ToolbarButton}" Command="{Binding ResumePausedCommand}"/>
-                            <Button Content="Pause all" Style="{StaticResource ToolbarButton}" Command="{Binding PauseAllCommand}"/>
-                            <Button Content="Resume all" Style="{StaticResource ToolbarButton}" Command="{Binding ResumeAllCommand}"/>
-                            <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="CancelButtonBrush,AccentForegroundBrush">
-                                <Button Content="Stop" Style="{StaticResource CancelButton}" Command="{Binding StopCommand}"/>
-                            </Border>
-                            <Button Content="Resume last" Style="{StaticResource ToolbarButton}" Command="{Binding ResumeLastCommand}"/>
                             <Button Content="Save job" Style="{StaticResource CompactButton}" Command="{Binding SaveJobCommand}"/>
                         </StackPanel>
                         </Border>
@@ -445,7 +447,8 @@
                     <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                             <Button Content="Pause all" Style="{StaticResource ToolbarButton}" Command="{Binding PauseAllCommand}"/>
-                            <Button Content="Resume all" Style="{StaticResource ToolbarButton}" Command="{Binding ResumeAllCommand}" Margin="0"/>
+                            <Button Content="Resume all" Style="{StaticResource ToolbarButton}" Command="{Binding ResumeAllCommand}"/>
+                            <Button Content="Resume last" Style="{StaticResource ToolbarButton}" Command="{Binding ResumeLastCommand}" Margin="0"/>
                         </StackPanel>
                         <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="MutedBrush">
                             <TextBlock Text="Queued, running, and finished jobs" VerticalAlignment="Center"

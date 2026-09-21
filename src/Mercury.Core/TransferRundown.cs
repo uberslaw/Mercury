@@ -516,7 +516,29 @@ public sealed class TransferRundown
     }
 
     public static string FormatLocal(DateTimeOffset utc) =>
-        utc.ToLocalTime().ToString("d MMM yyyy HH:mm:ss", CultureInfo.CurrentCulture);
+        utc.ToLocalTime().ToString("d MMM yyyy HH:mm:ss", CultureInfo.InvariantCulture);
+
+    /// <summary>Local date + 24-hour clock so Console is not UTC and not 12-hour.</summary>
+    public static string FormatLogTime(DateTime utc)
+    {
+        DateTimeOffset offset;
+        if (utc.Kind == DateTimeKind.Local)
+        {
+            offset = new DateTimeOffset(utc);
+        }
+        else
+        {
+            offset = new DateTimeOffset(DateTime.SpecifyKind(utc, DateTimeKind.Utc));
+        }
+
+        return FormatLocal(offset);
+    }
+
+    public static void MarkPaused(Job job) =>
+        job.PausedUtc ??= DateTimeOffset.UtcNow;
+
+    public static void MarkUnpaused(Job job) =>
+        job.PausedUtc = null;
 
     private static string FormatPair(int source, int dest) =>
         string.Create(CultureInfo.InvariantCulture, $"Source {source}  Dest {dest}");

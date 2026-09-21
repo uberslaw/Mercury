@@ -65,6 +65,41 @@ public class TransferRundownTests
     }
 
     [Fact]
+    public void ProgressStatsFreezesElapsedAndZeroSpeedWhenPaused()
+    {
+        var started = new DateTimeOffset(2026, 9, 21, 5, 0, 0, TimeSpan.Zero);
+        var paused = started.AddMinutes(2);
+        var later = paused.AddMinutes(5);
+        var stats = ProgressStats.From(new JobProgress
+        {
+            Status = JobStatus.Paused,
+            StartedUtc = started,
+            StageStartedUtc = started,
+            PausedUtc = paused,
+            BytesPerSecond = 80_000_000,
+            BytesCopied = 1000,
+            BytesTotal = 2000,
+            CurrentFile = "clip.mkv"
+        }, later);
+
+        Assert.Equal(ByteFormatter.Duration(TimeSpan.FromMinutes(2)), stats.Elapsed.Value);
+        Assert.Equal(ByteFormatter.Speed(0), stats.Speed.Value);
+        Assert.Equal("—", stats.Eta.Value);
+        Assert.Equal("clip.mkv", stats.File.Value);
+    }
+
+    [Fact]
+    public void FormatLogTimeIsLocalDated24Hour()
+    {
+        var utc = new DateTime(2026, 9, 21, 5, 5, 54, DateTimeKind.Utc);
+        var text = TransferRundown.FormatLogTime(utc);
+        Assert.DoesNotContain("AM", text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("PM", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(TransferRundown.FormatLocal(new DateTimeOffset(utc, TimeSpan.Zero)), text);
+        Assert.Matches(@"^\d{1,2} [A-Z][a-z]{2} 2026 \d{2}:\d{2}:\d{2}$", text);
+    }
+
+    [Fact]
     public void ProgressStatsIncludesCurrentFile()
     {
         var stats = ProgressStats.From(new JobProgress
@@ -224,7 +259,9 @@ public class TransferRundownTests
         Assert.Contains("Job: 2 of 5", progress.Body, StringComparison.Ordinal);
         Assert.Contains("Job n of m is which queue item", progress.Body, StringComparison.Ordinal);
         Assert.Contains("Stage is that job", progress.Body, StringComparison.Ordinal);
+        Assert.Contains("Start, Pause, Pause after this file, and Stop sit under that file name", progress.Body, StringComparison.Ordinal);
         Assert.Contains("Rundown running in background", HelpDocument.Sections.Single(s => s.Id == "console").Body, StringComparison.Ordinal);
+        Assert.Contains("local date and 24-hour time", HelpDocument.Sections.Single(s => s.Id == "console").Body, StringComparison.Ordinal);
         Assert.DoesNotContain("Files; ", progress.Body, StringComparison.Ordinal);
 
         var options = HelpDocument.Sections.Single(s => s.Id == "options");

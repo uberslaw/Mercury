@@ -201,6 +201,8 @@ public sealed class Job
     public DateTimeOffset? StartedUtc { get; set; }
     /// <summary>When verify (or cancel/fail) finished.</summary>
     public DateTimeOffset? EndedUtc { get; set; }
+    /// <summary>When the job last entered Paused. Cleared on resume. Freezes elapsed.</summary>
+    public DateTimeOffset? PausedUtc { get; set; }
     public int SourceFiles { get; set; }
     public int DestFiles { get; set; }
     public int SourceFolders { get; set; }
@@ -240,6 +242,7 @@ public sealed class JobProgress
     public double RundownPerSecond { get; init; }
 
     public DateTimeOffset? EndedUtc { get; init; }
+    public DateTimeOffset? PausedUtc { get; init; }
 
     public bool IsRundownStage => CopyPipeline.IsRundown(StageName, Message);
 
@@ -267,10 +270,10 @@ public sealed class JobProgress
     }
 
     public TimeSpan ElapsedAt(DateTimeOffset now) =>
-        Duration(StartedUtc, EndedUtc ?? now);
+        Duration(StartedUtc, EndedUtc ?? PausedUtc ?? now);
 
     public TimeSpan StageElapsedAt(DateTimeOffset now) =>
-        Duration(StageStartedUtc, now);
+        Duration(StageStartedUtc, EndedUtc ?? PausedUtc ?? now);
 
     private static TimeSpan Duration(DateTimeOffset? start, DateTimeOffset now)
     {
@@ -334,7 +337,7 @@ public sealed class LogEvent
     public string Message { get; init; } = "";
 
     public override string ToString() =>
-        $"{Utc:HH:mm:ss} [{Level}] [{JobName}] {Message}";
+        $"{TransferRundown.FormatLogTime(Utc)} [{Level}] [{JobName}] {Message}";
 }
 
 public interface IJobLog

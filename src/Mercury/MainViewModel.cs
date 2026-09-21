@@ -165,7 +165,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             HelpSections.Add(section);
         }
 
-        StartCommand = new RelayCommand(StartNow, () => !IsRunning && HasPaths);
+        StartCommand = new RelayCommand(StartNow, CanStartOrResume);
         AddToQueueCommand = new RelayCommand(AddToQueue, () => HasPaths);
         QueueAddToQueueCommand = new RelayCommand(AddToQueueFromQueue, () => HasQueuePaths);
         PauseCommand = new RelayCommand(Pause, () => IsRunning && !IsPaused);
@@ -745,6 +745,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         internal set => SetField(ref _folderTreeEmpty, value);
     }
 
+    public string StartButtonLabel => IsPaused ? "Resume" : "Start";
+
     public string PauseAfterThisFileLabel =>
         PauseAfterFileArmed ? "Remove Pause after" : "Pause after this file";
 
@@ -1032,6 +1034,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             {
                 RaiseRunCommands();
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PathsEditable)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StartButtonLabel)));
             }
         }
     }
@@ -1218,8 +1221,17 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
+    private bool CanStartOrResume() =>
+        HasPaths && (!IsRunning || IsPaused);
+
     private void StartNow()
     {
+        if (IsPaused)
+        {
+            ResumePaused();
+            return;
+        }
+
         if (DestIsCatcher)
         {
             try
@@ -2805,7 +2817,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         var dispatcher = Application.Current?.Dispatcher;
         void add()
         {
-            AppendConsole($"{ev.Utc:HH:mm:ss} [{ev.JobName}] {ev.Message}", ev.Level == "Error");
+            AppendConsole($"{TransferRundown.FormatLogTime(ev.Utc)} [{ev.JobName}] {ev.Message}", ev.Level == "Error");
         }
 
         if (dispatcher is null || dispatcher.CheckAccess())
@@ -2888,6 +2900,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         if (!IsRunning)
         {
             _elapsedTimer?.Stop();
+            return;
+        }
+
+        if (IsPaused)
+        {
             return;
         }
 

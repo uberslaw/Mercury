@@ -80,15 +80,16 @@ public sealed class ProgressStats
         var stage = includeStage
             ? new StatPair("Stage", stageValue)
             : StatPair.Empty;
-        var elapsedClock = e.EndedUtc ?? clock;
+        var elapsedClock = e.EndedUtc ?? e.PausedUtc ?? clock;
+        var paused = e.Status is JobStatus.Paused or JobStatus.PausedOutsideHours;
         var elapsed = includeStage && e.StartedUtc is not null
             ? new StatPair("Elapsed", ByteFormatter.Duration(e.ElapsedAt(elapsedClock)))
             : includeStage
                 ? new StatPair("Elapsed", "—")
                 : StatPair.Empty;
         var thisStage = includeStage
-            ? new StatPair("This stage", live && e.StageStartedUtc is not null
-                ? ByteFormatter.Duration(e.StageElapsedAt(clock))
+            ? new StatPair("This stage", (live || paused) && e.StageStartedUtc is not null
+                ? ByteFormatter.Duration(e.StageElapsedAt(elapsedClock))
                 : "—")
             : StatPair.Empty;
 
@@ -113,11 +114,12 @@ public sealed class ProgressStats
         }
 
         var speedPair = new StatPair("Speed",
-            !live ? "—"
+            paused ? ByteFormatter.Speed(0, megabits)
+            : !live ? "—"
             : rundown ? FormatRundownSpeed(e.RundownPerSecond)
             : ByteFormatter.Speed(rate, megabits));
         var etaPair = new StatPair("ETA",
-            !live ? "—"
+            !live || paused ? "—"
             : rundown && eta is null ? "…"
             : ByteFormatter.Eta(eta));
 

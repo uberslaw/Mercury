@@ -428,6 +428,7 @@ public sealed class JobScheduler : IDisposable
         {
             running.Pause.Pause();
             running.Job.Status = JobStatus.Paused;
+            TransferRundown.MarkPaused(running.Job);
             running.Journal.SaveJob(running.Job);
             Log.Info(jobId, running.Job.Name, "Paused.");
             ReportFinal(running.Job);
@@ -497,6 +498,7 @@ public sealed class JobScheduler : IDisposable
         foreach (var running in _running.Values)
         {
             running.Job.Status = JobStatus.Paused;
+            TransferRundown.MarkPaused(running.Job);
             running.Journal.SaveJob(running.Job);
             Log.Info(running.Job.Id, running.Job.Name, "Paused (all jobs).");
             ReportFinal(running.Job);
@@ -514,6 +516,7 @@ public sealed class JobScheduler : IDisposable
             }
 
             running.Job.Status = JobStatus.Copying;
+            TransferRundown.MarkUnpaused(running.Job);
             running.Journal.SaveJob(running.Job);
             Log.Info(running.Job.Id, running.Job.Name, "Resumed (all jobs).");
             ReportFinal(running.Job);
@@ -527,6 +530,7 @@ public sealed class JobScheduler : IDisposable
         if (_running.TryGetValue(jobId, out var running))
         {
             running.Job.Status = JobStatus.Copying;
+            TransferRundown.MarkUnpaused(running.Job);
             running.Journal.SaveJob(running.Job);
             running.Pause.Resume();
             Log.Info(jobId, running.Job.Name, "Resumed.");
@@ -1018,6 +1022,7 @@ public sealed class JobScheduler : IDisposable
             StageCount = p.StageCount,
             StageName = p.StageName,
             StartedUtc = started,
+            PausedUtc = p.PausedUtc ?? job.PausedUtc,
             StageStartedUtc = p.StageStartedUtc,
             TypeSummary = p.TypeSummary,
             EndedUtc = job.EndedUtc ?? p.EndedUtc,

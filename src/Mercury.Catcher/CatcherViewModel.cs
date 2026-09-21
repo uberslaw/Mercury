@@ -220,8 +220,8 @@ public sealed class CatcherViewModel : INotifyPropertyChanged, IAsyncDisposable
                 info => _dispatcher.BeginInvoke(() =>
                 {
                     LastTransfer = info.Ok
-                        ? $"{info.Utc.ToLocalTime():HH:mm:ss}  {info.FileName}  {ByteFormatter.ToString(info.Bytes)}  {info.Message}"
-                        : $"{info.Utc.ToLocalTime():HH:mm:ss}  FAILED  {info.FileName}  {info.Message}";
+                        ? $"{TransferRundown.FormatLogTime(info.Utc)}  {info.FileName}  {ByteFormatter.ToString(info.Bytes)}  {info.Message}"
+                        : $"{TransferRundown.FormatLogTime(info.Utc)}  FAILED  {info.FileName}  {info.Message}";
                 }));
             _server.Start();
             IsListening = true;
