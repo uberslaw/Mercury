@@ -101,6 +101,8 @@
                       Content="Skip compressed" IsChecked="{Binding SkipCompressedWhenPacking}"
                       IsEnabled="{Binding PackAsZip}"
                       ToolTip="Default on with Small Files. Video, photos, audio, zip/7z/rar, ISO, and similar copy as files — not wrapped in the transport zip. If the whole job is already compressed, packing is skipped entirely."/>
+        </WrapPanel>
+        <WrapPanel Margin="0,8,0,0" VerticalAlignment="Center">
             <CheckBox Style="{StaticResource OptionsCheckBox}"
                       Content="Ignore Storage Limit" IsChecked="{Binding IgnoreFreeSpaceCheck}"
                       ToolTip="Still reports Need vs available, but does not abort if the destination is thin-provisioned or can grow."/>
