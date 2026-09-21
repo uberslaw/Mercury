@@ -519,6 +519,8 @@ public sealed class TransferRundown
         utc.ToLocalTime().ToString("d MMM yyyy HH:mm:ss", CultureInfo.InvariantCulture);
 
     /// <summary>Local date + 24-hour clock so Console is not UTC and not 12-hour.</summary>
+    public static string FormatLogTime(DateTimeOffset utc) => FormatLocal(utc);
+
     public static string FormatLogTime(DateTime utc)
     {
         DateTimeOffset offset;
