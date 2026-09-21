@@ -50,7 +50,7 @@ public sealed class CopyEngine : ICopyEngine
         var totals = journal.Totals();
         var hasJournal = totals.Files > 0;
         var stages = CopyPipeline.For(job, hasJournal, pack);
-        var reporter = new JobProgressReporter(job, name, cloud, stages, progress, log);
+        var reporter = new JobProgressReporter(job, name, cloud, stages, progress, log, pause);
 
         using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var heartbeat = reporter.HeartbeatAsync(heartbeatCts.Token);

@@ -8,6 +8,7 @@ public sealed class JobProgressReporter : IProgress<JobProgress>
     private IReadOnlyList<CopyStage> _stages;
     private readonly IProgress<JobProgress>? _progress;
     private readonly IJobLog? _log;
+    private readonly PauseGate? _pause;
     private readonly object _lock = new();
 
     private CopyStageKind _kind = CopyStageKind.PreparingDestination;
@@ -29,7 +30,8 @@ public sealed class JobProgressReporter : IProgress<JobProgress>
         bool cloud,
         IReadOnlyList<CopyStage> stages,
         IProgress<JobProgress>? progress,
-        IJobLog? log)
+        IJobLog? log,
+        PauseGate? pause = null)
     {
         _job = job;
         _name = name;
@@ -37,6 +39,7 @@ public sealed class JobProgressReporter : IProgress<JobProgress>
         _stages = stages;
         _progress = progress;
         _log = log;
+        _pause = pause;
     }
 
     public void ReplaceStages(IReadOnlyList<CopyStage> stages)
@@ -215,6 +218,8 @@ public sealed class JobProgressReporter : IProgress<JobProgress>
                 JobName = _name,
                 Status = _job.Status,
                 CurrentFile = _current,
+                CurrentFileBytesCopied = _pause?.CurrentFileCopied ?? 0,
+                CurrentFileBytesTotal = _pause?.CurrentFileSize ?? 0,
                 Message = _message,
                 CloudDestination = _cloud,
                 BytesCopied = bytesCopied,

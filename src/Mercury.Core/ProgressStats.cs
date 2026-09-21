@@ -99,7 +99,7 @@ public sealed class ProgressStats
             : StatPair.Empty;
         var hasCounts = e.FilesTotal > 0 || e.FilesCopied > 0;
         var files = new StatPair("Files", hasCounts ? $"{e.FilesCopied}/{e.FilesTotal}" : "—");
-        var file = new StatPair("File", ProgressHeader.DashOr(e.CurrentFile));
+        var file = new StatPair("File", ProgressHeader.CurrentFileDisplay(e.CurrentFile, e.CurrentFileBytesCopied, e.CurrentFileBytesTotal));
         var overallFiles = ProgressHeader.ShowOverall(jobCount) && overall is not null
             ? new StatPair("Overall files", $"{overall.FilesCopied}/{overall.FilesTotal}")
             : StatPair.Empty;

@@ -22,6 +22,10 @@ public sealed class PauseGate
 
     public string? CurrentFilePath => _filePath;
 
+    public long CurrentFileCopied => Interlocked.Read(ref _fileCopied);
+
+    public long CurrentFileSize => Interlocked.Read(ref _fileSize);
+
     public void Pause()
     {
         Interlocked.Exchange(ref _paused, 1);

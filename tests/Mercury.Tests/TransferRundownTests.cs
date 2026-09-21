@@ -81,6 +81,21 @@ public class TransferRundownTests
     }
 
     [Fact]
+    public void ProgressStatsCurrentFileIncludesPercentWhenSizeKnown()
+    {
+        var stats = ProgressStats.From(new JobProgress
+        {
+            Status = JobStatus.Copying,
+            CurrentFile = @"video.mkv",
+            CurrentFileBytesCopied = 5,
+            CurrentFileBytesTotal = 10,
+            FilesCopied = 0,
+            FilesTotal = 1
+        });
+        Assert.Equal(@"video.mkv  50%", stats.File.Value);
+    }
+
+    [Fact]
     public void ProgressStatsShowsOverallFilesOnlyWhenQueueHasTwoJobs()
     {
         var current = new JobProgress { FilesCopied = 12, FilesTotal = 400 };

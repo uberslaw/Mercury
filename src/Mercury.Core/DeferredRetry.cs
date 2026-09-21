@@ -294,6 +294,18 @@ public static class ProgressHeader
     public static string DashOr(string? value) =>
         string.IsNullOrWhiteSpace(value) ? "—" : value;
 
+    public static string CurrentFileDisplay(string? path, long copied, long total)
+    {
+        var name = DashOr(path);
+        if (name == "—" || total <= 0)
+        {
+            return name;
+        }
+
+        var percent = 100.0 * Math.Clamp(copied, 0, total) / total;
+        return name + "  " + PercentLabel(percent, copied > 0);
+    }
+
     public static string PercentLabel(double percent, bool workStarted = false)
     {
         var p = Math.Clamp(percent, 0, 100);

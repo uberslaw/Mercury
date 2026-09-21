@@ -43,6 +43,7 @@ internal static class FileCopier
             log?.Info(job.Id, name,
                 $"Resuming {file.RelativePath} at {ByteFormatter.ToString(resumeAt)} of {ByteFormatter.ToString(file.Size)}.");
             speed?.Add(resumeAt);
+            pause?.AddFileBytes(resumeAt);
             onCopied?.Invoke(resumeAt);
         }
 

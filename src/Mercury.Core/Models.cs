@@ -216,6 +216,8 @@ public sealed class JobProgress
     public string JobName { get; init; } = "";
     public JobStatus Status { get; init; }
     public string? CurrentFile { get; init; }
+    public long CurrentFileBytesCopied { get; init; }
+    public long CurrentFileBytesTotal { get; init; }
     public long BytesCopied { get; init; }
     public long BytesTotal { get; init; }
     public int FilesCopied { get; init; }

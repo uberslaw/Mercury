@@ -1003,6 +1003,8 @@ public sealed class JobScheduler : IDisposable
             JobName = p.JobName,
             Status = p.Status,
             CurrentFile = p.CurrentFile,
+            CurrentFileBytesCopied = p.CurrentFileBytesCopied,
+            CurrentFileBytesTotal = p.CurrentFileBytesTotal,
             Message = p.Message,
             CloudDestination = p.CloudDestination,
             BytesCopied = copied,
