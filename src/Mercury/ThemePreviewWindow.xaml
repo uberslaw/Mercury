@@ -17,10 +17,15 @@
         <Border DockPanel.Dock="Top" Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="HeaderBrush">
             <Border Background="{DynamicResource HeaderBrush}" Padding="12,10" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
                 <StackPanel>
-                    <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Body">
-                        <TextBlock Text="Progress" FontWeight="SemiBold" Foreground="{DynamicResource OnHeaderBrush}"
-                                   FontFamily="{DynamicResource BodyFontFamily}" FontSize="{DynamicResource BodyFontSize}"/>
-                    </Border>
+                    <Grid Margin="0,0,0,2">
+                        <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Body">
+                            <TextBlock Text="Progress" FontWeight="SemiBold" Foreground="{DynamicResource OnHeaderBrush}"
+                                       FontFamily="{DynamicResource BodyFontFamily}" FontSize="{DynamicResource BodyFontSize}"/>
+                        </Border>
+                        <TextBlock Text="1m 59s" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource OnHeaderBrush}"
+                                   FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}"/>
+                    </Grid>
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>

@@ -65,6 +65,22 @@ public class TransferRundownTests
     }
 
     [Fact]
+    public void ProgressStatsIncludesCurrentFile()
+    {
+        var stats = ProgressStats.From(new JobProgress
+        {
+            Status = JobStatus.Copying,
+            CurrentFile = @"day1\clip.mkv",
+            FilesCopied = 3,
+            FilesTotal = 10,
+            BytesCopied = 100,
+            BytesTotal = 1000
+        });
+        Assert.Equal(@"day1\clip.mkv", stats.File.Value);
+        Assert.Contains(stats.TableCells, p => p.Key == "File");
+    }
+
+    [Fact]
     public void ProgressStatsShowsOverallFilesOnlyWhenQueueHasTwoJobs()
     {
         var current = new JobProgress { FilesCopied = 12, FilesTotal = 400 };
@@ -145,7 +161,7 @@ public class TransferRundownTests
         Assert.DoesNotContain("Files; ", progress.Body, StringComparison.Ordinal);
 
         var options = HelpDocument.Sections.Single(s => s.Id == "options");
-        Assert.Contains("when not idle", options.Body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Throttle active PC", options.Body, StringComparison.OrdinalIgnoreCase);
 
         var queue = HelpDocument.Sections.Single(s => s.Id == "queue");
         Assert.Contains("On hold", queue.Body, StringComparison.OrdinalIgnoreCase);

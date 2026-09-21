@@ -82,7 +82,9 @@ public sealed class CopyEngine : ICopyEngine
                 foreach (var record in SourceWalker.Walk(mapping, exclude, job.Options))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    inventory.Add(FileClassifier.Classify(record.SourcePath, record.Size, peek), record.Size);
+                    var kind = FileClassifier.Classify(record.SourcePath, record.Size, peek);
+                    record.PayloadKind = kind;
+                    inventory.Add(kind, record.Size);
                     ZipPack.NoteFolders(folders, record.RelativePath);
                     journal.UpsertFile(record);
                     found++;
@@ -193,6 +195,19 @@ public sealed class CopyEngine : ICopyEngine
 
             io ??= UnbufferedIoSession.Create(job.Options, new PayloadInventory(), budget);
 
+            if (pack && catcher is null)
+            {
+                var listed = journal.GetFiles();
+                if (!NeedsTransportZip(job, listed))
+                {
+                    pack = false;
+                    log.Info(job.Id, name,
+                        $"All {listed.Count} file(s) are already compressed (video, photos, audio, archives, disk images) — copying as-is, no transport zip.");
+                }
+
+                reporter.ReplaceStages(CopyPipeline.For(job, hasJournalFiles: true, pack));
+            }
+
             if (job.Options.DryRun)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -216,13 +231,18 @@ public sealed class CopyEngine : ICopyEngine
                 journal.SaveJob(job);
                 await PackWithRetriesAsync(job, mapping, journal, budget, pause, log, name, reporter, cloud, speed, cancellationToken, io)
                     .ConfigureAwait(false);
-                if (catcher is null)
+                var zipPath = ZipPack.ZipPath(mapping);
+                if (catcher is null && File.Exists(zipPath))
                 {
                     reporter.Enter(CopyStageKind.Unpacking, JobStatus.Copying, "Unpacking…");
                     journal.SaveJob(job);
                     await UnpackWithRetriesAsync(
                             job, mapping, journal, budget, pause, log, name, reporter, cloud, speed, cancellationToken, io)
                         .ConfigureAwait(false);
+                }
+                else if (catcher is null)
+                {
+                    log.Info(job.Id, name, "No transport zip to unpack — already-compressed files were copied as-is.");
                 }
             }
             else if (catcher is null)
@@ -252,12 +272,19 @@ public sealed class CopyEngine : ICopyEngine
                     }
 
                     pause.BeginFile(file.RelativePath, file.Size);
-                    var copied = await CopyWithRetriesAsync(job, file, budget, pause, log, name, speed, cancellationToken, io)
+                    var copied = await CopyWithRetriesAsync(job, file, journal, budget, pause, log, name, speed, cancellationToken, io)
                         .ConfigureAwait(false);
                     pause.EndFile();
                     if (copied.ok)
                     {
-                        journal.MarkCopied(file.RelativePath, copied.hash);
+                        try
+                        {
+                            journal.MarkCopied(file.RelativePath, copied.hash);
+                        }
+                        catch (ObjectDisposedException ex)
+                        {
+                            throw new IOException("Job journal was closed while files were still copying.", ex);
+                        }
                         deferred.Remove(file.RelativePath);
                         log.Info(job.Id, name, $"Copied {file.RelativePath} ({ByteFormatter.ToString(file.Size)})");
                     }
@@ -534,9 +561,36 @@ public sealed class CopyEngine : ICopyEngine
         return false;
     }
 
-    private static bool CopyBesideZip(Job job, FileRecord file) =>
-        CompressedMedia.IsAlreadyCompressed(file.RelativePath) ||
-        (job.Options.CopySymbolicLinksAsLinks && FileMetadata.IsSymlinkFile(file.SourcePath));
+    private static bool CopyBesideZip(Job job, FileRecord file, MagicPeekBudget? peek = null)
+    {
+        if (job.Catcher is not null)
+        {
+            return false;
+        }
+
+        if (job.Options.CopySymbolicLinksAsLinks && FileMetadata.IsSymlinkFile(file.SourcePath))
+        {
+            return true;
+        }
+
+        if (!job.Options.PackAsZip || !job.Options.SkipCompressedWhenPacking)
+        {
+            return false;
+        }
+
+        return CompressedMedia.IsAlreadyCompressed(file, peek);
+    }
+
+    private static bool NeedsTransportZip(Job job, IReadOnlyList<FileRecord> files)
+    {
+        if (!job.Options.PackAsZip)
+        {
+            return false;
+        }
+
+        var peek = MagicPeekBudget.ForPackSkip();
+        return files.Any(f => f.Status != FileCopyStatus.Skipped && !CopyBesideZip(job, f, peek));
+    }
 
     private static async Task PauseAfterFileIfRequestedAsync(
         Job job,
@@ -601,7 +655,7 @@ public sealed class CopyEngine : ICopyEngine
             await pause.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
             reporter.Update($"Retrying deferred {file.RelativePath}", file.RelativePath, speed);
             pause.BeginFile(file.RelativePath, file.Size);
-            var copied = await CopyWithRetriesAsync(job, file, budget, pause, log, name, speed, cancellationToken, io)
+            var copied = await CopyWithRetriesAsync(job, file, journal, budget, pause, log, name, speed, cancellationToken, io)
                 .ConfigureAwait(false);
             pause.EndFile();
             if (copied.ok)
@@ -639,6 +693,7 @@ public sealed class CopyEngine : ICopyEngine
     private static async Task<(bool ok, string? hash, string? error, bool transient)> CopyWithRetriesAsync(
         Job job,
         FileRecord file,
+        JobJournal journal,
         BandwidthBudget budget,
         PauseGate pause,
         IJobLog log,
@@ -654,19 +709,20 @@ public sealed class CopyEngine : ICopyEngine
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                var hash = await CopyOneAsync(job, file, budget, pause, speed, cancellationToken, log, name, io).ConfigureAwait(false);
+                var hash = await CopyOneAsync(
+                        job, file, budget, pause, speed, cancellationToken, log, name, io,
+                        onCopied: n => journal.SetCopiedBytes(file.RelativePath, n))
+                    .ConfigureAwait(false);
                 return (true, hash, null, false);
             }
             catch (OperationCanceledException)
             {
-                TryDeleteIncomplete(file.DestPath);
                 throw;
             }
             catch (Exception ex)
             {
                 last = ex;
                 log.Error(job.Id, name, $"Retry {i + 1}/{attempts} {file.RelativePath}: {ex.Message}");
-                TryDeleteIncomplete(file.DestPath);
                 if (i + 1 < attempts)
                 {
                     await Task.Delay(TimeSpan.FromSeconds(Math.Max(1, job.Options.RetryWaitSeconds)), cancellationToken)
@@ -706,18 +762,13 @@ public sealed class CopyEngine : ICopyEngine
         }
 
         var catcherPack = job.Catcher is not null;
+        var peek = MagicPeekBudget.ForPackSkip();
         var packable = catcherPack
             ? pending
-            : pending.Where(f =>
-                    !CompressedMedia.IsAlreadyCompressed(f.RelativePath) &&
-                    !(job.Options.CopySymbolicLinksAsLinks && FileMetadata.IsSymlinkFile(f.SourcePath)))
-                .ToList();
+            : pending.Where(f => !CopyBesideZip(job, f, peek)).ToList();
         var loose = catcherPack
             ? []
-            : pending.Where(f =>
-                    CompressedMedia.IsAlreadyCompressed(f.RelativePath) ||
-                    (job.Options.CopySymbolicLinksAsLinks && FileMetadata.IsSymlinkFile(f.SourcePath)))
-                .ToList();
+            : pending.Where(f => CopyBesideZip(job, f, peek)).ToList();
 
         if (pending.Count == 0)
         {
@@ -742,18 +793,20 @@ public sealed class CopyEngine : ICopyEngine
         var deferred = new DeferredRetrySession(job, journal, log, name);
         var reporter = progress as JobProgressReporter;
         reporter?.Update(speed: speed);
-        if (loose.Count > 0)
-        {
-            log.Info(job.Id, name,
-                $"{loose.Count} already-compressed file(s) will be copied as-is; packing {packable.Count} into the transport zip.");
-        }
-
         if (packable.Count == 0)
         {
+            log.Info(job.Id, name,
+                $"All {loose.Count} file(s) are already compressed — copying as-is (no transport zip).");
             await CopyAlreadyCompressedAsync(
                     job, journal, budget, pause, log, name, progress, cloud, speed, loose, cancellationToken, io)
                 .ConfigureAwait(false);
             return;
+        }
+
+        if (loose.Count > 0)
+        {
+            log.Info(job.Id, name,
+                $"Copying {loose.Count} already-compressed file(s) as-is. Packing {packable.Count} compressible file(s) into the transport zip.");
         }
 
         log.Info(job.Id, name,
@@ -942,7 +995,7 @@ public sealed class CopyEngine : ICopyEngine
             }
 
             pause.BeginFile(file.RelativePath, file.Size);
-            var copied = await CopyWithRetriesAsync(job, file, budget, pause, log, name, speed, cancellationToken, io)
+            var copied = await CopyWithRetriesAsync(job, file, journal, budget, pause, log, name, speed, cancellationToken, io)
                 .ConfigureAwait(false);
             pause.EndFile();
             if (copied.ok)
@@ -1202,9 +1255,10 @@ public sealed class CopyEngine : ICopyEngine
         CancellationToken cancellationToken,
         IJobLog? log = null,
         string? jobName = null,
-        UnbufferedIoSession? io = null)
+        UnbufferedIoSession? io = null,
+        Action<long>? onCopied = null)
     {
-        return await FileCopier.CopyAsync(job, file, budget, pause, speed, cancellationToken, log, jobName, io)
+        return await FileCopier.CopyAsync(job, file, budget, pause, speed, cancellationToken, log, jobName, io, onCopied)
             .ConfigureAwait(false);
     }
 

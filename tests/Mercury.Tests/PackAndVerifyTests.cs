@@ -251,7 +251,44 @@ public class PackAndVerifyTests
     }
 
     [Fact]
-    public void AlreadyCompressedSkipsVideoArchivesPhotosAudio()
+    public async Task PackAsZipAllArchivesSkipsTransportZip()
+    {
+        var (src, dest, paths) = CreateTrees();
+        try
+        {
+            File.WriteAllText(Path.Combine(src, "a.zip"), "PK-fake");
+            File.WriteAllText(Path.Combine(src, "b.7z"), "7z-fake");
+            var job = NewJob(src, dest, pack: true);
+            var seen = new HashSet<string>();
+            var scheduler = new JobScheduler(paths);
+            scheduler.ProgressChanged += (_, p) =>
+            {
+                if (!string.IsNullOrWhiteSpace(p.StageName))
+                {
+                    seen.Add(p.StageName);
+                }
+            };
+            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await scheduler.StartAsync(job, resumeJournal: false, cts.Token);
+            var stored = scheduler.TryLoadLastJob();
+            scheduler.Dispose();
+            Assert.Equal(JobStatus.Completed, stored?.Status ?? job.Status);
+            var destFolder = Path.Combine(dest, Path.GetFileName(src));
+            Assert.True(File.Exists(Path.Combine(destFolder, "a.zip")));
+            Assert.True(File.Exists(Path.Combine(destFolder, "b.7z")));
+            var zipPath = Path.Combine(dest, Path.GetFileName(src) + ".zip");
+            Assert.False(File.Exists(zipPath));
+            Assert.Contains("Copying", seen);
+            Assert.DoesNotContain("Packing", seen);
+            Assert.DoesNotContain("Unpacking", seen);
+        }
+        finally
+        {
+            Cleanup(src, dest, paths);
+        }
+    }
+    [Fact]
+    public void CompressedMediaSkipsVideoArchivesAndImages()
     {
         Assert.True(CompressedMedia.IsAlreadyCompressed(@"D:\clip.mkv"));
         Assert.True(CompressedMedia.IsAlreadyCompressed("photo.JPG"));

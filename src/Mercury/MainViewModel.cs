@@ -90,6 +90,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private QueueJobItem? _selectedQueueJob;
     private HistoryItem? _selectedHistoryItem;
     private int _destKindIndex;
+    private string _queueSourcePath = "";
+    private string _queueDestPath = "";
+    private int _queueDestKindIndex;
+    private CatcherEnvelope? _queueSelectedCatcherTemplate;
+    private bool _skipCompressedWhenPacking = true;
     private string _catcherPassphrase = "";
     private CatcherEnvelope? _selectedCatcherTemplate;
     private string _networkName = "";
@@ -156,6 +161,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
         StartCommand = new RelayCommand(StartNow, () => !IsRunning && HasPaths);
         AddToQueueCommand = new RelayCommand(AddToQueue, () => HasPaths);
+        QueueAddToQueueCommand = new RelayCommand(AddToQueueFromQueue, () => HasQueuePaths);
         PauseCommand = new RelayCommand(Pause, () => IsRunning && !IsPaused);
         PauseAfterThisFileCommand = new RelayCommand(PauseAfterThisFile, CanPauseAfterThisFile);
         ResumePausedCommand = new RelayCommand(ResumePaused, () => IsRunning && IsPaused);
@@ -163,6 +169,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         ResumeLastCommand = new RelayCommand(ResumeLast, () => !IsRunning && CanResumeLast);
         BrowseSourceCommand = new RelayCommand(BrowseSource, () => PathsEditable);
         BrowseDestCommand = new RelayCommand(BrowseDest, () => PathsEditable);
+        BrowseQueueSourceCommand = new RelayCommand(BrowseQueueSource);
+        BrowseQueueDestCommand = new RelayCommand(BrowseQueueDest);
         PauseAllCommand = new RelayCommand(PauseAll, () => IsRunning && !IsGlobalPaused);
         ResumeAllCommand = new RelayCommand(ResumeAll, () => IsRunning && IsGlobalPaused);
         SaveJobCommand = new RelayCommand(SaveCurrentJob, () => !string.IsNullOrWhiteSpace(SourcePath) && (DestIsCatcher ? SelectedCatcherTemplate is not null : !string.IsNullOrWhiteSpace(DestPath)));
@@ -221,6 +229,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public ICommand StartCommand { get; }
     public ICommand AddToQueueCommand { get; }
+    public ICommand QueueAddToQueueCommand { get; }
     public ICommand PauseCommand { get; }
     public ICommand PauseAfterThisFileCommand { get; }
     public ICommand ResumePausedCommand { get; }
@@ -230,6 +239,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public ICommand ResumeLastCommand { get; }
     public ICommand BrowseSourceCommand { get; }
     public ICommand BrowseDestCommand { get; }
+    public ICommand BrowseQueueSourceCommand { get; }
+    public ICommand BrowseQueueDestCommand { get; }
     public ICommand SaveJobCommand { get; }
     public ICommand ToggleRoboFlagsCommand { get; }
     public ICommand LoadSavedJobCommand { get; }
@@ -297,6 +308,60 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 RaiseLandingPreview();
                 RaiseRunCommands();
                 EnsureCatcherProbe();
+            }
+        }
+    }
+
+    public string QueueSourcePath
+    {
+        get => _queueSourcePath;
+        set
+        {
+            if (SetField(ref _queueSourcePath, value))
+            {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasQueuePaths)));
+                RaiseRunCommands();
+            }
+        }
+    }
+
+    public string QueueDestPath
+    {
+        get => _queueDestPath;
+        set
+        {
+            if (SetField(ref _queueDestPath, value))
+            {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasQueuePaths)));
+                RaiseRunCommands();
+            }
+        }
+    }
+
+    public int QueueDestKindIndex
+    {
+        get => _queueDestKindIndex;
+        set
+        {
+            if (SetField(ref _queueDestKindIndex, value))
+            {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(QueueDestIsCatcher)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(QueueDestIsFolder)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasQueuePaths)));
+                RaiseRunCommands();
+            }
+        }
+    }
+
+    public CatcherEnvelope? QueueSelectedCatcherTemplate
+    {
+        get => _queueSelectedCatcherTemplate;
+        set
+        {
+            if (SetField(ref _queueSelectedCatcherTemplate, value))
+            {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasQueuePaths)));
+                RaiseRunCommands();
             }
         }
     }
@@ -393,6 +458,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public int VerifyIndex { get => _verifyIndex; set => SetField(ref _verifyIndex, value); }
     public bool DryRun { get => _dryRun; set => SetField(ref _dryRun, value); }
     public bool PackAsZip { get => _packAsZip; set => SetField(ref _packAsZip, value); }
+    public bool SkipCompressedWhenPacking { get => _skipCompressedWhenPacking; set => SetField(ref _skipCompressedWhenPacking, value); }
     public bool IgnoreFreeSpaceCheck { get => _ignoreFreeSpaceCheck; set => SetField(ref _ignoreFreeSpaceCheck, value); }
     public bool RoboFlagsExpanded { get => _roboFlagsExpanded; set => SetField(ref _roboFlagsExpanded, value); }
     public bool CopyTimestamps { get => _copyTimestamps; set => SetField(ref _copyTimestamps, value); }
@@ -532,7 +598,17 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         set => SetField(ref _followConsole, value);
     }
 
-    public string StatusText { get => _statusText; set => SetField(ref _statusText, value); }
+    public string StatusText
+    {
+        get => _statusText;
+        set
+        {
+            if (SetField(ref _statusText, value))
+            {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowHeaderStatus)));
+            }
+        }
+    }
     public string ResultBanner
     {
         get => _resultBanner;
@@ -597,15 +673,22 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
-    public string JobPercentText => ProgressHeader.PercentLabel(JobPercent);
+    public string JobPercentText => ProgressHeader.PercentLabel(JobPercent, JobStats.Bytes.HasValue || JobStats.Files.HasValue);
 
-    public string OverallPercentText => ProgressHeader.PercentLabel(OverallPercent);
+    public string OverallPercentText => ProgressHeader.PercentLabel(OverallPercent, JobStats.Bytes.HasValue || JobStats.Files.HasValue);
 
-    public bool ShowOverallProgress => ProgressHeader.ShowOverall(QueueJobs.Count);
+    public bool ShowOverallProgress => true;
     public ProgressStats HeaderStats => JobStats;
     public TransferRundown HeaderRundown => Rundown;
     public string HeaderRundownLine => Rundown.OneLine;
-    public bool ShowHeaderRundown => ShowProgressDetail && !string.IsNullOrWhiteSpace(Rundown.OneLine);
+    public string HeaderElapsedText => JobStats.Elapsed.HasValue ? JobStats.Elapsed.Value : "";
+    public bool ShowHeaderElapsed => ShowProgressDetail && !string.IsNullOrWhiteSpace(HeaderElapsedText);
+    public bool ShowHeaderStatus =>
+        ShowProgressDetail && !string.IsNullOrWhiteSpace(StatusText);
+    public bool ShowHeaderRundown =>
+        ShowProgressDetail
+        && !string.IsNullOrWhiteSpace(Rundown.OneLine)
+        && Rundown.OneLine.Contains(" · ", StringComparison.Ordinal);
     public bool ShowProgressDetail =>
         IsRunning
         || HasBackgroundRundown
@@ -684,8 +767,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool HasPaths =>
         !string.IsNullOrWhiteSpace(SourcePath) &&
         (DestIsCatcher ? SelectedCatcherTemplate is not null : !string.IsNullOrWhiteSpace(DestPath));
+    public bool HasQueuePaths =>
+        !string.IsNullOrWhiteSpace(QueueSourcePath) &&
+        (QueueDestIsCatcher ? QueueSelectedCatcherTemplate is not null : !string.IsNullOrWhiteSpace(QueueDestPath));
     public bool DestIsCatcher => DestKindIndex == 1;
     public bool DestIsFolder => !DestIsCatcher;
+    public bool QueueDestIsCatcher => QueueDestKindIndex == 1;
+    public bool QueueDestIsFolder => !QueueDestIsCatcher;
     public bool IncludeSourceFolderNameApplies
     {
         get
@@ -1041,13 +1129,31 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             return;
         }
 
+        var existing = FindMatchingResumable(job);
+        if (existing is not null)
+        {
+            if (_scheduler.HasRunningJob)
+            {
+                StatusText = string.Equals(_runningJobId, existing.Id, StringComparison.Ordinal)
+                    ? "That job is already running."
+                    : "A job is already running. Stop it first, or Add to queue for a duplicate.";
+                return;
+            }
+
+            existing.Options = job.Options;
+            ResumeStoredJob(existing);
+            return;
+        }
+
         if (job.Options.PackAsZip && job.Catcher is null && job.SourceKind != SourceKind.File)
         {
             var owner = Application.Current?.MainWindow;
             var proceed = MessageBox.Show(
                 owner,
-                "Already-compressed files (video, photos, audio, archives) will be copied as-is — wrapping them in the zip does not shrink them and only adds pack/unpack time.\n\nOther files are packed into a transport zip, then unpacked at the destination.\n\nContinue?",
-                "Pack as zip",
+                job.Options.SkipCompressedWhenPacking
+                    ? "Already-compressed files (video, photos, audio, zip/7z/rar, ISO) are copied as-is — they are not wrapped in the transport zip. If every file is already compressed, Mercury skips packing entirely.\n\nOther files are packed into a stored zip, then unpacked at the destination.\n\nContinue?"
+                    : "Small Files will wrap every file in a stored transport zip, including video and archives.\n\nContinue?",
+                "Small Files",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Information);
             if (proceed != MessageBoxResult.Yes)
@@ -1061,6 +1167,57 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         TransferRundown.MarkStarted(job);
         ShowStartingStage(job);
         EnqueueJob(job, "Starting…", startNow: true);
+    }
+
+    private Job? FindMatchingResumable(Job form)
+    {
+        Job? best = null;
+        foreach (var queued in _scheduler.Queue)
+        {
+            if (!IsResumable(queued.Status) || queued.OnHold || !SameRoute(queued, form))
+            {
+                continue;
+            }
+
+            if (best is null)
+            {
+                best = queued;
+                continue;
+            }
+
+            if ((queued.StartedUtc ?? DateTimeOffset.MinValue) >= (best.StartedUtc ?? DateTimeOffset.MinValue))
+            {
+                best = queued;
+            }
+        }
+
+        if (best is not null)
+        {
+            return best;
+        }
+
+        var last = _lastJob ?? _scheduler.TryLoadLastJob();
+        if (last is not null && IsResumable(last.Status) && SameRoute(last, form))
+        {
+            return last;
+        }
+
+        return null;
+    }
+
+    private bool SameRoute(Job queued, Job form)
+    {
+        if (!string.Equals(queued.SourcePath, form.SourcePath, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (queued.Catcher is not null || form.Catcher is not null)
+        {
+            return string.Equals(queued.Catcher?.TemplateId, form.Catcher?.TemplateId, StringComparison.Ordinal);
+        }
+
+        return string.Equals(queued.DestinationPath, form.DestinationPath, StringComparison.OrdinalIgnoreCase);
     }
 
     private void AddToQueue()
@@ -1084,15 +1241,41 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             return;
         }
 
-        var due = JobDue.IsDue(job, DateTimeOffset.Now);
-        var idle = !_scheduler.HasRunningJob;
-        if (idle)
+        EnqueueJob(
+            job,
+            job.ScheduledStart is { } start
+                ? $"Queued “{job.Name}” to start after {start.LocalDateTime:ddd d MMM HH:mm}."
+                : $"Queued “{job.Name}”.");
+    }
+
+    private void AddToQueueFromQueue()
+    {
+        if (QueueDestIsCatcher)
         {
-            ClearPreviousRunPresentation();
+            try
+            {
+                CatcherCrypto.ValidatePassphrase(_catcherPassphrase);
+            }
+            catch (Exception ex)
+            {
+                StatusText = ex.Message;
+                return;
+            }
         }
-        EnqueueJob(job, idle && due
-            ? "Starting queued job…"
-            : job.ScheduledStart is { } start
+
+        var job = BuildJob(
+            QueueSourcePath,
+            QueueDestPath,
+            QueueDestKindIndex,
+            QueueSelectedCatcherTemplate);
+        if (!ConfirmPurgeIfJobNeedsIt(job))
+        {
+            return;
+        }
+
+        EnqueueJob(
+            job,
+            job.ScheduledStart is { } start
                 ? $"Queued “{job.Name}” to start after {start.LocalDateTime:ddd d MMM HH:mm}."
                 : $"Queued “{job.Name}”.");
     }
@@ -1142,11 +1325,15 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             }
         }
 
-        var scan = OfferSourceScan(last);
-        if (scan is null)
+        bool? scan = false;
+        if (JobJournal.Exists(_scheduler.Paths.JobDirectory(last.Id)))
         {
-            StatusText = "Resume cancelled.";
-            return;
+            scan = OfferSourceScan(last);
+            if (scan is null)
+            {
+                StatusText = "Resume cancelled.";
+                return;
+            }
         }
 
         last.Status = JobStatus.Pending;
@@ -1356,13 +1543,18 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         RefreshRunState();
     }
 
-    private Job BuildJob()
+    private Job BuildJob(
+        string? sourcePath = null,
+        string? destPath = null,
+        int? destKindIndex = null,
+        CatcherEnvelope? catcherTemplate = null)
     {
-        var source = PathNormalizer.Normalize(SourcePath);
-        if (DestIsCatcher)
+        var source = PathNormalizer.Normalize(sourcePath ?? SourcePath);
+        var catcherDest = (destKindIndex ?? DestKindIndex) == 1;
+        if (catcherDest)
         {
-            var template = SelectedCatcherTemplate
-                ?? throw new InvalidOperationException("Pick a Catcher template on the Transfer or Network tab.");
+            var template = catcherTemplate ?? SelectedCatcherTemplate
+                ?? throw new InvalidOperationException("Pick a Catcher template on the Transfer, Queue, or Network tab.");
             CatcherCrypto.ValidatePassphrase(_catcherPassphrase);
             CatcherSession.Remember(template.Id, _catcherPassphrase);
             return new Job
@@ -1377,7 +1569,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             };
         }
 
-        var dest = PathNormalizer.Normalize(DestPath);
+        var dest = PathNormalizer.Normalize(destPath ?? DestPath);
         return new Job
         {
             SourcePath = source,
@@ -1430,6 +1622,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             Verify = VerifyIndex == 1 ? VerifyLevel.Thorough : VerifyLevel.Quick,
             DryRun = DryRun,
             PackAsZip = PackAsZip,
+            SkipCompressedWhenPacking = SkipCompressedWhenPacking,
             IgnoreFreeSpaceCheck = IgnoreFreeSpaceCheck,
             CopyTimestamps = CopyTimestamps,
             CopyAttributes = CopyAttributes,
@@ -1491,6 +1684,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             VerifyIndex = options.Verify == VerifyLevel.Thorough ? 1 : 0;
             DryRun = options.DryRun;
             PackAsZip = options.PackAsZip;
+            SkipCompressedWhenPacking = options.SkipCompressedWhenPacking;
             IgnoreFreeSpaceCheck = options.IgnoreFreeSpaceCheck;
             CopyTimestamps = options.CopyTimestamps;
             CopyAttributes = options.CopyAttributes;
@@ -1711,7 +1905,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private void BrowseSource()
     {
-        var path = BrowseAny("Choose source", isSource: true);
+        var path = BrowseAny("Choose source", isSource: true, current: SourcePath);
         if (path is not null)
         {
             SourcePath = path;
@@ -1721,7 +1915,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private void BrowseDest()
     {
-        var path = BrowseAny("Choose destination", isSource: false);
+        var path = BrowseAny("Choose destination", isSource: false, current: DestPath);
         if (path is not null)
         {
             DestPath = path;
@@ -1729,10 +1923,38 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
-    private string? BrowseAny(string title, bool isSource)
+    private void BrowseQueueSource()
+    {
+        var path = BrowseAny("Choose source", isSource: true, current: QueueSourcePath);
+        if (path is not null)
+        {
+            QueueSourcePath = path;
+            RememberPath(isSource: true, path);
+        }
+    }
+
+    private void BrowseQueueDest()
+    {
+        var path = BrowseAny("Choose destination", isSource: false, current: QueueDestPath);
+        if (path is not null)
+        {
+            QueueDestPath = path;
+            RememberPath(isSource: false, path);
+        }
+    }
+
+    public void PrepareQueueForm()
+    {
+        QueueSourcePath = SourcePath;
+        QueueDestPath = DestPath;
+        QueueDestKindIndex = DestKindIndex;
+        QueueSelectedCatcherTemplate = SelectedCatcherTemplate;
+    }
+
+    private string? BrowseAny(string title, bool isSource, string? current)
     {
         var recents = LibraryStore.LoadRecents(_paths);
-        var start = LibraryStore.BrowseStartDir(isSource, recents, isSource ? SourcePath : DestPath);
+        var start = LibraryStore.BrowseStartDir(isSource, recents, current ?? (isSource ? SourcePath : DestPath));
         var folder = new OpenFolderDialog { Title = title + " — folder or drive" };
         if (!string.IsNullOrEmpty(start))
         {
@@ -2212,6 +2434,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderRundown)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderRundownLine)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowHeaderRundown)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderElapsedText)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowHeaderElapsed)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowHeaderStatus)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowProgressDetail)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JobPercent)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(OverallPercent)));
@@ -2563,6 +2788,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     {
         (StartCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (AddToQueueCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (QueueAddToQueueCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (PauseCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (PauseAfterThisFileCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (ResumePausedCommand as RelayCommand)?.RaiseCanExecuteChanged();
@@ -2581,6 +2807,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         (DeleteCatcherCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (BrowseSourceCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (BrowseDestCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (BrowseQueueSourceCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (BrowseQueueDestCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 
     private bool SetField<T>(ref T field, T value, [CallerMemberName] string? name = null)

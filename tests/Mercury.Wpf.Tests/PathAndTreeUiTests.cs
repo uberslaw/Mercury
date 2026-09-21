@@ -50,6 +50,39 @@ public class PathAndTreeUiTests
     }
 
     [Fact]
+    public void QueueBrowseStaysEnabledWhileRunning()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mercury-qpaths-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        MainViewModel? vm = null;
+        try
+        {
+            vm = new MainViewModel(new AppPaths(root));
+            vm.IsRunning = true;
+            vm.IsPaused = false;
+            Assert.False(vm.PathsEditable);
+            Assert.True(vm.BrowseQueueSourceCommand.CanExecute(null));
+            Assert.True(vm.BrowseQueueDestCommand.CanExecute(null));
+            vm.QueueSourcePath = @"D:\src";
+            vm.QueueDestPath = @"E:\dst";
+            Assert.True(vm.HasQueuePaths);
+            Assert.True(vm.QueueAddToQueueCommand.CanExecute(null));
+        }
+        finally
+        {
+            vm?.Dispose();
+            try
+            {
+                Directory.Delete(root, true);
+            }
+            catch
+            {
+                // temp leftover is OK
+            }
+        }
+    }
+
+    [Fact]
     public void DestTypeCombo_SizesToSelectionNotFullWidth()
     {
         WpfSta.Run(() =>

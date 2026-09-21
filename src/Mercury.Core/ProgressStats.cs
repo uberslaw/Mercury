@@ -24,7 +24,8 @@ public sealed class ProgressStats
         Stage = StatPair.Empty,
         Elapsed = StatPair.Empty,
         ThisStage = StatPair.Empty,
-        Types = StatPair.Empty
+        Types = StatPair.Empty,
+        File = StatPair.Empty
     };
 
     public StatPair Job { get; init; } = StatPair.Empty;
@@ -38,14 +39,15 @@ public sealed class ProgressStats
     public StatPair ThisStage { get; init; } = StatPair.Empty;
     public StatPair Types { get; init; } = StatPair.Empty;
     public StatPair OverallFiles { get; init; } = StatPair.Empty;
+    public StatPair File { get; init; } = StatPair.Empty;
 
     public IReadOnlyList<StatPair> TableCells
     {
         get
         {
-            StatPair[] all =
+        StatPair[] all =
             [
-                Job, Stage, Elapsed, ThisStage, Files, OverallFiles, Bytes, Speed, Eta, PauseAfter, Types
+                Job, Stage, File, Elapsed, ThisStage, Files, OverallFiles, Bytes, Speed, Eta, PauseAfter, Types
             ];
             return all.Where(p => p.HasValue).ToArray();
         }
@@ -85,6 +87,9 @@ public sealed class ProgressStats
             ? new StatPair("Job", $"{index} of {count}")
             : StatPair.Empty;
         var files = new StatPair("Files", $"{e.FilesCopied}/{e.FilesTotal}");
+        var file = string.IsNullOrWhiteSpace(e.CurrentFile)
+            ? StatPair.Empty
+            : new StatPair("File", e.CurrentFile);
         var overallFiles = ProgressHeader.ShowOverall(jobCount) && overall is not null
             ? new StatPair("Overall files", $"{overall.FilesCopied}/{overall.FilesTotal}")
             : StatPair.Empty;
@@ -114,6 +119,7 @@ public sealed class ProgressStats
                 Job = jobPair,
                 PauseAfter = pauseAfter ?? StatPair.Empty,
                 Stage = stage,
+                File = file,
                 Elapsed = elapsed,
                 ThisStage = thisStage,
                 Types = string.IsNullOrWhiteSpace(e.TypeSummary)
@@ -132,6 +138,7 @@ public sealed class ProgressStats
             Eta = etaPair,
             PauseAfter = pauseAfter ?? StatPair.Empty,
             Stage = stage,
+            File = file,
             Elapsed = elapsed,
             ThisStage = thisStage,
             Types = string.IsNullOrWhiteSpace(e.TypeSummary)

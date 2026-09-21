@@ -14,6 +14,7 @@ public sealed class JobScheduler : IDisposable
     private readonly List<Job> _queue = [];
     private readonly CancellationTokenSource _lifetime = new();
     private int _pumping;
+    private int _drain;
     private string? _forceStartId;
 
     public JobScheduler(AppPaths paths, ICopyEngine? engine = null, IRundownCapture? rundown = null)
@@ -117,7 +118,10 @@ public sealed class JobScheduler : IDisposable
         }
 
         RaiseQueueChanged();
-        Kick();
+        if (startNow)
+        {
+            Kick();
+        }
     }
 
     public void Remove(string jobId)
@@ -269,8 +273,13 @@ public sealed class JobScheduler : IDisposable
         }
     }
 
-    public void Kick()
+    public void Kick(bool drain = false)
     {
+        if (drain)
+        {
+            Interlocked.Exchange(ref _drain, 1);
+        }
+
         if (Interlocked.CompareExchange(ref _pumping, 1, 0) != 0)
         {
             return;
@@ -508,7 +517,7 @@ public sealed class JobScheduler : IDisposable
             ReportFinal(running.Job);
         }
 
-        Kick();
+        Kick(drain: true);
     }
 
     public void ResumePaused(string jobId)
@@ -800,6 +809,7 @@ public sealed class JobScheduler : IDisposable
 
     private async Task PumpAsync()
     {
+        var allowUnscheduled = Interlocked.Exchange(ref _drain, 0) == 1;
         try
         {
             while (!_lifetime.IsCancellationRequested)
@@ -822,7 +832,11 @@ public sealed class JobScheduler : IDisposable
                     }
 
                     var forceId = _forceStartId;
-                    next = JobDue.FindNext(_queue, DateTimeOffset.Now, forceId);
+                    next = JobDue.FindNext(
+                        _queue,
+                        DateTimeOffset.Now,
+                        forceId,
+                        includeUnscheduled: allowUnscheduled || forceId is not null);
                     if (next is not null && forceId == next.Id)
                     {
                         _forceStartId = null;
@@ -838,6 +852,7 @@ public sealed class JobScheduler : IDisposable
                 try
                 {
                     await RunCopyCoreAsync(next, resume, _lifetime.Token).ConfigureAwait(false);
+                    allowUnscheduled = true;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -861,12 +876,16 @@ public sealed class JobScheduler : IDisposable
                 again = !_lifetime.IsCancellationRequested
                         && _running.Count < MaxConcurrentJobs
                         && !GlobalPause.IsPaused
-                        && JobDue.FindNext(_queue, DateTimeOffset.Now, _forceStartId) is not null;
+                        && JobDue.FindNext(
+                            _queue,
+                            DateTimeOffset.Now,
+                            _forceStartId,
+                            includeUnscheduled: allowUnscheduled || _forceStartId is not null) is not null;
             }
 
             if (again)
             {
-                Kick();
+                Kick(drain: allowUnscheduled);
             }
         }
     }

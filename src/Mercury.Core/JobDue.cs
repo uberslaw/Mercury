@@ -21,8 +21,14 @@ public static class JobDue
     /// <summary>
     /// Next auto-start: first not-on-hold Pending in list order. A not-due head blocks later jobs.
     /// <paramref name="forceJobId"/> (Resume/Start that row) starts that Pending job even if it is not first or not due.
+    /// <paramref name="includeUnscheduled"/> is true after a job finishes (queue drain) or on an explicit Start.
+    /// Timer/idle kicks leave unscheduled Pending jobs sitting until Start — enqueue is not Start.
     /// </summary>
-    public static Job? FindNext(IEnumerable<Job> jobs, DateTimeOffset now, string? forceJobId = null)
+    public static Job? FindNext(
+        IEnumerable<Job> jobs,
+        DateTimeOffset now,
+        string? forceJobId = null,
+        bool includeUnscheduled = true)
     {
         var list = jobs as IList<Job> ?? jobs.ToList();
         if (!string.IsNullOrEmpty(forceJobId))
@@ -45,6 +51,11 @@ public static class JobDue
             if (job.Status != JobStatus.Pending)
             {
                 continue;
+            }
+
+            if (!includeUnscheduled && job.ScheduledStart is null)
+            {
+                return null;
             }
 
             return IsDue(job, now) ? job : null;

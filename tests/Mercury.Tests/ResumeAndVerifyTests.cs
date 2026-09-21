@@ -97,6 +97,35 @@ public class ResumeAndVerifyTests
     }
 
     [Fact]
+    public async Task CopyResumesFromMercuryTmpOffset()
+    {
+        var (src, dest, paths) = CreateTrees();
+        try
+        {
+            var payload = new byte[200_000];
+            new Random(7).NextBytes(payload);
+            var sourceFile = Path.Combine(src, "big.bin");
+            File.WriteAllBytes(sourceFile, payload);
+            var destFolder = Path.Combine(dest, Path.GetFileName(src));
+            Directory.CreateDirectory(destFolder);
+            var tmp = Path.Combine(destFolder, "big.bin.mercury.tmp");
+            File.WriteAllBytes(tmp, payload.AsSpan(0, 80_000).ToArray());
+            Assert.Equal(80_000, FileCopier.ResumeOffset(sourceFile, tmp, payload.Length));
+
+            var job = NewJob(src, dest, paths);
+            await RunAsync(job, paths, resume: false);
+            Assert.Equal(JobStatus.Completed, job.Status);
+            var destFile = Path.Combine(destFolder, "big.bin");
+            Assert.Equal(payload, File.ReadAllBytes(destFile));
+            Assert.False(File.Exists(tmp));
+        }
+        finally
+        {
+            Cleanup(src, dest, paths);
+        }
+    }
+
+    [Fact]
     public async Task VerifyFailsWhenDestFileMissing()
     {
         var (src, dest, paths) = CreateTrees();

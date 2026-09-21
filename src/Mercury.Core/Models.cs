@@ -72,6 +72,12 @@ public sealed class JobOptions
     /// </summary>
     public bool PackAsZip { get; set; }
 
+    /// <summary>
+    /// When packing, copy video/photos/audio/archives/disk images as-is instead of wrapping them in the transport zip.
+    /// Default on. If every file is already compressed, skip packing entirely.
+    /// </summary>
+    public bool SkipCompressedWhenPacking { get; set; } = true;
+
     /// <summary>Creation + last-write from source after copy (/COPY:T). Default on — Windows copy otherwise sets dest CreationTime to now.</summary>
     public bool CopyTimestamps { get; set; } = true;
     /// <summary>File attributes from source (/COPY:A). Default on.</summary>
@@ -248,6 +254,10 @@ public sealed class FileRecord
     public FileCopyStatus Status { get; set; } = FileCopyStatus.Pending;
     public string? Error { get; set; }
     public int RetryCount { get; set; }
+    /// <summary>Bytes already written to dest .mercury.tmp (offset resume).</summary>
+    public long BytesCopied { get; set; }
+    /// <summary>Enumerate classification so pack-skip matches Types.</summary>
+    public PayloadKind PayloadKind { get; set; }
 }
 
 public sealed class TransferIssue

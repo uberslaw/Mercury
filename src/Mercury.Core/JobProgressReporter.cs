@@ -5,7 +5,7 @@ public sealed class JobProgressReporter : IProgress<JobProgress>
     private readonly Job _job;
     private readonly string _name;
     private readonly bool _cloud;
-    private readonly IReadOnlyList<CopyStage> _stages;
+    private IReadOnlyList<CopyStage> _stages;
     private readonly IProgress<JobProgress>? _progress;
     private readonly IJobLog? _log;
     private readonly object _lock = new();
@@ -37,6 +37,14 @@ public sealed class JobProgressReporter : IProgress<JobProgress>
         _stages = stages;
         _progress = progress;
         _log = log;
+    }
+
+    public void ReplaceStages(IReadOnlyList<CopyStage> stages)
+    {
+        lock (_lock)
+        {
+            _stages = stages;
+        }
     }
 
     public void Enter(CopyStageKind kind, JobStatus status, string message)

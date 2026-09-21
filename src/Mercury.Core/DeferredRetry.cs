@@ -217,11 +217,32 @@ public sealed class DeferredRetrySession
 
 public static class ProgressHeader
 {
-    /// <summary>Overall bar and overall file counts only when two or more jobs are queued.</summary>
+    /// <summary>Overall file counts in the stats table when two or more jobs are queued.</summary>
     public static bool ShowOverall(int queuedJobCount) => queuedJobCount >= 2;
 
     public static bool ShowOverallTab(int queuedJobCount) => ShowOverall(queuedJobCount);
 
-    public static string PercentLabel(double percent) =>
-        $"{Math.Clamp((int)Math.Round(percent), 0, 100).ToString(System.Globalization.CultureInfo.InvariantCulture)}%";
+    /// <summary>
+    /// Bar label. Integer percents at 1% and above. Below 1% uses one decimal (0.1%)
+    /// so a started job never shows 0% (911 MB / 826 GB would otherwise round down).
+    /// </summary>
+    public static string PercentLabel(double percent, bool workStarted = false)
+    {
+        var p = Math.Clamp(percent, 0, 100);
+        if (p <= 0)
+        {
+            return workStarted ? "<1%" : "0%";
+        }
+
+        if (p < 1)
+        {
+            var tenths = Math.Round(p, 1, MidpointRounding.AwayFromZero);
+            return tenths < 0.1
+                ? "<1%"
+                : tenths.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + "%";
+        }
+
+        return Math.Clamp((int)Math.Round(p, MidpointRounding.AwayFromZero), 0, 100)
+            .ToString(System.Globalization.CultureInfo.InvariantCulture) + "%";
+    }
 }

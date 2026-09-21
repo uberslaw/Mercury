@@ -148,7 +148,15 @@ public sealed class TransferRundown
     {
         if (job.StartedUtc is null)
         {
-            journal.SaveJob(job);
+            try
+            {
+                journal.SaveJob(job);
+            }
+            catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException)
+            {
+                log?.Error(job.Id, name, "Rundown skipped — journal already closed. " + ex.Message);
+            }
+
             return;
         }
 
@@ -303,7 +311,15 @@ public sealed class TransferRundown
         }
 
         job.AverageBytesPerSecond = AverageBytesPerSecond(job.BytesCopied, elapsed);
-        journal.SaveJob(job);
+        try
+        {
+            journal.SaveJob(job);
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException)
+        {
+            log?.Error(job.Id, name, "Rundown could not save the journal (it was already closed). " + ex.Message);
+            return;
+        }
 
         if (log is null)
         {

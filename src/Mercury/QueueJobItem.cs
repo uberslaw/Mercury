@@ -50,11 +50,11 @@ public sealed class QueueJobItem : INotifyPropertyChanged
                 ? $"{o.MaxMegabytesPerSecond.Value.ToString("0.###", CultureInfo.InvariantCulture)} MB/s"
                 : "Unlimited speed";
             var hours = o.HoursEnabled
-                ? $"Hours {o.HoursStart:HH:mm}–{o.HoursEnd:HH:mm}"
-                : "Hours off";
+                ? $"Window {o.HoursStart:HH:mm}–{o.HoursEnd:HH:mm}"
+                : "Window off";
             var verify = o.Verify == VerifyLevel.Thorough ? "Thorough verify" : "Quick verify";
-            var dry = o.DryRun ? "Dry run" : o.PackAsZip ? "Pack as zip" : "Copy";
-            var expand = o.IgnoreFreeSpaceCheck ? "Dest can expand" : "Free-space check on";
+            var dry = o.DryRun ? "Dry Run" : o.PackAsZip ? "Small Files" : "Copy";
+            var expand = o.IgnoreFreeSpaceCheck ? "Ignore Storage Limit" : "Storage limit on";
             var start = Job.ScheduledStart is { } s
                 ? $"Start after {s.LocalDateTime:ddd d MMM HH:mm}"
                 : "Start when previous job finishes";
@@ -128,9 +128,12 @@ public sealed class QueueJobItem : INotifyPropertyChanged
         && Job.Status is JobStatus.Enumerating or JobStatus.Copying or JobStatus.Verifying;
 
     public bool CanResume =>
-        Job.OnHold
+        Job.Status == JobStatus.Pending
+        || Job.OnHold
         || Job.Status is JobStatus.Paused or JobStatus.PausedOutsideHours
             or JobStatus.Cancelled or JobStatus.Incomplete or JobStatus.Failed;
+
+    public string ResumeLabel => Job.Status == JobStatus.Pending ? "Start" : "Resume";
 
     public bool CanStop => IsActive;
 
@@ -206,6 +209,7 @@ public sealed class QueueJobItem : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SettingsSummary)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanPause)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanResume)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ResumeLabel)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanStop)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanRemove)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanToggleHold)));

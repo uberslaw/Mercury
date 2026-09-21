@@ -19,7 +19,8 @@ internal static class FileCopier
         CancellationToken cancellationToken,
         IJobLog? log,
         string? jobName,
-        UnbufferedIoSession? io)
+        UnbufferedIoSession? io,
+        Action<long>? onCopied = null)
     {
         var name = jobName ?? (string.IsNullOrWhiteSpace(job.Name) ? job.Id : job.Name);
         if (job.Options.CopySymbolicLinksAsLinks &&
@@ -36,7 +37,14 @@ internal static class FileCopier
         }
 
         var temp = file.DestPath + ".mercury.tmp";
-        TryDelete(temp);
+        var resumeAt = ResumeOffset(file.SourcePath, temp, file.Size);
+        if (resumeAt > 0)
+        {
+            log?.Info(job.Id, name,
+                $"Resuming {file.RelativePath} at {ByteFormatter.ToString(resumeAt)} of {ByteFormatter.ToString(file.Size)}.");
+            speed?.Add(resumeAt);
+            onCopied?.Invoke(resumeAt);
+        }
 
         XxHash64? hasher = job.Options.Verify == VerifyLevel.Thorough ? new XxHash64() : null;
         var sector = VolumeInfo.GetBytesPerSector(file.DestPath);
@@ -44,18 +52,30 @@ internal static class FileCopier
 
         try
         {
-            var copied = 0L;
-            if (io.NeedsBufferedSample(file.SourcePath, file.Size) ||
-                io.NeedsUnbufferedSample(file.SourcePath, file.Size))
+            if (hasher is not null && resumeAt > 0 && resumeAt <= 32L * 1024 * 1024)
+            {
+                HashPrefix(temp, resumeAt, hasher);
+            }
+            else if (hasher is not null && resumeAt > 32L * 1024 * 1024)
+            {
+                hasher = null;
+            }
+
+            var copied = resumeAt;
+            if (copied == 0 &&
+                (io.NeedsBufferedSample(file.SourcePath, file.Size) ||
+                 io.NeedsUnbufferedSample(file.SourcePath, file.Size)))
             {
                 copied = await ProbeCopyAsync(
                         job, file, temp, budget, pause, speed, hasher, io, sector, log, name, cancellationToken)
                     .ConfigureAwait(false);
+                onCopied?.Invoke(copied);
             }
 
             if (copied < file.Size)
             {
-                var unbuffered = io.UseUnbufferedFor(file.SourcePath, file.Size);
+                var start = copied;
+                var unbuffered = copied == 0 && io.UseUnbufferedFor(file.SourcePath, file.Size);
                 copied += await CopyRangeAsync(
                         file.SourcePath,
                         temp,
@@ -69,7 +89,8 @@ internal static class FileCopier
                         speed,
                         hasher,
                         createDest: copied == 0,
-                        cancellationToken)
+                        cancellationToken,
+                        onCopied: n => onCopied?.Invoke(start + n))
                     .ConfigureAwait(false);
             }
 
@@ -81,14 +102,95 @@ internal static class FileCopier
 
             File.Move(temp, file.DestPath);
             FileMetadata.ApplyCopiedFile(file.SourcePath, file.DestPath, job.Options, log, job.Id, name);
+            onCopied?.Invoke(copied);
         }
-        catch
+        catch (OperationCanceledException)
         {
-            TryDelete(temp);
             throw;
         }
 
         return hasher is null ? null : HashUtil.ToHex(hasher.GetCurrentHash());
+    }
+
+    private const int PrefixCheckBytes = 64 * 1024;
+
+    internal static long ResumeOffset(string source, string temp, long size)
+    {
+        if (size <= 0 || !File.Exists(temp))
+        {
+            return 0;
+        }
+
+        long length;
+        try
+        {
+            length = new FileInfo(temp).Length;
+        }
+        catch
+        {
+            return 0;
+        }
+
+        if (length <= 0 || length > size)
+        {
+            return 0;
+        }
+
+        if (length == size)
+        {
+            return size;
+        }
+
+        return PrefixTailMatches(source, temp, length) ? length : 0;
+    }
+
+    private static bool PrefixTailMatches(string source, string temp, long length)
+    {
+        var check = (int)Math.Min(PrefixCheckBytes, length);
+        var offset = length - check;
+        try
+        {
+            using var src = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, check);
+            using var dst = new FileStream(temp, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, check);
+            if (src.Length < length)
+            {
+                return false;
+            }
+
+            src.Seek(offset, SeekOrigin.Begin);
+            dst.Seek(offset, SeekOrigin.Begin);
+            var a = new byte[check];
+            var b = new byte[check];
+            return src.Read(a) == check && dst.Read(b) == check && a.AsSpan().SequenceEqual(b);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void HashPrefix(string path, long count, XxHash64 hasher)
+    {
+        if (count <= 0)
+        {
+            return;
+        }
+
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, HashUtil.BufferSize);
+        var buffer = new byte[HashUtil.BufferSize];
+        var remaining = count;
+        while (remaining > 0)
+        {
+            var take = (int)Math.Min(buffer.Length, remaining);
+            var read = stream.Read(buffer, 0, take);
+            if (read <= 0)
+            {
+                break;
+            }
+
+            hasher.Append(buffer.AsSpan(0, read));
+            remaining -= read;
+        }
     }
 
     private static async Task<long> ProbeCopyAsync(
@@ -226,7 +328,8 @@ internal static class FileCopier
         XxHash64? hasher,
         bool createDest,
         CancellationToken cancellationToken,
-        Action<long>? onPauseWait = null)
+        Action<long>? onPauseWait = null,
+        Action<long>? onCopied = null)
     {
         if (count <= 0)
         {
@@ -239,21 +342,21 @@ internal static class FileCopier
             {
                 return await CopyRangeUnbufferedAsync(
                         source, dest, offset, count, sector, job, budget, pause, speed, hasher, createDest,
-                        cancellationToken, onPauseWait)
+                        cancellationToken, onPauseWait, onCopied)
                     .ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 return await CopyRangeStreamAsync(
                         source, dest, offset, count, writeThrough: true, job, budget, pause, speed, hasher,
-                        createDest, cancellationToken, onPauseWait)
+                        createDest, cancellationToken, onPauseWait, onCopied)
                     .ConfigureAwait(false);
             }
         }
 
         return await CopyRangeStreamAsync(
                 source, dest, offset, count, writeThrough: false, job, budget, pause, speed, hasher,
-                createDest, cancellationToken, onPauseWait)
+                createDest, cancellationToken, onPauseWait, onCopied)
             .ConfigureAwait(false);
     }
 
@@ -270,7 +373,8 @@ internal static class FileCopier
         XxHash64? hasher,
         bool createDest,
         CancellationToken cancellationToken,
-        Action<long>? onPauseWait)
+        Action<long>? onPauseWait,
+        Action<long>? onCopied = null)
     {
         var flags = FileOptions.SequentialScan | FileOptions.Asynchronous;
         if (writeThrough)
@@ -291,6 +395,7 @@ internal static class FileCopier
         dst.Seek(offset, SeekOrigin.Begin);
         var remaining = count;
         var copied = 0L;
+        var lastReport = 0L;
         while (remaining > 0)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -310,9 +415,15 @@ internal static class FileCopier
             pause?.AddFileBytes(read);
             remaining -= read;
             copied += read;
+            if (copied - lastReport >= 4L * 1024 * 1024)
+            {
+                onCopied?.Invoke(copied);
+                lastReport = copied;
+            }
         }
 
         await dst.FlushAsync(cancellationToken).ConfigureAwait(false);
+        onCopied?.Invoke(copied);
         return copied;
     }
 
@@ -329,7 +440,8 @@ internal static class FileCopier
         XxHash64? hasher,
         bool createDest,
         CancellationToken cancellationToken,
-        Action<long>? onPauseWait)
+        Action<long>? onPauseWait,
+        Action<long>? onCopied = null)
     {
         sector = Math.Max(512, sector);
         var flags = FileOptions.SequentialScan | FileOptions.Asynchronous | FileOptions.WriteThrough | NoBufferingFlag;
@@ -370,6 +482,7 @@ internal static class FileCopier
             remaining -= payload;
             copied += payload;
             pos += payload;
+            onCopied?.Invoke(copied);
         }
 
         return copied;

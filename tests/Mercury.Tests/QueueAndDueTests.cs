@@ -81,6 +81,22 @@ public class JobDueTests
     }
 
     [Fact]
+    public void FindNextTimerDoesNotStartUnscheduledPending()
+    {
+        var now = new DateTimeOffset(2026, 9, 18, 12, 0, 0, TimeSpan.FromHours(10));
+        var waiting = new Job { Name = "queued", Status = JobStatus.Pending };
+        Assert.Same(waiting, JobDue.FindNext([waiting], now, includeUnscheduled: true));
+        Assert.Null(JobDue.FindNext([waiting], now, includeUnscheduled: false));
+        var scheduled = new Job
+        {
+            Name = "timed",
+            Status = JobStatus.Pending,
+            ScheduledStart = now.AddMinutes(-1)
+        };
+        Assert.Same(scheduled, JobDue.FindNext([scheduled], now, includeUnscheduled: false));
+    }
+
+    [Fact]
     public void FindNextForceStartRunsTheClickedJob()
     {
         var now = new DateTimeOffset(2026, 9, 18, 12, 0, 0, TimeSpan.FromHours(10));

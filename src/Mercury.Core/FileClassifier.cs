@@ -107,6 +107,21 @@ public static class FileClassifier
         kind is PayloadKind.Video or PayloadKind.Audio or PayloadKind.Image
             or PayloadKind.Archive or PayloadKind.DiskImage;
 
+    public static bool IsAlreadyCompressed(FileRecord file, MagicPeekBudget? peek = null)
+    {
+        if (file.PayloadKind != PayloadKind.Other && IsAlreadyCompressed(file.PayloadKind))
+        {
+            return true;
+        }
+
+        if (IsAlreadyCompressed(file.RelativePath) || IsAlreadyCompressed(file.SourcePath))
+        {
+            return true;
+        }
+
+        return IsAlreadyCompressed(Classify(file.SourcePath, file.Size, peek));
+    }
+
     public static bool IsSequentialKind(PayloadKind kind) =>
         kind is PayloadKind.Video or PayloadKind.DiskImage or PayloadKind.Archive or PayloadKind.Audio;
 
@@ -249,13 +264,24 @@ public static class FileClassifier
 public sealed class MagicPeekBudget
 {
     public const int MaxUnknownPeeks = 8;
+    public const int MaxPackSkipPeeks = 64_000;
     public const long MinPeekBytes = 1024 * 1024;
 
     private int _unknown;
+    private readonly int _max;
+    private readonly long _minBytes;
+
+    public MagicPeekBudget(int maxUnknownPeeks = MaxUnknownPeeks, long minPeekBytes = MinPeekBytes)
+    {
+        _max = maxUnknownPeeks > 0 ? maxUnknownPeeks : MaxUnknownPeeks;
+        _minBytes = minPeekBytes;
+    }
+
+    public static MagicPeekBudget ForPackSkip() => new(MaxPackSkipPeeks, 0);
 
     public bool TryConsumeUnknown(long size)
     {
-        if (size < MinPeekBytes || _unknown >= MaxUnknownPeeks)
+        if (size < _minBytes || _unknown >= _max)
         {
             return false;
         }

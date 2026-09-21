@@ -12,6 +12,7 @@ public sealed class JobJournal : IDisposable
 
     private readonly SqliteConnection _connection;
     private readonly object _lock = new();
+    private bool _disposed;
 
     public string Directory { get; }
     public string DatabasePath { get; }
@@ -57,7 +58,7 @@ public sealed class JobJournal : IDisposable
 
     private void InitSchema()
     {
-        using var cmd = _connection.CreateCommand();
+        using var cmd = CreateCommand();
         cmd.CommandText = """
             PRAGMA journal_mode=WAL;
             CREATE TABLE IF NOT EXISTS meta (
@@ -84,6 +85,28 @@ public sealed class JobJournal : IDisposable
             );
             """;
         cmd.ExecuteNonQuery();
+        EnsureColumn("files", "copied_bytes", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn("files", "payload_kind", "TEXT");
+    }
+
+    private void EnsureColumn(string table, string column, string typeSql)
+    {
+        using var cmd = CreateCommand();
+        cmd.CommandText = $"PRAGMA table_info({table})";
+        using (var reader = cmd.ExecuteReader())
+        {
+            while (reader.Read())
+            {
+                if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+            }
+        }
+
+        using var alter = CreateCommand();
+        alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {typeSql}";
+        alter.ExecuteNonQuery();
     }
 
     public void SaveJob(Job job)
@@ -102,10 +125,10 @@ public sealed class JobJournal : IDisposable
     {
         lock (_lock)
         {
-            using var cmd = _connection.CreateCommand();
+            using var cmd = CreateCommand();
             cmd.CommandText = """
-                INSERT INTO files (relative_path, source_path, dest_path, size, last_write_utc, hash, status, error, retry_count)
-                VALUES ($rel, $src, $dst, $size, $lw, $hash, $status, $error, $retry)
+                INSERT INTO files (relative_path, source_path, dest_path, size, last_write_utc, hash, status, error, retry_count, copied_bytes, payload_kind)
+                VALUES ($rel, $src, $dst, $size, $lw, $hash, $status, $error, $retry, $copied, $kind)
                 ON CONFLICT(relative_path) DO UPDATE SET
                   source_path = excluded.source_path,
                   dest_path = excluded.dest_path,
@@ -114,7 +137,9 @@ public sealed class JobJournal : IDisposable
                   hash = COALESCE(excluded.hash, files.hash),
                   status = excluded.status,
                   error = excluded.error,
-                  retry_count = excluded.retry_count;
+                  retry_count = excluded.retry_count,
+                  copied_bytes = CASE WHEN excluded.size = files.size THEN files.copied_bytes ELSE 0 END,
+                  payload_kind = COALESCE(excluded.payload_kind, files.payload_kind);
                 """;
             cmd.Parameters.AddWithValue("$rel", record.RelativePath);
             cmd.Parameters.AddWithValue("$src", record.SourcePath);
@@ -125,6 +150,20 @@ public sealed class JobJournal : IDisposable
             cmd.Parameters.AddWithValue("$status", record.Status.ToString());
             cmd.Parameters.AddWithValue("$error", (object?)record.Error ?? DBNull.Value);
             cmd.Parameters.AddWithValue("$retry", record.RetryCount);
+            cmd.Parameters.AddWithValue("$copied", record.BytesCopied);
+            cmd.Parameters.AddWithValue("$kind", record.PayloadKind == PayloadKind.Other ? (object)DBNull.Value : record.PayloadKind.ToString());
+            cmd.ExecuteNonQuery();
+        }
+    }
+
+    public void SetCopiedBytes(string relativePath, long bytesCopied)
+    {
+        lock (_lock)
+        {
+            using var cmd = CreateCommand();
+            cmd.CommandText = "UPDATE files SET copied_bytes = $n WHERE relative_path = $rel";
+            cmd.Parameters.AddWithValue("$n", Math.Max(0, bytesCopied));
+            cmd.Parameters.AddWithValue("$rel", relativePath);
             cmd.ExecuteNonQuery();
         }
     }
@@ -133,11 +172,11 @@ public sealed class JobJournal : IDisposable
     {
         lock (_lock)
         {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = "UPDATE files SET status = 'Copied', hash = COALESCE($hash, hash), error = NULL WHERE relative_path = $rel";
+            using var cmd = CreateCommand();
+            cmd.CommandText = "UPDATE files SET status = 'Copied', hash = COALESCE($hash, hash), error = NULL, copied_bytes = size WHERE relative_path = $rel";
             cmd.Parameters.AddWithValue("$hash", (object?)hash ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("$rel", relativePath);
-            cmd.ExecuteNonQuery();
+            cmd.Parameters.AddWithValue("$rel", relativePath ?? "");
+            Execute(cmd);
         }
     }
 
@@ -145,8 +184,9 @@ public sealed class JobJournal : IDisposable
     {
         lock (_lock)
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
             using var tx = _connection.BeginTransaction();
-            using (var cmd = _connection.CreateCommand())
+            using (var cmd = CreateCommand())
             {
                 cmd.Transaction = tx;
                 cmd.CommandText = "UPDATE files SET status = 'Copied', error = NULL WHERE status IN ('Pending','Failed')";
@@ -155,7 +195,7 @@ public sealed class JobJournal : IDisposable
 
             if (hashes is { Count: > 0 })
             {
-                using var cmd = _connection.CreateCommand();
+                using var cmd = CreateCommand();
                 cmd.Transaction = tx;
                 cmd.CommandText = "UPDATE files SET hash = $hash WHERE relative_path = $rel";
                 var hashP = cmd.Parameters.Add("$hash", SqliteType.Text);
@@ -176,7 +216,7 @@ public sealed class JobJournal : IDisposable
     {
         lock (_lock)
         {
-            using var cmd = _connection.CreateCommand();
+            using var cmd = CreateCommand();
             cmd.CommandText = "UPDATE files SET status = 'Unpacked', error = NULL WHERE relative_path = $rel";
             cmd.Parameters.AddWithValue("$rel", relativePath);
             cmd.ExecuteNonQuery();
@@ -187,7 +227,7 @@ public sealed class JobJournal : IDisposable
     {
         lock (_lock)
         {
-            using var cmd = _connection.CreateCommand();
+            using var cmd = CreateCommand();
             cmd.CommandText = "UPDATE files SET status = 'Skipped', error = $err WHERE relative_path = $rel";
             cmd.Parameters.AddWithValue("$err", reason);
             cmd.Parameters.AddWithValue("$rel", relativePath);
@@ -199,7 +239,7 @@ public sealed class JobJournal : IDisposable
     {
         lock (_lock)
         {
-            using var cmd = _connection.CreateCommand();
+            using var cmd = CreateCommand();
             cmd.CommandText = "UPDATE files SET status = 'Failed', error = $err, retry_count = $retry WHERE relative_path = $rel";
             cmd.Parameters.AddWithValue("$err", error);
             cmd.Parameters.AddWithValue("$retry", retryCount);
@@ -212,7 +252,7 @@ public sealed class JobJournal : IDisposable
     {
         lock (_lock)
         {
-            using var cmd = _connection.CreateCommand();
+            using var cmd = CreateCommand();
             cmd.CommandText = "UPDATE files SET status = 'Deferred', error = $err, retry_count = $retry WHERE relative_path = $rel";
             cmd.Parameters.AddWithValue("$err", error);
             cmd.Parameters.AddWithValue("$retry", retryCount);
@@ -278,7 +318,7 @@ public sealed class JobJournal : IDisposable
     {
         try
         {
-            using var cmd = _connection.CreateCommand();
+            using var cmd = CreateCommand();
             cmd.CommandText = "PRAGMA wal_checkpoint(PASSIVE);";
             cmd.ExecuteNonQuery();
         }
@@ -300,7 +340,7 @@ public sealed class JobJournal : IDisposable
     {
         lock (_lock)
         {
-            using var cmd = _connection.CreateCommand();
+            using var cmd = CreateCommand();
             cmd.CommandText = "INSERT INTO issues (relative_path, kind, message, utc) VALUES ($rel, $kind, $msg, $utc)";
             cmd.Parameters.AddWithValue("$rel", (object?)issue.RelativePath ?? DBNull.Value);
             cmd.Parameters.AddWithValue("$kind", issue.Kind.ToString());
@@ -314,10 +354,10 @@ public sealed class JobJournal : IDisposable
     {
         lock (_lock)
         {
-            using var cmd = _connection.CreateCommand();
+            using var cmd = CreateCommand();
             cmd.CommandText = status is null
-                ? "SELECT relative_path, source_path, dest_path, size, last_write_utc, hash, status, error, retry_count FROM files"
-                : "SELECT relative_path, source_path, dest_path, size, last_write_utc, hash, status, error, retry_count FROM files WHERE status = $status";
+                ? "SELECT relative_path, source_path, dest_path, size, last_write_utc, hash, status, error, retry_count, copied_bytes, payload_kind FROM files"
+                : "SELECT relative_path, source_path, dest_path, size, last_write_utc, hash, status, error, retry_count, copied_bytes, payload_kind FROM files WHERE status = $status";
             if (status is not null)
             {
                 cmd.Parameters.AddWithValue("$status", status.ToString());
@@ -338,13 +378,13 @@ public sealed class JobJournal : IDisposable
     {
         lock (_lock)
         {
-            using var cmd = _connection.CreateCommand();
+            using var cmd = CreateCommand();
             cmd.CommandText = """
                 SELECT
                   COUNT(*) as n,
                   COALESCE(SUM(size), 0) as bytes,
                   COALESCE(SUM(CASE WHEN status IN ('Copied','Unpacked','Skipped') THEN 1 ELSE 0 END), 0) as done,
-                  COALESCE(SUM(CASE WHEN status IN ('Copied','Unpacked','Skipped') THEN size ELSE 0 END), 0) as doneBytes,
+                  COALESCE(SUM(CASE WHEN status IN ('Copied','Unpacked','Skipped') THEN size ELSE COALESCE(copied_bytes, 0) END), 0) as doneBytes,
                   COALESCE(SUM(CASE WHEN status = 'Failed' THEN 1 ELSE 0 END), 0) as failed
                 FROM files
                 """;
@@ -363,7 +403,7 @@ public sealed class JobJournal : IDisposable
     {
         lock (_lock)
         {
-            using var cmd = _connection.CreateCommand();
+            using var cmd = CreateCommand();
             cmd.CommandText = "SELECT COUNT(*) FROM issues";
             return Convert.ToInt32(cmd.ExecuteScalar());
         }
@@ -373,7 +413,7 @@ public sealed class JobJournal : IDisposable
     {
         lock (_lock)
         {
-            using var cmd = _connection.CreateCommand();
+            using var cmd = CreateCommand();
             cmd.CommandText = "SELECT relative_path, kind, message, utc FROM issues ORDER BY id";
             var list = new List<TransferIssue>();
             using var reader = cmd.ExecuteReader();
@@ -396,11 +436,11 @@ public sealed class JobJournal : IDisposable
     {
         lock (_lock)
         {
-            using var cmd = _connection.CreateCommand();
+            using var cmd = CreateCommand();
             cmd.CommandText = "INSERT INTO meta(key, value) VALUES ($k, $v) ON CONFLICT(key) DO UPDATE SET value = excluded.value";
             cmd.Parameters.AddWithValue("$k", key);
             cmd.Parameters.AddWithValue("$v", value);
-            cmd.ExecuteNonQuery();
+            Execute(cmd);
         }
     }
 
@@ -408,15 +448,23 @@ public sealed class JobJournal : IDisposable
     {
         lock (_lock)
         {
-            using var cmd = _connection.CreateCommand();
+            using var cmd = CreateCommand();
             cmd.CommandText = "SELECT value FROM meta WHERE key = $k";
             cmd.Parameters.AddWithValue("$k", key);
             return cmd.ExecuteScalar() as string;
         }
     }
 
-    private static FileRecord ReadFile(SqliteDataReader reader) =>
-        new()
+    private static FileRecord ReadFile(SqliteDataReader reader)
+    {
+        var kind = PayloadKind.Other;
+        if (reader.FieldCount > 10 && !reader.IsDBNull(10) &&
+            Enum.TryParse(reader.GetString(10), out PayloadKind parsed))
+        {
+            kind = parsed;
+        }
+
+        return new FileRecord
         {
             RelativePath = reader.GetString(0),
             SourcePath = reader.GetString(1),
@@ -426,10 +474,51 @@ public sealed class JobJournal : IDisposable
             Hash = reader.IsDBNull(5) ? null : reader.GetString(5),
             Status = Enum.Parse<FileCopyStatus>(reader.GetString(6)),
             Error = reader.IsDBNull(7) ? null : reader.GetString(7),
-            RetryCount = reader.GetInt32(8)
+            RetryCount = reader.GetInt32(8),
+            BytesCopied = reader.FieldCount > 9 && !reader.IsDBNull(9) ? reader.GetInt64(9) : 0,
+            PayloadKind = kind
         };
+    }
 
-    public void Dispose() => _connection.Dispose();
+    public void Dispose()
+    {
+        lock (_lock)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            _connection.Dispose();
+        }
+    }
+
+    private SqliteCommand CreateCommand()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        try
+        {
+            return _connection.CreateCommand();
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or NullReferenceException or InvalidOperationException)
+        {
+            _disposed = true;
+            throw new ObjectDisposedException(nameof(JobJournal), ex);
+        }
+    }
+
+    private static void Execute(SqliteCommand cmd)
+    {
+        try
+        {
+            cmd.ExecuteNonQuery();
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or NullReferenceException or InvalidOperationException)
+        {
+            throw new ObjectDisposedException(nameof(JobJournal), ex);
+        }
+    }
 }
 
 public readonly record struct FileTotals(int Files, long Bytes, int DoneFiles, long DoneBytes, int Failed);

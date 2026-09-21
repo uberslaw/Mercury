@@ -52,6 +52,18 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (QueueTab is { IsSelected: true })
+        {
+            LeaveThemeSession();
+            Vm.PrepareQueueForm();
+            if (QueueCatcherPassphraseBox is not null && CatcherPassphraseBox is not null)
+            {
+                QueueCatcherPassphraseBox.Password = CatcherPassphraseBox.Password;
+            }
+
+            return;
+        }
+
         if (ThemeTab is { IsSelected: true })
         {
             ThemeChrome.SetHelpersEnabled(true);

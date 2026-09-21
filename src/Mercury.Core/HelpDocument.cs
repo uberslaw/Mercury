@@ -30,15 +30,16 @@ public static class HelpDocument
                 "Source and Destination accept browse, paste, or drag-drop. Destination can be a folder or Catcher (HTTPS). " +
                 "Browse Source remembers the last Source folder; Browse Destination remembers the last Destination. Recents stay independent.\n\n" +
                 "A selected folder copies as dest\\FolderName (Explorer-style) — pick the parent destination; the Will land in line under Destination shows the full path before Start, so browsing into a previous copy will nest FolderName again.\n\n" +
-                "Start runs the job now. Add to queue stores it for later. Resume last continues the journal of the last job (including deferred files). " +
+                "Start runs the job now. If Source/Dest match a stopped, incomplete, or queued job, Start resumes that same job id instead of creating a duplicate. Add to queue stores a new Pending row and does not start it. Resume last continues the journal of the last job (including deferred files). " +
                 "Before resume, Mercury asks whether to check the source for changes first (Yes = walk vs journal, cancellable; No = journal as-is).\n\n" +
                 "Pause stops between chunks of the current file (temp .mercury.tmp stays until you Resume). " +
+                "Stop or Close now also keeps .mercury.tmp for large files so Resume last continues from the last written offset instead of recopying from byte 0. " +
                 "Pause after this file finishes the file in flight, then pauses — it will not cut the temp mid-stream. " +
                 "The button becomes Remove Pause after while waiting; click it to cancel. " +
                 "If the remaining file will take 10 seconds or more, Mercury shows that wait when you click it, and the Progress header shows a live Pause after this file: ~Xm line.\n\n" +
                 "Stop cancels and keeps progress for Resume last (this is a clean stop — next launch will not prompt). " +
                 "Close (X / Alt+F4) while a job is copying asks: Wait for this file, Close now, or Cancel. " +
-                "Wait for this file uses Pause after this file, then exits. Close now drops the in-flight temp and leaves a dirty heartbeat so the next launch offers resume. " +
+                "Wait for this file uses Pause after this file, then exits. Close now keeps the in-flight .mercury.tmp (offset resume) and leaves a dirty heartbeat so the next launch offers resume. " +
                 "A crash, kill, or reboot leaves the same dirty flag.\n\n" +
                 "Stop cancels and keeps progress for Resume. Pause all / Resume all apply to every running job."
         },
@@ -47,20 +48,21 @@ public static class HelpDocument
             Id = "options",
             Title = "Job options",
             Body =
-                "Max MB/s throttles this job; global min/max on the same tab apply to all jobs immediately.\n\n" +
-                "Throttle to X MB/s when not idle (Global bandwidth): while other programs are using the PC " +
-                "(CPU above about 18%, excluding Mercury’s own copy when possible), every job is capped at X. " +
-                "When the PC is idle, Unlimited / Max MB/s and the global max still apply. The cap takes effect mid-job — no restart.\n\n" +
-                "Hours of operation pause copying outside the window (status: Paused — outside hours).\n\n" +
+                "Max MB/s throttles this job; Global bandwidth Min / Unlimited / Max on the same tab apply to all jobs immediately.\n\n" +
+                "Throttle active PC (Global bandwidth): while other programs are using the PC " +
+                "(CPU above about 18%, excluding Mercury’s own copy when possible), every job is capped at that MB/s. " +
+                "When the PC is idle, Unlimited / Max still apply. The cap takes effect mid-job — no restart.\n\n" +
+                "Window pauses copying outside the daily hours (status: Paused — outside hours).\n\n" +
                 "Retries / Wait: immediate retries on a locked file. If those fail with a sharing/lock error, Mercury defers the file and retries at 25%, 50%, 75%, and 100% of bytes copied (or at the end of a small job) so you can close the file.\n\n" +
-                "Overwrite: skip if dest is newer or equal (2-second FAT tolerance only when RoboFlags → FAT 2s times is on), always, or never if dest exists.\n\n" +
+                "Overwrite: skip if dest is newer or equal (2-second FAT tolerance only when RoboFlags → FAT 2s times is on), always, or never if dest exists. The combo is sized to the longest choice.\n\n" +
                 "Verify Quick checks size + timestamp. Thorough also hashes (xxHash64).\n\n" +
-                "Dry run enumerates only.\n\n" +
-                "Pack as zip writes one uncompressed transport zip (fast on USB / many small files), unpacks a normal folder tree at dest, then deletes the zip. " +
-                "Already-compressed files (video, photos, audio, archives, disk images) are copied as-is; the rest go in the zip. Leave off to copy file-by-file.\n\n" +
-                "Destination can expand: still logs Need vs free space but does not abort on thin/growable volumes.\n\n" +
+                "Dry Run enumerates only.\n\n" +
+                "Small Files writes one uncompressed transport zip (fast on USB / many small files), unpacks a normal folder tree at dest, then deletes the zip. " +
+                "Skip compressed (default on with Small Files) copies video, photos, audio, zip/7z/rar, ISO, and similar as files — they are not wrapped in that zip. " +
+                "If the whole job is already compressed, packing is skipped entirely (no zip-of-zips). Leave Small Files off to copy file-by-file. Large as-is files resume from .mercury.tmp offset after Stop.\n\n" +
+                "Ignore Storage Limit: still logs Need vs free space but does not abort on thin/growable volumes.\n\n" +
                 "RoboFlags (button on this tab) opens native copy checkboxes — see the RoboFlags help section. Timestamps default on so dest keeps source creation time.\n\n" +
-                "Start after: calendar start; hours still apply if enabled."
+                "Start after: calendar start; Window hours still apply if enabled."
         },
         new()
         {
@@ -77,7 +79,7 @@ public static class HelpDocument
                 "Empty directories — /E vs /S — create empty source folders (default on).\n" +
                 "Unbuffered I/O — /J — Force unbuffered (write-through, sector-aligned). Default off = auto-probe. " +
                 "When unchecked, Mercury enumerates types (video, ISO, VHD, …) and, if there is large sequential payload, copies a short buffered sample then an unbuffered sample and keeps the faster mode. " +
-                "Small files stay buffered. Probe is skipped if you force unbuffered, if there is no large sequential payload, or if a speed cap (Max MB/s or throttle-when-not-idle) is already limiting the job. " +
+                "Small files stay buffered. Probe is skipped if you force unbuffered, if there is no large sequential payload, or if a speed cap (Max MB/s or Throttle active PC) is already limiting the job. " +
                 "Unbuffered tends to help large sequential files on HDD/USB and already-compressed blobs; it hurts thousands of tiny files.\n" +
                 "Copy symbolic links as links — /SL — copy links as links (default off: skip reparse, do not follow).\n" +
                 "FAT 2s times — /FFT — 2-second compare for skip/verify (default off; turn on for FAT dest).\n" +
@@ -90,13 +92,13 @@ public static class HelpDocument
             Id = "progress",
             Title = "Progress header",
             Body =
-                "The pink header is Progress. Current is the running copy (or rundown if no copy is in flight). " +
+                "The pink header is Progress. Current and Overall bars stay on one row after Start (Overall matches Current when there is a single job). Each bar shows its percent in the middle. " +
+                "Below 1%, the label uses one decimal (0.1%) or <1% so a started job never shows 0%. Elapsed sits at the top right of the header. " +
                 "Job n of m is which queue item (example: 3 of 3). Stage is that job’s pipeline step: enumerate, copy, verify, writing rundown. " +
                 "With no running or resumable job the header stays collapsed — no 0/0 files or empty rundown. A part-way last job still shows its last percent and counts so you can Resume last. " +
-                "When two or more jobs are in the queue, Current and Overall bars sit on one row (each shows its percent in the middle), and the stats table includes Overall files " +
-                "(example: Files: 12/400). With one job, only Current is shown (Overall would duplicate it). " +
+                "When two or more jobs are in the queue, the stats table includes Overall files (example: Files: 12/400). " +
                 "Job: 2 of 5 is the running job’s place in the listed queue (omitted when there is a single job). " +
-                "Stats sit under the bars in a table (key: value). Speed during packing uses bytes copied over elapsed time when the instantaneous rate is still 0. " +
+                "Stats sit under the bars in a table (key: value), including the current File name. Status text and the transfer rundown live in this header — the Transfer tab no longer repeats them. " +
                 "During enumerate, Types shows a mix such as Video: 40 files, 2.1 TB. " +
                 "Writing rundown runs in the background after copy and verify so the next queued job can start transferring. " +
                 "The copier stays one job at a time; Start is enabled when that copy slot is free. Stop during rundown is immediate."
@@ -116,9 +118,11 @@ public static class HelpDocument
             Id = "queue",
             Title = "Queue tab",
             Body =
-                "Jobs wait here until due. One copy runs at a time, in listed order: only the first not-on-hold Pending job auto-starts " +
+                "Jobs wait here until you Start them, or until the previous job finishes (queue drain). Add to queue never auto-starts. " +
+                "Source/Dest/Browse/Add on this tab stay enabled while a transfer is running — only Transfer-tab paths lock with the active job. " +
+                "One copy runs at a time, in listed order: after a job finishes, the first not-on-hold Pending job that is due starts next " +
                 "(a later job will not jump a not-due job ahead of it). Writing rundown for a finished job can continue in the background while the next copy starts. " +
-                "Hold marks a queued job On hold so it never auto-starts; it stays until you Unhold or Resume that row. " +
+                "Hold marks a queued job On hold so it never auto-starts; it stays until you Unhold or Start/Resume that row. " +
                 "Per-row Pause / Resume / Stop / Hold / Remove / Up / Down. " +
                 "Speed on a queued job can be edited while it is pending or running. Pause all affects every active job."
         },

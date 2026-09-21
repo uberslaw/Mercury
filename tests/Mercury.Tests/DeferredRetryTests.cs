@@ -31,10 +31,20 @@ public class DeferredRetryTests
     }
 
     [Fact]
-    public void ProgressHeaderHidesOverallForOneJob()
+    public void ProgressHeaderHidesOverallFilesForOneJob()
     {
         Assert.False(ProgressHeader.ShowOverall(1));
         Assert.True(ProgressHeader.ShowOverall(2));
+    }
+
+    [Fact]
+    public void PercentLabelShowsFractionUnderOnePercent()
+    {
+        Assert.Equal("0%", ProgressHeader.PercentLabel(0));
+        Assert.Equal("<1%", ProgressHeader.PercentLabel(0, workStarted: true));
+        Assert.Equal("0.1%", ProgressHeader.PercentLabel(100.0 * 911_000_000 / 826_000_000_000));
+        Assert.Equal("<1%", ProgressHeader.PercentLabel(0.04));
+        Assert.Equal("32%", ProgressHeader.PercentLabel(31.6));
     }
 
     [Fact]
