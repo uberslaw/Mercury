@@ -109,6 +109,41 @@ public sealed class JobOptions
 
     public double? MaxBytesPerSecond =>
         MaxMegabytesPerSecond is > 0 ? MaxMegabytesPerSecond.Value * 1024 * 1024 : null;
+
+    public JobOptions Clone()
+    {
+        var copy = new JobOptions();
+        copy.CopyFrom(this);
+        return copy;
+    }
+
+    public void CopyFrom(JobOptions other)
+    {
+        MaxMegabytesPerSecond = other.MaxMegabytesPerSecond;
+        HoursEnabled = other.HoursEnabled;
+        HoursStart = other.HoursStart;
+        HoursEnd = other.HoursEnd;
+        RetryCount = other.RetryCount;
+        RetryWaitSeconds = other.RetryWaitSeconds;
+        Overwrite = other.Overwrite;
+        Verify = other.Verify;
+        DryRun = other.DryRun;
+        IgnoreFreeSpaceCheck = other.IgnoreFreeSpaceCheck;
+        PackAsZip = other.PackAsZip;
+        SkipCompressedWhenPacking = other.SkipCompressedWhenPacking;
+        CopyTimestamps = other.CopyTimestamps;
+        CopyAttributes = other.CopyAttributes;
+        CopySecurity = other.CopySecurity;
+        CopyOwner = other.CopyOwner;
+        CopyDirectoryTimestamps = other.CopyDirectoryTimestamps;
+        CopyEmptyDirectories = other.CopyEmptyDirectories;
+        IncludeSourceFolderName = other.IncludeSourceFolderName;
+        UnbufferedIo = other.UnbufferedIo;
+        CopySymbolicLinksAsLinks = other.CopySymbolicLinksAsLinks;
+        FatTimestampTolerance = other.FatTimestampTolerance;
+        ExcludeHiddenSystem = other.ExcludeHiddenSystem;
+        PurgeExtraDestFiles = other.PurgeExtraDestFiles;
+    }
 }
 
 public sealed class BandwidthSettings
@@ -137,7 +172,12 @@ public sealed class Job
     public string SourcePath { get; set; } = "";
     public string DestinationPath { get; set; } = "";
     public SourceKind SourceKind { get; set; }
-    public JobOptions Options { get; set; } = new();
+    private JobOptions _options = new();
+    public JobOptions Options
+    {
+        get => _options;
+        set => _options = value ?? new();
+    }
     public JobStatus Status { get; set; } = JobStatus.Pending;
     public string? VolumeSerial { get; set; }
     public string? ResultMessage { get; set; }

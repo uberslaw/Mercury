@@ -48,7 +48,7 @@ public sealed class TransferRundown
         var filesMatch = job.SourceFiles == job.DestFiles;
         var foldersMatch = job.SourceFolders == job.DestFolders;
         var countsMatch = filesMatch && foldersMatch;
-        var dryRun = job.Options.DryRun;
+        var dryRun = job.Options?.DryRun == true;
         var highlight = dryRun
             ? (job.Status == JobStatus.Cancelled ? RundownHighlight.Warn : RundownHighlight.Ok)
             : Classify(job.Status, countsMatch);
@@ -160,11 +160,20 @@ public sealed class TransferRundown
             return;
         }
 
+        job.Options ??= new JobOptions();
         var ended = DateTimeOffset.UtcNow;
         job.EndedUtc = ended;
         var totals = SafeTotals(journal);
-        job.SourceFiles = totals.Files;
-        job.BytesCopied = totals.DoneBytes;
+        if (totals.Files > 0)
+        {
+            job.SourceFiles = totals.Files;
+        }
+
+        if (totals.DoneBytes > job.BytesCopied)
+        {
+            job.BytesCopied = totals.DoneBytes;
+        }
+
         if (job.DestFiles < totals.DoneFiles)
         {
             job.DestFiles = totals.DoneFiles;
@@ -233,8 +242,9 @@ public sealed class TransferRundown
                 SaveSummary(job, journal, dest, sourceFolders, ended, log, name, stopped: true);
                 throw;
             }
-            catch
+            catch (Exception ex)
             {
+                log?.Error(job.Id, name, "Rundown dest walk failed: " + ex.Message);
                 dest = default;
             }
 
@@ -253,8 +263,9 @@ public sealed class TransferRundown
                     SaveSummary(job, journal, dest, sourceFolders, ended, log, name, stopped: true);
                     throw;
                 }
-                catch
+                catch (Exception ex)
                 {
+                    log?.Error(job.Id, name, "Rundown source walk failed: " + ex.Message);
                     sourceFolders = default;
                 }
             }
@@ -299,12 +310,31 @@ public sealed class TransferRundown
             job.DestFolders = dest.Folders;
         }
 
+        if (sourceFolders.Files > 0)
+        {
+            job.SourceFiles = sourceFolders.Files;
+        }
+
         if (sourceFolders.Folders > 0 || job.SourceFolders == 0)
         {
             job.SourceFolders = sourceFolders.Folders;
         }
 
-        var elapsed = ended - job.StartedUtc!.Value;
+        if (job.StartedUtc is null)
+        {
+            try
+            {
+                journal.SaveJob(job);
+            }
+            catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException)
+            {
+                log?.Error(job.Id, name, "Rundown could not save the journal (it was already closed). " + ex.Message);
+            }
+
+            return;
+        }
+
+        var elapsed = ended - job.StartedUtc.Value;
         if (elapsed < TimeSpan.Zero)
         {
             elapsed = TimeSpan.Zero;

@@ -266,6 +266,53 @@ public class TransferRundownTests
     }
 
     [Fact]
+    public void CaptureKeepsSourceFilesWhenJournalIsEmpty()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mercury-rd-keep-" + Guid.NewGuid().ToString("N"));
+        var src = Path.Combine(root, "Anchor Span");
+        var dest = Path.Combine(root, "EngA");
+        Directory.CreateDirectory(Path.Combine(src, "compressed"));
+        Directory.CreateDirectory(dest);
+        File.WriteAllText(Path.Combine(src, "compressed", "a.txt"), "a");
+        try
+        {
+            var job = new Job
+            {
+                SourcePath = src,
+                DestinationPath = dest,
+                StartedUtc = DateTimeOffset.UtcNow.AddMinutes(-1),
+                SourceFiles = 26013,
+                SourceFolders = 4,
+                Options = new JobOptions { IncludeSourceFolderName = true }
+            };
+            using var journal = JobJournal.Create(Path.Combine(root, "job"), job);
+            var mapping = CopyShape.Resolve(src, dest, includeSourceFolderName: true);
+            TransferRundown.Capture(job, journal, mapping, log: null, name: "t");
+            Assert.True(job.SourceFiles > 0);
+            Assert.Equal(Path.Combine(dest, "Anchor Span"), mapping.DestRoot, ignoreCase: true);
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(root, true);
+            }
+            catch
+            {
+                // temp leftover is OK
+            }
+        }
+    }
+
+    [Fact]
+    public void NullOptionsDeserializeAsDefaultsWithWrapOn()
+    {
+        var job = new Job { Options = null! };
+        Assert.True(job.Options.IncludeSourceFolderName);
+        Assert.False(job.Options.DryRun);
+    }
+
+    [Fact]
     public void CountTreeExcludesSkippedSystemDirs()
     {
         var root = Path.Combine(Path.GetTempPath(), "mercury-rundown-" + Guid.NewGuid().ToString("N"));

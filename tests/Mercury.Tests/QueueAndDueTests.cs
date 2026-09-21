@@ -277,6 +277,39 @@ public class LiveSpeedTests
     }
 }
 
+public class JobOptionBadgeTests
+{
+    [Fact]
+    public void DefaultJobHasNoContentsOnlyBadge()
+    {
+        var job = new Job { SourcePath = @"D:\Anchor Span", DestinationPath = @"Z:\EngA" };
+        Assert.DoesNotContain("Contents only", JobOptionBadges.For(job));
+        Assert.True(job.Options.IncludeSourceFolderName);
+    }
+
+    [Fact]
+    public void WrapOffShowsContentsOnlyBadge()
+    {
+        var job = new Job
+        {
+            Options = new JobOptions
+            {
+                IncludeSourceFolderName = false,
+                DryRun = true,
+                IgnoreFreeSpaceCheck = true
+            },
+            OnHold = true
+        };
+        var badges = JobOptionBadges.For(job);
+        Assert.Contains("Contents only", badges);
+        Assert.Contains("Dry Run", badges);
+        Assert.Contains("Ignore Storage Limit", badges);
+        Assert.Contains("Hold", badges);
+        Assert.DoesNotContain("Verify Quick", badges);
+        Assert.DoesNotContain("Unlimited speed", badges, StringComparer.OrdinalIgnoreCase);
+    }
+}
+
 public class BrowseMemoryTests
 {
     [Fact]

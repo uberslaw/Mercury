@@ -360,7 +360,9 @@ public sealed class JobScheduler : IDisposable
         catch (Exception ex)
         {
             job.Status = JobStatus.Failed;
-            job.ResultMessage = ex.Message;
+            job.ResultMessage = ex is NullReferenceException
+                ? "Internal error while copying. Progress is saved; you can Resume. See the Console log."
+                : ex.Message;
             Log.Error(job.Id, job.Name, ex.ToString());
             reportFinal = true;
         }
@@ -1043,6 +1045,7 @@ public sealed class JobScheduler : IDisposable
         try
         {
             Log.Info(job.Id, name, "Rundown running in background");
+            job.Options ??= new JobOptions();
             ReportRundown(work, new RundownProgress(0, Math.Max(1, job.SourceFiles), 0, null, "destination"));
             CopyMapping? mapping = null;
             try
@@ -1063,6 +1066,13 @@ public sealed class JobScheduler : IDisposable
         catch (Exception ex)
         {
             Log.Error(job.Id, name, ex.ToString());
+            if (ex is NullReferenceException &&
+                (string.IsNullOrWhiteSpace(job.ResultMessage)
+                 || job.ResultMessage.Contains("Object reference not set", StringComparison.OrdinalIgnoreCase)))
+            {
+                job.ResultMessage =
+                    "Rundown could not finish counting files. Copy progress is kept; details are in the Console log.";
+            }
         }
         finally
         {

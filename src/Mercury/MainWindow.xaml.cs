@@ -13,6 +13,7 @@ public partial class MainWindow : Window
     private ScrollViewer? _consoleScroll;
     private ThemePreviewWindow? _preview;
     private ThemeEditorWindow? _editor;
+    private JobOptionsWindow? _jobOptions;
     private bool _forceClose;
     private bool _closing;
 
@@ -28,6 +29,7 @@ public partial class MainWindow : Window
         ConsoleList.Loaded += ConsoleList_Loaded;
         vm.Theme.OpenPreviewRequested = OpenThemePreview;
         vm.Theme.PopOutEditorRequested = OpenThemeEditor;
+        vm.OpenJobOptionsRequested = OpenJobOptions;
         vm.CloseWindowRequested = () =>
         {
             _forceClose = true;
@@ -185,6 +187,21 @@ public partial class MainWindow : Window
         _editor.Show();
     }
 
+    private void OpenJobOptions(JobOptionsForm form)
+    {
+        if (_jobOptions is { IsLoaded: true })
+        {
+            _jobOptions.Bind(form);
+            _jobOptions.Activate();
+            return;
+        }
+
+        _jobOptions = new JobOptionsWindow(form) { Owner = this };
+        _jobOptions.Closed += (_, _) => _jobOptions = null;
+        PlaceBeside(this, _jobOptions, 12);
+        _jobOptions.Show();
+    }
+
     private static void PlaceBeside(Window owner, Window child, double gap)
     {
         child.WindowStartupLocation = WindowStartupLocation.Manual;
@@ -334,10 +351,12 @@ public partial class MainWindow : Window
         Vm.PropertyChanged -= OnVmPropertyChanged;
         Vm.Theme.OpenPreviewRequested = null;
         Vm.Theme.PopOutEditorRequested = null;
+        Vm.OpenJobOptionsRequested = null;
         ThemeChrome.SetHelpersEnabled(false);
         Vm.Theme.ClearRowHighlights();
         _preview?.Close();
         _editor?.Close();
+        _jobOptions?.Close();
         Vm.Closing();
         Vm.Dispose();
     }

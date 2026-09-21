@@ -29,7 +29,11 @@ public static class HelpDocument
             Body =
                 "Source and Destination accept browse, paste, or drag-drop. Destination can be a folder or Catcher (HTTPS). " +
                 "Browse Source remembers the last Source folder; Browse Destination remembers the last Destination. Recents stay independent.\n\n" +
-                "A selected folder copies as dest\\FolderName (Explorer-style) — pick the parent destination; the Will land in line under Destination shows the full path before Start, so browsing into a previous copy will nest FolderName again.\n\n" +
+                "A selected folder copies as dest\\FolderName (Explorer-style) — Include source folder name is on by default. " +
+                "Pick the parent destination; Will land in under Destination shows the full path before Start (D:\\Anchor Span → dest\\Anchor Span). " +
+                "Uncheck it only for contents-only (robocopy-style) so children such as compressed land directly in dest. " +
+                "Drive roots always dump contents into dest (no extra D). Dest already containing a child folder does not uncheck wrap. " +
+                "Browsing Destination inside a previous copy will nest FolderName again.\n\n" +
                 "Start runs the job now. If Source/Dest match a stopped, incomplete, or queued job, Start resumes that same job id instead of creating a duplicate. Add to queue stores a new Pending row and does not start it. Resume last continues the journal of the last job (including deferred files). " +
                 "Before resume, Mercury asks whether to check the source for changes first (Yes = walk vs journal, cancellable; No = journal as-is).\n\n" +
                 "Pause stops between chunks of the current file (temp .mercury.tmp stays until you Resume). " +
@@ -62,6 +66,7 @@ public static class HelpDocument
                 "If the whole job is already compressed, packing is skipped entirely (no zip-of-zips). Leave Small Files off to copy file-by-file. Large as-is files resume from .mercury.tmp offset after Stop.\n\n" +
                 "Ignore Storage Limit: still logs Need vs free space but does not abort on thin/growable volumes.\n\n" +
                 "RoboFlags (button on this tab) opens native copy checkboxes — see the RoboFlags help section. Timestamps default on so dest keeps source creation time.\n\n" +
+                "Include source folder name (default on): the selected top-level folder is created at dest. Uncheck for Contents only.\n\n" +
                 "Start after: calendar start; Window hours still apply if enabled."
         },
         new()
@@ -119,6 +124,9 @@ public static class HelpDocument
             Title = "Queue tab",
             Body =
                 "Jobs wait here until you Start them, or until the previous job finishes (queue drain). Add to queue never auto-starts. " +
+                "Job Options on this tab pops out the same fields as Transfer (speed, Window, retries, overwrite, verify, Dry Run, Small Files, Skip compressed, Ignore Storage Limit, Start after, RoboFlags, Include source folder name, Catcher template). " +
+                "Those values are stored on the job you Add — they are not locked to the Transfer tab while a copy runs. Open Job Options on a tile (or the selected-job toolbar) to edit that row later. " +
+                "Tiles show compact badges for non-default flags (Dry Run, Small Files, Ignore Storage Limit, Window, Hold, Catcher, Contents only when wrap is off). " +
                 "Source/Dest/Browse/Add on this tab stay enabled while a transfer is running — only Transfer-tab paths lock with the active job. " +
                 "One copy runs at a time, in listed order: after a job finishes, the first not-on-hold Pending job that is due starts next " +
                 "(a later job will not jump a not-due job ahead of it). Writing rundown for a finished job can continue in the background while the next copy starts. " +

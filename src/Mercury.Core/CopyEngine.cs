@@ -16,6 +16,7 @@ public sealed class CopyEngine : ICopyEngine
         IProgress<JobProgress>? progress,
         CancellationToken cancellationToken)
     {
+        job.Options ??= new JobOptions();
         var name = string.IsNullOrWhiteSpace(job.Name) ? job.Id[..8] : job.Name;
         var catcher = job.Catcher;
         var cloud = catcher is null && CloudPath.LooksLikeCloudFolder(job.DestinationPath);

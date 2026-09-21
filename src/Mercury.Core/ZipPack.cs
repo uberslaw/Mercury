@@ -8,7 +8,7 @@ public static class ZipPack
     public const string TempSuffix = ".mercury.tmp";
 
     public static bool Applies(Job job, CopyMapping mapping) =>
-        job.Options.PackAsZip && !mapping.SingleFile;
+        job.Options?.PackAsZip == true && !mapping.SingleFile;
 
     public static string ZipPath(CopyMapping mapping)
     {

@@ -137,7 +137,7 @@ Both live in the same portable folder. Catcher templates are stored in `data\cat
 
 ## Queue, history, and schedule
 
-Jobs run **one at a time**, in **queue list order**. **Add to queue** captures the current Transfer settings (including optional **Start after** date/time) and persists them in `data\queue.json`. Only the first **not-on-hold** Pending job auto-starts; a later job will not jump a not-due job ahead of it. **Hold** keeps a row in the queue indefinitely (no auto-start) until you Unhold or Resume that row. The next job starts when the current one finishes **and** it is due: `now >= Start after` (if set) and inside hours of operation (if those are enabled).
+Jobs run **one at a time**, in **queue list order**. **Add to queue** on the Queue tab uses that tab’s **Job Options** (including **Include source folder name**, default on) and persists them in `data\queue.json`. They are not locked to the Transfer tab while a copy runs. Only the first **not-on-hold** Pending job auto-starts; a later job will not jump a not-due job ahead of it. **Hold** keeps a row in the queue indefinitely (no auto-start) until you Unhold or Resume that row. The next job starts when the current one finishes **and** it is due: `now >= Start after` (if set) and inside hours of operation (if those are enabled). A selected source folder lands in `dest\FolderName` unless you uncheck wrap (Contents only).
 
 **Browse Source** opens the last Source folder; **Browse Destination** opens the last Destination (`lastSourceDir` / `lastDestDir` in `recents.json`). Recents dropdowns stay independent.
 

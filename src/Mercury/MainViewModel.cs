@@ -94,6 +94,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private string _queueDestPath = "";
     private int _queueDestKindIndex;
     private CatcherEnvelope? _queueSelectedCatcherTemplate;
+    private bool _queueDraftSeeded;
+    private bool _suppressQueueDraftSync;
+    private JobOptionsForm? _jobForm;
+    private QueueJobItem? _jobFormItem;
     private bool _skipCompressedWhenPacking = true;
     private string _catcherPassphrase = "";
     private CatcherEnvelope? _selectedCatcherTemplate;
@@ -187,10 +191,24 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         MoveQueueJobUpCommand = new RelayCommand(p => MoveQueueJob(p as QueueJobItem, -1));
         MoveQueueJobDownCommand = new RelayCommand(p => MoveQueueJob(p as QueueJobItem, 1));
         ToggleHoldQueueJobCommand = new RelayCommand(p => ToggleHoldQueueJob(p as QueueJobItem));
+        OpenQueueDraftOptionsCommand = new RelayCommand(OpenQueueDraftOptions);
+        OpenQueueJobOptionsCommand = new RelayCommand(p => OpenQueueJobOptions(p as QueueJobItem));
+        OpenSelectedQueueJobOptionsCommand = new RelayCommand(
+            () => OpenQueueJobOptions(SelectedQueueJob),
+            () => HasSelectedQueueJob);
         CreateCatcherCommand = new RelayCommand(CreateCatcherTemplate);
         ExportCatcherCommand = new RelayCommand(ExportCatcherTemplate, () => SelectedCatcherTemplate is not null);
         ImportCatcherCommand = new RelayCommand(ImportCatcherTemplate);
         DeleteCatcherCommand = new RelayCommand(DeleteCatcherTemplate, () => SelectedCatcherTemplate is not null);
+
+        QueueDraft = new JobOptionsForm
+        {
+            ConfirmPurge = ConfirmPurge,
+            CanAdd = () => HasQueuePaths
+        };
+        QueueDraft.AddToQueueRequested += AddToQueueFromQueue;
+        QueueDraft.Applied += RaiseQueueDraftBadges;
+        QueueDraft.PropertyChanged += OnQueueDraftPropertyChanged;
 
         ReloadLibrary();
         ReloadCatcherTemplates();
@@ -255,14 +273,19 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public ICommand MoveQueueJobUpCommand { get; }
     public ICommand MoveQueueJobDownCommand { get; }
     public ICommand ToggleHoldQueueJobCommand { get; }
+    public ICommand OpenQueueDraftOptionsCommand { get; }
+    public ICommand OpenQueueJobOptionsCommand { get; }
+    public ICommand OpenSelectedQueueJobOptionsCommand { get; }
     public ICommand CreateCatcherCommand { get; }
     public ICommand ExportCatcherCommand { get; }
     public ICommand ImportCatcherCommand { get; }
     public ICommand DeleteCatcherCommand { get; }
 
     public ThemeViewModel Theme { get; }
+    public JobOptionsForm QueueDraft { get; }
 
     public Action? CloseWindowRequested { get; set; }
+    public Action<JobOptionsForm>? OpenJobOptionsRequested { get; set; }
 
     public string SourcePath
     {
@@ -320,6 +343,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             if (SetField(ref _queueSourcePath, value))
             {
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasQueuePaths)));
+                QueueDraft.SetLandingPaths(QueueSourcePath, QueueDestPath);
+                QueueDraft.RaiseAddCanExecute();
+                RaiseQueueDraftBadges();
                 RaiseRunCommands();
             }
         }
@@ -333,6 +359,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             if (SetField(ref _queueDestPath, value))
             {
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasQueuePaths)));
+                QueueDraft.SetLandingPaths(QueueSourcePath, QueueDestPath);
+                QueueDraft.RaiseAddCanExecute();
+                RaiseQueueDraftBadges();
                 RaiseRunCommands();
             }
         }
@@ -348,6 +377,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(QueueDestIsCatcher)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(QueueDestIsFolder)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasQueuePaths)));
+                QueueDraft.ShowCatcherTemplate = QueueDestIsCatcher;
+                RaiseQueueDraftBadges();
+                QueueDraft.RaiseAddCanExecute();
                 RaiseRunCommands();
             }
         }
@@ -361,6 +393,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             if (SetField(ref _queueSelectedCatcherTemplate, value))
             {
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasQueuePaths)));
+                if (!_suppressQueueDraftSync)
+                {
+                    QueueDraft.SelectedCatcherTemplate = value;
+                }
+
+                RaiseQueueDraftBadges();
+                QueueDraft.RaiseAddCanExecute();
                 RaiseRunCommands();
             }
         }
@@ -774,6 +813,31 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool DestIsFolder => !DestIsCatcher;
     public bool QueueDestIsCatcher => QueueDestKindIndex == 1;
     public bool QueueDestIsFolder => !QueueDestIsCatcher;
+    public bool ShowCatcherTemplate => false;
+    public bool CanEditCatcher => true;
+    public string SpeedToolTip => "Applies immediately to the running job.";
+    public IReadOnlyList<string> QueueDraftBadges =>
+        QueueDraft.PreviewBadges(QueueDestIsCatcher, QueueSelectedCatcherTemplate);
+    public bool HasQueueDraftBadges => QueueDraftBadges.Count > 0;
+    public string QueueLandingPreview
+    {
+        get
+        {
+            if (QueueDestIsCatcher)
+            {
+                return string.IsNullOrWhiteSpace(QueueSourcePath)
+                    ? ""
+                    : "Will land in: Catcher receive folder (named source folders keep their top folder).";
+            }
+
+            var path = CopyShape.PreviewLandingPath(
+                QueueSourcePath,
+                QueueDestPath,
+                QueueDraft.IncludeSourceFolderName);
+            return string.IsNullOrEmpty(path) ? "" : "Will land in: " + path;
+        }
+    }
+    public bool ShowQueueLandingPreview => !string.IsNullOrEmpty(QueueLandingPreview);
     public bool IncludeSourceFolderNameApplies
     {
         get
@@ -851,6 +915,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             {
                 _selectedQueueJob?.SyncSpeedFromJob();
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasSelectedQueueJob)));
+                (OpenSelectedQueueJobOptionsCommand as RelayCommand)?.RaiseCanExecuteChanged();
                 if (value?.Job.Status is JobStatus.Completed or JobStatus.Incomplete
                     or JobStatus.Cancelled or JobStatus.Failed)
                 {
@@ -1106,6 +1171,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             _catcherProbeTimer.Stop();
         }
         _scheduler.Dispose();
+        QueueDraft.AddToQueueRequested -= AddToQueueFromQueue;
+        QueueDraft.Applied -= RaiseQueueDraftBadges;
+        QueueDraft.PropertyChanged -= OnQueueDraftPropertyChanged;
+        if (_jobForm is not null)
+        {
+            _jobForm.Applied -= OnJobFormApplied;
+            _jobForm.SpeedChanged -= OnJobFormSpeed;
+        }
     }
 
     private void StartNow()
@@ -1250,6 +1323,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private void AddToQueueFromQueue()
     {
+        EnsureQueueDraftSeeded();
         if (QueueDestIsCatcher)
         {
             try
@@ -1267,7 +1341,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             QueueSourcePath,
             QueueDestPath,
             QueueDestKindIndex,
-            QueueSelectedCatcherTemplate);
+            QueueSelectedCatcherTemplate ?? QueueDraft.SelectedCatcherTemplate,
+            QueueDraft.ToOptions(),
+            QueueDraft.ToScheduledStart());
         if (!ConfirmPurgeIfJobNeedsIt(job))
         {
             return;
@@ -1547,10 +1623,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         string? sourcePath = null,
         string? destPath = null,
         int? destKindIndex = null,
-        CatcherEnvelope? catcherTemplate = null)
+        CatcherEnvelope? catcherTemplate = null,
+        JobOptions? options = null,
+        DateTimeOffset? scheduledStart = null)
     {
         var source = PathNormalizer.Normalize(sourcePath ?? SourcePath);
         var catcherDest = (destKindIndex ?? DestKindIndex) == 1;
+        var builtOptions = options ?? BuildOptions();
+        var start = scheduledStart ?? (options is null ? BuildScheduledStart() : scheduledStart);
         if (catcherDest)
         {
             var template = catcherTemplate ?? SelectedCatcherTemplate
@@ -1563,9 +1643,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 DestinationPath = CatcherCrypto.FormatDestination(template.PublicHost, template.PublicPort, template.Name),
                 SourceKind = CopyShape.DetectKind(source),
                 Catcher = template.ToTarget(),
-                Options = BuildOptions(),
+                Options = builtOptions,
                 VolumeSerial = VolumeInfo.GetSerial(source),
-                ScheduledStart = BuildScheduledStart()
+                ScheduledStart = start
             };
         }
 
@@ -1575,9 +1655,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             SourcePath = source,
             DestinationPath = dest,
             SourceKind = CopyShape.DetectKind(source),
-            Options = BuildOptions(),
+            Options = builtOptions,
             VolumeSerial = VolumeInfo.GetSerial(source),
-            ScheduledStart = BuildScheduledStart()
+            ScheduledStart = start
         };
     }
 
@@ -1949,6 +2029,116 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         QueueDestPath = DestPath;
         QueueDestKindIndex = DestKindIndex;
         QueueSelectedCatcherTemplate = SelectedCatcherTemplate;
+        EnsureQueueDraftSeeded();
+        QueueDraft.CatcherTemplates = CatcherTemplates;
+        QueueDraft.ShowCatcherTemplate = QueueDestIsCatcher;
+        QueueDraft.SelectedCatcherTemplate = QueueSelectedCatcherTemplate;
+        QueueDraft.SetLandingPaths(QueueSourcePath, QueueDestPath);
+        QueueDraft.RaiseAddCanExecute();
+        RaiseQueueDraftBadges();
+    }
+
+    private void EnsureQueueDraftSeeded()
+    {
+        if (_queueDraftSeeded)
+        {
+            QueueDraft.CatcherTemplates = CatcherTemplates;
+            QueueDraft.ShowCatcherTemplate = QueueDestIsCatcher;
+            return;
+        }
+
+        QueueDraft.LoadFrom(BuildOptions(), BuildScheduledStart());
+        QueueDraft.PrepareDraft(
+            CatcherTemplates,
+            QueueDestIsCatcher,
+            QueueSelectedCatcherTemplate,
+            QueueSourcePath,
+            QueueDestPath);
+        _queueDraftSeeded = true;
+        RaiseQueueDraftBadges();
+    }
+
+    private void OpenQueueDraftOptions()
+    {
+        EnsureQueueDraftSeeded();
+        QueueDraft.PrepareDraft(
+            CatcherTemplates,
+            QueueDestIsCatcher,
+            QueueSelectedCatcherTemplate,
+            QueueSourcePath,
+            QueueDestPath);
+        OpenJobOptionsRequested?.Invoke(QueueDraft);
+    }
+
+    private void OpenQueueJobOptions(QueueJobItem? item)
+    {
+        if (item is null)
+        {
+            return;
+        }
+
+        SelectedQueueJob = item;
+        _jobFormItem = item;
+        _jobForm ??= new JobOptionsForm { ConfirmPurge = ConfirmPurge };
+        _jobForm.Applied -= OnJobFormApplied;
+        _jobForm.SpeedChanged -= OnJobFormSpeed;
+        _jobForm.LoadFrom(item.Job, CatcherTemplates);
+        _jobForm.Applied += OnJobFormApplied;
+        _jobForm.SpeedChanged += OnJobFormSpeed;
+        OpenJobOptionsRequested?.Invoke(_jobForm);
+    }
+
+    private void OnJobFormApplied()
+    {
+        if (_jobForm is null || _jobFormItem is null)
+        {
+            return;
+        }
+
+        _jobForm.WriteTo(_jobFormItem.Job);
+        _scheduler.PersistJob(_jobFormItem.Job);
+        _jobFormItem.SyncSpeedFromJob();
+        _jobFormItem.RaiseComputed();
+        RaiseQueueDraftBadges();
+    }
+
+    private void OnJobFormSpeed()
+    {
+        if (_jobForm is null || _jobFormItem is null)
+        {
+            return;
+        }
+
+        WriteSpeedToJob(_jobFormItem.Job, _jobForm.UnlimitedSpeed, _jobForm.MaxMBpsText);
+        _jobFormItem.SyncSpeedFromJob();
+        _jobFormItem.RaiseComputed();
+    }
+
+    private void OnQueueDraftPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(JobOptionsForm.SelectedCatcherTemplate))
+        {
+            _suppressQueueDraftSync = true;
+            try
+            {
+                QueueSelectedCatcherTemplate = QueueDraft.SelectedCatcherTemplate;
+            }
+            finally
+            {
+                _suppressQueueDraftSync = false;
+            }
+        }
+
+        RaiseQueueDraftBadges();
+        QueueDraft.RaiseAddCanExecute();
+    }
+
+    private void RaiseQueueDraftBadges()
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(QueueDraftBadges)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasQueueDraftBadges)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(QueueLandingPreview)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowQueueLandingPreview)));
     }
 
     private string? BrowseAny(string title, bool isSource, string? current)
@@ -2809,6 +2999,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         (BrowseDestCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (BrowseQueueSourceCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (BrowseQueueDestCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (OpenSelectedQueueJobOptionsCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        QueueDraft.RaiseAddCanExecute();
     }
 
     private bool SetField<T>(ref T field, T value, [CallerMemberName] string? name = null)

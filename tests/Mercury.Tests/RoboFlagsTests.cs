@@ -61,6 +61,8 @@ public class RoboFlagsTests
         var section = HelpDocument.Sections.Single(s => s.Id == "transfer");
         Assert.Contains("Will land in", section.Body, StringComparison.Ordinal);
         Assert.Contains("dest\\FolderName", section.Body, StringComparison.Ordinal);
+        Assert.Contains("Include source folder name is on by default", section.Body, StringComparison.Ordinal);
+        Assert.Contains("contents-only", section.Body, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("check the source for changes", section.Body, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -73,6 +75,17 @@ public class RoboFlagsTests
         Assert.Contains("Subdirs", section.Body, StringComparison.Ordinal);
         Assert.Contains("ETA", section.Body, StringComparison.Ordinal);
         Assert.Contains(HelpDocument.Search("Tree"), s => s.Id == "tree");
+    }
+
+    [Fact]
+    public void HelpMentionsQueueJobOptionsAndWrap()
+    {
+        var section = HelpDocument.Sections.Single(s => s.Id == "queue");
+        Assert.Contains("Job Options", section.Body, StringComparison.Ordinal);
+        Assert.Contains("Contents only", section.Body, StringComparison.Ordinal);
+        Assert.Contains("Include source folder name", section.Body, StringComparison.Ordinal);
+        var options = HelpDocument.Sections.Single(s => s.Id == "options");
+        Assert.Contains("Include source folder name (default on)", options.Body, StringComparison.Ordinal);
     }
 
     [Fact]

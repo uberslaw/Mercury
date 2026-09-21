@@ -1,0 +1,166 @@
+<UserControl x:Class="Mercury.JobOptionsPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:Mercury">
+    <StackPanel>
+        <StackPanel Visibility="{Binding ShowCatcherTemplate, Converter={StaticResource BoolToVis}}" Margin="0,0,0,8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="90"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="Template" VerticalAlignment="Center"/>
+                <ComboBox Grid.Column="1"
+                          ItemsSource="{Binding CatcherTemplates}"
+                          SelectedItem="{Binding SelectedCatcherTemplate}"
+                          DisplayMemberPath="Display"
+                          IsEnabled="{Binding CanEditCatcher}"
+                          ToolTip="Catcher HTTPS destination for this job."/>
+            </Grid>
+        </StackPanel>
+        <CheckBox Style="{StaticResource OptionsCheckBox}" Margin="0,0,0,4"
+                  Content="Include source folder name"
+                  IsChecked="{Binding IncludeSourceFolderName}"
+                  ToolTip="On (default, like Explorer): dest gets a folder named after the source (D:\Anchor Span → dest\Anchor Span\...). Off (Contents only): files and subfolders land directly in dest. Drive roots always dump contents into dest. Mercury does not uncheck this because dest already has a child folder."/>
+        <TextBlock Text="{Binding LandingPreview}" TextWrapping="Wrap"
+                   Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,8"
+                   Visibility="{Binding ShowLandingPreview, Converter={StaticResource BoolToVis}}"/>
+        <Grid Margin="0,4,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <CheckBox Style="{StaticResource OptionsCheckBox}" Content="Unlimited speed" IsChecked="{Binding UnlimitedSpeed}"/>
+            <TextBlock Grid.Column="1" Style="{StaticResource OptionsLabel}" Text="Max MB/s"/>
+            <TextBox Grid.Column="2" Style="{StaticResource OptionsField}" Width="72"
+                     Text="{Binding MaxMBpsText, UpdateSourceTrigger=PropertyChanged}"
+                     IsEnabled="{Binding UnlimitedSpeed, Converter={StaticResource InverseBool}}"
+                     ToolTip="{Binding SpeedToolTip}"/>
+            <CheckBox Grid.Column="3" Style="{StaticResource OptionsCheckBox}"
+                      Content="Window" IsChecked="{Binding HoursEnabled}"
+                      ToolTip="Pause copying outside this daily window (status: Paused — outside hours)."/>
+            <TextBox Grid.Column="4" Style="{StaticResource OptionsField}" Width="64" Margin="0,0,6,0"
+                     Text="{Binding HoursStart}" ToolTip="Window start (HH:mm)"/>
+            <TextBlock Grid.Column="5" Style="{StaticResource OptionsLabel}" Text="–" Margin="0,0,6,0"/>
+            <TextBox Grid.Column="6" Style="{StaticResource OptionsField}" Width="64" Margin="0"
+                     Text="{Binding HoursEnd}" ToolTip="Window end (HH:mm)"/>
+        </Grid>
+        <Grid Margin="0,8,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Style="{StaticResource OptionsLabel}" Text="Retries"/>
+            <TextBox Grid.Column="1" Style="{StaticResource OptionsField}" Width="56"
+                     Text="{Binding RetryCount}"/>
+            <TextBlock Grid.Column="2" Style="{StaticResource OptionsLabel}" Text="Wait (sec)"/>
+            <TextBox Grid.Column="3" Style="{StaticResource OptionsField}" Width="56"
+                     Text="{Binding RetryWait}"/>
+            <TextBlock Grid.Column="4" Style="{StaticResource OptionsLabel}" Text="Overwrite"/>
+            <ComboBox Grid.Column="5" VerticalAlignment="Center"
+                      FontSize="{DynamicResource OptionsFontSize}"
+                      local:ComboBoxFit.ToContent="True"
+                      SelectedIndex="{Binding OverwriteIndex}">
+                <ComboBoxItem>Skip if dest is newer or equal</ComboBoxItem>
+                <ComboBoxItem>Always overwrite</ComboBoxItem>
+                <ComboBoxItem>Never if dest exists</ComboBoxItem>
+            </ComboBox>
+        </Grid>
+        <Grid Margin="0,8,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Style="{StaticResource OptionsLabel}" Text="Verify"/>
+            <ComboBox Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0"
+                      FontSize="{DynamicResource OptionsFontSize}"
+                      local:ComboBoxFit.ToContent="True"
+                      SelectedIndex="{Binding VerifyIndex}">
+                <ComboBoxItem>Quick (size + time)</ComboBoxItem>
+                <ComboBoxItem>Thorough (xxHash64)</ComboBoxItem>
+            </ComboBox>
+            <CheckBox Grid.Column="2" Style="{StaticResource OptionsCheckBox}"
+                      Content="Dry Run" IsChecked="{Binding DryRun}"
+                      ToolTip="Enumerate only — nothing is written."/>
+            <CheckBox Grid.Column="3" Style="{StaticResource OptionsCheckBox}"
+                      Content="Small Files" IsChecked="{Binding PackAsZip}"
+                      ToolTip="Packs many small files into one stored (uncompressed) transport zip so USB / lots of tiny files write sequentially. Already-compressed files (video, photos, audio, zip/7z/rar, ISO) are copied as-is and not wrapped. Mercury unpacks a normal folder tree at dest and deletes the zip. If every file is already compressed, packing is skipped. Leave off to copy file-by-file."/>
+            <CheckBox Grid.Column="4" Style="{StaticResource OptionsCheckBox}"
+                      Content="Skip compressed" IsChecked="{Binding SkipCompressedWhenPacking}"
+                      IsEnabled="{Binding PackAsZip}"
+                      ToolTip="Default on with Small Files. Video, photos, audio, zip/7z/rar, ISO, and similar copy as files — not wrapped in the transport zip. If the whole job is already compressed, packing is skipped entirely."/>
+            <CheckBox Grid.Column="5" Style="{StaticResource OptionsCheckBox}" Margin="0"
+                      Content="Ignore Storage Limit" IsChecked="{Binding IgnoreFreeSpaceCheck}"
+                      ToolTip="Still reports Need vs available, but does not abort if the destination is thin-provisioned or can grow."/>
+        </Grid>
+        <Grid Margin="0,8,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <CheckBox Style="{StaticResource OptionsCheckBox}"
+                      Content="Start after" IsChecked="{Binding ScheduleEnabled}"
+                      ToolTip="Calendar start. Window hours still apply if enabled."/>
+            <DatePicker Grid.Column="1"
+                        SelectedDate="{Binding ScheduledDate}" IsEnabled="{Binding ScheduleEnabled}"
+                        Width="140" Margin="0,0,16,0" VerticalAlignment="Center"
+                        FontSize="{DynamicResource OptionsFontSize}"/>
+            <TextBox Grid.Column="2" Style="{StaticResource OptionsField}" Width="64"
+                     Text="{Binding ScheduledTime, UpdateSourceTrigger=PropertyChanged}"
+                     IsEnabled="{Binding ScheduleEnabled}" ToolTip="Time (HH:mm)"/>
+            <Button Grid.Column="3" Content="RoboFlags" Style="{StaticResource CompactButton}"
+                    Command="{Binding ToggleRoboFlagsCommand}"
+                    Margin="0" VerticalAlignment="Center"
+                    FontSize="{DynamicResource OptionsFontSize}"
+                    ToolTip="Robocopy-equivalent copy checkboxes for the native Mercury copier (not robocopy.exe)."/>
+        </Grid>
+        <Border Visibility="{Binding RoboFlagsExpanded, Converter={StaticResource BoolToVis}}"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                Padding="10,8" Margin="0,8,0,0" CornerRadius="4"
+                Background="{DynamicResource PanelAltBrush}">
+            <StackPanel>
+                <TextBlock Text="Native copy flags (hover for the robocopy cousin). Defaults keep creation time, last-write, attributes, directory times, and empty folders."
+                           TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,8"/>
+                <WrapPanel>
+                    <CheckBox Content="Timestamps" IsChecked="{Binding CopyTimestamps}" Width="200"
+                              ToolTip="/COPY:T — copy source creation time and last-write to dest. Default on. Windows copy otherwise sets dest CreationTime to now."/>
+                    <CheckBox Content="Attributes" IsChecked="{Binding CopyAttributes}" Width="200"
+                              ToolTip="/COPY:A — copy file attributes (read-only, hidden, archive, …). Default on."/>
+                    <CheckBox Content="NTFS ACL / security" IsChecked="{Binding CopySecurity}" Width="200"
+                              ToolTip="/COPY:S / /SEC — copy NTFS DACL. Default off. Fail-soft + log if denied."/>
+                    <CheckBox Content="Owner" IsChecked="{Binding CopyOwner}" Width="200"
+                              ToolTip="/COPY:O — copy owner. Default off. May need elevation; fail-soft + log."/>
+                    <CheckBox Content="Directory timestamps" IsChecked="{Binding CopyDirectoryTimestamps}" Width="200"
+                              ToolTip="/DCOPY:T — copy folder creation and last-write times. Default on with file timestamps."/>
+                    <CheckBox Content="Empty directories" IsChecked="{Binding CopyEmptyDirectories}" Width="200"
+                              ToolTip="/E — create empty source folders at dest (vs /S). Default on."/>
+                    <CheckBox Content="Force unbuffered I/O" IsChecked="{Binding UnbufferedIo}" Width="220"
+                              ToolTip="/J — write-through unbuffered I/O. Checked: always on. Unchecked (default): auto-probe on large sequential files (video, ISO, VHD) unless a speed cap is already limiting the job. Small files stay buffered."/>
+                    <CheckBox Content="Copy symbolic links as links" IsChecked="{Binding CopySymbolicLinksAsLinks}" Width="200"
+                              ToolTip="/SL — copy symlinks as links. Default off: skip reparse points (do not follow), same as today."/>
+                    <CheckBox Content="FAT 2s times" IsChecked="{Binding FatTimestampTolerance}" Width="200"
+                              ToolTip="/FFT — treat timestamps within 2 seconds as equal (FAT). Default off. Turn on for FAT dest."/>
+                    <CheckBox Content="Exclude hidden/system" IsChecked="{Binding ExcludeHiddenSystem}" Width="200"
+                              ToolTip="/XA:HS — skip hidden and system files and folders. Default off."/>
+                    <CheckBox Content="Purge extra dest files" IsChecked="{Binding PurgeExtraDestFiles}" Width="200"
+                              ToolTip="/PURGE — delete dest files and folders that are not in the source. Default off. Destructive; confirms before start."/>
+                </WrapPanel>
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</UserControl>

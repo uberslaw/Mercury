@@ -83,6 +83,58 @@ public class PathAndTreeUiTests
     }
 
     [Fact]
+    public void QueueAddUsesDraftOptionsNotTransferAndWrapsByDefault()
+    {
+        WpfSta.Run(() =>
+        {
+            WpfSta.EnsureApp();
+            var root = Path.Combine(Path.GetTempPath(), "mercury-qopt-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(root);
+            var src = Path.Combine(root, "Anchor Span");
+            var dest = Path.Combine(root, "EngA data drive");
+            Directory.CreateDirectory(src);
+            Directory.CreateDirectory(dest);
+            MainViewModel? vm = null;
+            try
+            {
+                vm = new MainViewModel(new AppPaths(root));
+                Assert.True(vm.IncludeSourceFolderName);
+                Assert.True(vm.QueueDraft.IncludeSourceFolderName);
+                vm.DryRun = true;
+                vm.SourcePath = src;
+                vm.DestPath = dest;
+                Assert.Contains("Anchor Span", vm.LandingPreview, StringComparison.OrdinalIgnoreCase);
+                vm.PrepareQueueForm();
+                Assert.Equal(src, vm.QueueSourcePath);
+                Assert.Contains("Anchor Span", vm.QueueLandingPreview, StringComparison.OrdinalIgnoreCase);
+                vm.QueueDraft.DryRun = false;
+                vm.QueueDraft.IncludeSourceFolderName = true;
+                Assert.True(vm.QueueAddToQueueCommand.CanExecute(null));
+                vm.QueueAddToQueueCommand.Execute(null);
+                var queued = Assert.Single(vm.QueueJobs);
+                Assert.False(queued.Job.Options.DryRun);
+                Assert.True(queued.Job.Options.IncludeSourceFolderName);
+                Assert.DoesNotContain("Contents only", queued.OptionBadges);
+                queued.Job.Options.IncludeSourceFolderName = false;
+                queued.RaiseComputed();
+                Assert.Contains("Contents only", queued.OptionBadges);
+            }
+            finally
+            {
+                vm?.Dispose();
+                try
+                {
+                    Directory.Delete(root, true);
+                }
+                catch
+                {
+                    // temp leftover is OK
+                }
+            }
+        });
+    }
+
+    [Fact]
     public void DestTypeCombo_SizesToSelectionNotFullWidth()
     {
         WpfSta.Run(() =>

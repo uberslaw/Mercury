@@ -82,6 +82,21 @@
             </Setter>
         </Style>
 
+                        <Style x:Key="OptionBadge" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource PanelBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="9"/>
+            <Setter Property="Padding" Value="8,2"/>
+            <Setter Property="Margin" Value="0,0,6,4"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+        </Style>
+        <DataTemplate x:Key="OptionBadgeChip">
+            <Border Style="{StaticResource OptionBadge}">
+                <TextBlock Text="{Binding}" FontSize="11" Foreground="{DynamicResource TextBrush}"/>
+            </Border>
+        </DataTemplate>
+
         <Style TargetType="Window">
             <Setter Property="Icon" Value="pack://application:,,,/Mercury;component/Assets/Mercury.ico"/>
             <Setter Property="Background" Value="{DynamicResource BgBrush}"/>

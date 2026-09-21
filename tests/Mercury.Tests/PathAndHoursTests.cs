@@ -64,6 +64,17 @@ public class CopyShapeTests
     }
 
     [Fact]
+    public void PreviewLandingPathWrapsAnchorSpanFolder()
+    {
+        var dest = @"Z:\EngA data drive";
+        var wrapped = CopyShape.PreviewLandingPath(@"D:\Anchor Span", dest, includeSourceFolderName: true);
+        Assert.Equal(Path.Combine(dest, "Anchor Span"), wrapped);
+        var contents = CopyShape.PreviewLandingPath(@"D:\Anchor Span", dest, includeSourceFolderName: false);
+        Assert.Equal(dest, contents);
+        Assert.True(new JobOptions().IncludeSourceFolderName);
+    }
+
+    [Fact]
     public void DriveRootDumpsContentsIntoDest()
     {
         var dest = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "mercury-shape-drv-" + Guid.NewGuid().ToString("N")[..8])).FullName;
@@ -73,6 +84,7 @@ public class CopyShapeTests
             Assert.Equal(SourceKind.DriveRoot, mapping.Kind);
             Assert.False(mapping.SingleFile);
             Assert.Equal(dest, mapping.DestRoot, ignoreCase: true);
+            Assert.Equal(dest, CopyShape.PreviewLandingPath(@"C:\", dest, includeSourceFolderName: true), ignoreCase: true);
         }
         finally
         {

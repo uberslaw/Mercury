@@ -94,6 +94,10 @@ public sealed class QueueJobItem : INotifyPropertyChanged
         }
     }
 
+    public IReadOnlyList<string> OptionBadges => JobOptionBadges.For(Job);
+
+    public bool HasOptionBadges => OptionBadges.Count > 0;
+
     public double Percent
     {
         get => _percent;
@@ -207,6 +211,8 @@ public sealed class QueueJobItem : INotifyPropertyChanged
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StatusLabel)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SettingsSummary)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(OptionBadges)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasOptionBadges)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanPause)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanResume)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ResumeLabel)));

@@ -210,9 +210,8 @@
                                 <CheckBox Margin="90,8,0,0"
                                           Content="Include source folder name"
                                           IsChecked="{Binding IncludeSourceFolderName}"
-                                          IsEnabled="{Binding IncludeSourceFolderNameApplies}"
                                           Visibility="{Binding DestIsFolder, Converter={StaticResource BoolToVis}}"
-                                          ToolTip="On (default, like Explorer): dest gets a folder named after the source. Off: files and subfolders land directly in dest (robocopy style). Drive roots always dump contents into dest. Single files always land as dest\filename."/>
+                                          ToolTip="On (default, like Explorer): dest gets a folder named after the source (D:\Anchor Span → dest\Anchor Span\...). Off (Contents only): files and subfolders land directly in dest. Drive roots always dump contents into dest. Dest already containing a child folder does not uncheck this."/>
                                 <TextBlock Margin="90,6,0,8"
                                            Text="{Binding LandingPreview}"
                                            TextWrapping="Wrap"
@@ -450,7 +449,7 @@
                 <DockPanel Margin="12">
                     <GroupBox DockPanel.Dock="Top" Header="Add to queue" Margin="0,0,0,8">
                         <StackPanel>
-                            <TextBlock Text="Enqueue another job without changing the running transfer’s Source/Dest. Uses Transfer job options. Add to queue never starts the job."
+                            <TextBlock Text="Enqueue another job without changing the running transfer’s Source/Dest. Set Job Options on this tab (independent of Transfer). Add to queue never starts the job."
                                        TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,8"/>
                             <Grid>
                                 <Grid.ColumnDefinitions>
@@ -519,7 +518,27 @@
                                                  PasswordChanged="CatcherPassphrase_PasswordChanged"/>
                                 </Grid>
                             </StackPanel>
+                            <CheckBox Margin="90,0,0,4" Content="Include source folder name"
+                                      IsChecked="{Binding QueueDraft.IncludeSourceFolderName}"
+                                      Visibility="{Binding QueueDestIsFolder, Converter={StaticResource BoolToVis}}"
+                                      ToolTip="On (default): dest gets a folder named after the source. Off: Contents only — files land directly in dest."/>
+                            <TextBlock Margin="90,0,0,8" Text="{Binding QueueLandingPreview}" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource MutedBrush}"
+                                       Visibility="{Binding ShowQueueLandingPreview, Converter={StaticResource BoolToVis}}"/>
+                            <ItemsControl ItemsSource="{Binding QueueDraftBadges}"
+                                          ItemTemplate="{StaticResource OptionBadgeChip}"
+                                          Visibility="{Binding HasQueueDraftBadges, Converter={StaticResource BoolToVis}}"
+                                          Margin="0,0,0,8">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                            </ItemsControl>
                             <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <Button Content="Job Options" Style="{StaticResource ToolbarButton}"
+                                        Command="{Binding OpenQueueDraftOptionsCommand}"
+                                        ToolTip="Speed, Window, retries, overwrite, verify, Dry Run, Small Files, wrap, RoboFlags, Start after, Catcher template — stored on the job you Add."/>
                                 <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="ButtonBrush,ButtonForegroundBrush">
                                     <Button Content="Add to queue" Style="{StaticResource ToolbarButton}"
                                             Command="{Binding QueueAddToQueueCommand}"/>
@@ -539,8 +558,20 @@
                     </DockPanel>
                     <GroupBox DockPanel.Dock="Bottom" Header="Selected job" Visibility="{Binding HasSelectedQueueJob, Converter={StaticResource BoolToVis}}">
                         <StackPanel>
-                            <TextBlock Text="{Binding SelectedQueueJob.SettingsSummary}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                            <ItemsControl ItemsSource="{Binding SelectedQueueJob.OptionBadges}"
+                                          ItemTemplate="{StaticResource OptionBadgeChip}"
+                                          Visibility="{Binding SelectedQueueJob.HasOptionBadges, Converter={StaticResource BoolToVis}}"
+                                          Margin="0,0,0,8">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                            </ItemsControl>
                             <WrapPanel>
+                                <Button Content="Job Options" Style="{StaticResource ToolbarButton}"
+                                        Command="{Binding OpenSelectedQueueJobOptionsCommand}"
+                                        ToolTip="Edit this queued job’s options (not the Transfer tab)."/>
                                 <CheckBox Content="Unlimited speed" IsChecked="{Binding SelectedQueueJob.UnlimitedSpeed}"
                                           IsEnabled="{Binding SelectedQueueJob.CanEditSpeed}"
                                           ToolTip="Applies immediately if this job is running."/>
@@ -576,6 +607,10 @@
                             <DataTemplate>
                                 <DockPanel>
                                     <WrapPanel DockPanel.Dock="Right" VerticalAlignment="Top">
+                                        <Button Content="Job Options" Style="{StaticResource CompactButton}"
+                                                Command="{Binding DataContext.OpenQueueJobOptionsCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}"
+                                                ToolTip="Edit this job’s options."/>
                                         <Button Content="Pause" Style="{StaticResource CompactButton}"
                                                 IsEnabled="{Binding CanPause}"
                                                 Command="{Binding DataContext.PauseQueueJobCommand, RelativeSource={RelativeSource AncestorType=Window}}"
@@ -608,7 +643,17 @@
                                     <StackPanel Margin="0,0,12,0">
                                         <TextBlock Text="{Binding Title}" FontWeight="SemiBold"/>
                                         <TextBlock Text="{Binding Route}" Opacity="0.8" TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
-                                        <TextBlock Text="{Binding StatusLabel}" Margin="0,4,0,6"/>
+                                        <TextBlock Text="{Binding StatusLabel}" Margin="0,4,0,4"/>
+                                        <ItemsControl ItemsSource="{Binding OptionBadges}"
+                                                      ItemTemplate="{StaticResource OptionBadgeChip}"
+                                                      Visibility="{Binding HasOptionBadges, Converter={StaticResource BoolToVis}}"
+                                                      Margin="0,0,0,6">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <WrapPanel/>
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                        </ItemsControl>
                                         <ProgressBar Value="{Binding Percent}" Maximum="100" Height="14"/>
                                         <local:ProgressStatsLine DataContext="{Binding Stats}"/>
                                         <TextBlock Text="{Binding RundownLine}" Margin="0,4,0,0" TextWrapping="Wrap"
