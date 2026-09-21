@@ -55,17 +55,38 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
-                            <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Body">
+                            <Border local:ThemeChrome.Keys="OnHeaderBrush,Body">
+                                <Border.Style>
+                                    <Style TargetType="Border" BasedOn="{StaticResource ChromeHighlight}">
+                                        <Setter Property="Grid.ColumnSpan" Value="1"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ShowOverallProgress}" Value="False">
+                                                <Setter Property="Grid.ColumnSpan" Value="3"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
                                 <TextBlock Text="Current" FontWeight="SemiBold" Margin="0,0,0,2"
                                            Foreground="{DynamicResource OnHeaderBrush}"
                                            FontFamily="{DynamicResource BodyFontFamily}" FontSize="{DynamicResource BodyFontSize}"/>
                             </Border>
-                            <Border Grid.Column="2" Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Body">
+                            <Border Grid.Column="2" Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Body"
+                                    Visibility="{Binding ShowOverallProgress, Converter={StaticResource BoolToVis}}">
                                 <TextBlock Text="Overall" FontWeight="SemiBold" Margin="0,0,0,2"
                                            Foreground="{DynamicResource OnHeaderBrush}"
                                            FontFamily="{DynamicResource BodyFontFamily}" FontSize="{DynamicResource BodyFontSize}"/>
                             </Border>
                             <Grid Grid.Row="1">
+                                <Grid.Style>
+                                    <Style TargetType="Grid">
+                                        <Setter Property="Grid.ColumnSpan" Value="1"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ShowOverallProgress}" Value="False">
+                                                <Setter Property="Grid.ColumnSpan" Value="3"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Grid.Style>
                                 <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="HeaderBarFillBrush,HeaderBarTrackBrush">
                                     <ProgressBar Value="{Binding JobPercent, Mode=OneWay}" Maximum="100" Height="15"
                                                  Foreground="{DynamicResource HeaderBarFillBrush}"
@@ -76,7 +97,8 @@
                                            Foreground="{DynamicResource OnHeaderBrush}"
                                            FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}"/>
                             </Grid>
-                            <Grid Grid.Row="1" Grid.Column="2">
+                            <Grid Grid.Row="1" Grid.Column="2"
+                                  Visibility="{Binding ShowOverallProgress, Converter={StaticResource BoolToVis}}">
                                 <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="HeaderBarFillBrush,HeaderBarTrackBrush">
                                     <ProgressBar Value="{Binding OverallPercent, Mode=OneWay}" Maximum="100" Height="15"
                                                  Foreground="{DynamicResource HeaderBarFillBrush}"
@@ -95,15 +117,8 @@
                                        FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}"
                                        Visibility="{Binding ShowHeaderStatus, Converter={StaticResource BoolToVis}}"/>
                         </Border>
-                        <local:TransferRundownBlock DataContext="{Binding HeaderRundown}"/>
                         <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OkBrush,DangerBrush">
                             <TextBlock Text="{Binding ResultBanner}" Foreground="{Binding ResultBrush}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,2,0,0"/>
-                        </Border>
-                        <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Progress">
-                            <TextBlock Text="{Binding HeaderRundownLine}" TextWrapping="Wrap" Margin="0,2,0,0"
-                                       Foreground="{DynamicResource OnHeaderBrush}"
-                                       FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}"
-                                       Visibility="{Binding ShowHeaderRundown, Converter={StaticResource BoolToVis}}"/>
                         </Border>
                         <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="WarnBrush">
                             <TextBlock Text="This destination looks like a cloud-synced folder. Mercury verifies the local copy, not the cloud upload."
@@ -223,179 +238,53 @@
                         </Border>
 
                         <GroupBox Header="Job options">
-                            <StackPanel>
-                                <Grid Margin="0,4,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <CheckBox Style="{StaticResource OptionsCheckBox}" Content="Unlimited speed" IsChecked="{Binding UnlimitedSpeed}"/>
-                                    <TextBlock Grid.Column="1" Style="{StaticResource OptionsLabel}" Text="Max MB/s"/>
-                                    <TextBox Grid.Column="2" Style="{StaticResource OptionsField}" Width="72"
-                                             Text="{Binding MaxMBpsText, UpdateSourceTrigger=PropertyChanged}"
-                                             IsEnabled="{Binding UnlimitedSpeed, Converter={StaticResource InverseBool}}"
-                                             ToolTip="Applies immediately to the running job."/>
-                                    <CheckBox Grid.Column="3" Style="{StaticResource OptionsCheckBox}"
-                                              Content="Window" IsChecked="{Binding HoursEnabled}"
-                                              ToolTip="Pause copying outside this daily window (status: Paused — outside hours)."/>
-                                    <TextBox Grid.Column="4" Style="{StaticResource OptionsField}" Width="64" Margin="0,0,6,0"
-                                             Text="{Binding HoursStart}" ToolTip="Window start (HH:mm)"/>
-                                    <TextBlock Grid.Column="5" Style="{StaticResource OptionsLabel}" Text="–" Margin="0,0,6,0"/>
-                                    <TextBox Grid.Column="6" Style="{StaticResource OptionsField}" Width="64" Margin="0"
-                                             Text="{Binding HoursEnd}" ToolTip="Window end (HH:mm)"/>
-                                </Grid>
-                                <Grid Margin="0,8,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Style="{StaticResource OptionsLabel}" Text="Retries"/>
-                                    <TextBox Grid.Column="1" Style="{StaticResource OptionsField}" Width="56"
-                                             Text="{Binding RetryCount}"/>
-                                    <TextBlock Grid.Column="2" Style="{StaticResource OptionsLabel}" Text="Wait (sec)"/>
-                                    <TextBox Grid.Column="3" Style="{StaticResource OptionsField}" Width="56"
-                                             Text="{Binding RetryWait}"/>
-                                    <TextBlock Grid.Column="4" Style="{StaticResource OptionsLabel}" Text="Overwrite"/>
-                                    <ComboBox Grid.Column="5" VerticalAlignment="Center"
-                                              FontSize="{DynamicResource OptionsFontSize}"
-                                              local:ComboBoxFit.ToContent="True"
-                                              SelectedIndex="{Binding OverwriteIndex}">
-                                        <ComboBoxItem>Skip if dest is newer or equal</ComboBoxItem>
-                                        <ComboBoxItem>Always overwrite</ComboBoxItem>
-                                        <ComboBoxItem>Never if dest exists</ComboBoxItem>
-                                    </ComboBox>
-                                </Grid>
-                                <Grid Margin="0,8,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Style="{StaticResource OptionsLabel}" Text="Verify"/>
-                                    <ComboBox Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0"
-                                              FontSize="{DynamicResource OptionsFontSize}"
-                                              local:ComboBoxFit.ToContent="True"
-                                              SelectedIndex="{Binding VerifyIndex}">
-                                        <ComboBoxItem>Quick (size + time)</ComboBoxItem>
-                                        <ComboBoxItem>Thorough (xxHash64)</ComboBoxItem>
-                                    </ComboBox>
-                                    <CheckBox Grid.Column="2" Style="{StaticResource OptionsCheckBox}"
-                                              Content="Dry Run" IsChecked="{Binding DryRun}"
-                                              ToolTip="Enumerate only — nothing is written."/>
-                                    <CheckBox Grid.Column="3" Style="{StaticResource OptionsCheckBox}"
-                                              Content="Small Files" IsChecked="{Binding PackAsZip}"
-                                              ToolTip="Packs many small files into one stored (uncompressed) transport zip so USB / lots of tiny files write sequentially. Already-compressed files (video, photos, audio, zip/7z/rar, ISO) are copied as-is and not wrapped. Mercury unpacks a normal folder tree at dest and deletes the zip. If every file is already compressed, packing is skipped. Leave off to copy file-by-file."/>
-                                    <CheckBox Grid.Column="4" Style="{StaticResource OptionsCheckBox}"
-                                              Content="Skip compressed" IsChecked="{Binding SkipCompressedWhenPacking}"
-                                              IsEnabled="{Binding PackAsZip}"
-                                              ToolTip="Default on with Small Files. Video, photos, audio, zip/7z/rar, ISO, and similar copy as files — not wrapped in the transport zip. If the whole job is already compressed, packing is skipped entirely."/>
-                                    <CheckBox Grid.Column="5" Style="{StaticResource OptionsCheckBox}" Margin="0"
-                                              Content="Ignore Storage Limit" IsChecked="{Binding IgnoreFreeSpaceCheck}"
-                                              ToolTip="Still reports Need vs available, but does not abort if the destination is thin-provisioned or can grow."/>
-                                </Grid>
-                                <Grid Margin="0,8,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <CheckBox Style="{StaticResource OptionsCheckBox}"
-                                              Content="Start after" IsChecked="{Binding ScheduleEnabled}"
-                                              ToolTip="Calendar start. Window hours still apply if enabled."/>
-                                    <DatePicker Grid.Column="1"
-                                                SelectedDate="{Binding ScheduledDate}" IsEnabled="{Binding ScheduleEnabled}"
-                                                Width="140" Margin="0,0,16,0" VerticalAlignment="Center"
-                                                FontSize="{DynamicResource OptionsFontSize}"/>
-                                    <TextBox Grid.Column="2" Style="{StaticResource OptionsField}" Width="64"
-                                             Text="{Binding ScheduledTime, UpdateSourceTrigger=PropertyChanged}"
-                                             IsEnabled="{Binding ScheduleEnabled}" ToolTip="Time (HH:mm)"/>
-                                    <Button Grid.Column="3" Content="RoboFlags" Style="{StaticResource CompactButton}"
-                                            Command="{Binding ToggleRoboFlagsCommand}"
-                                            Margin="0" VerticalAlignment="Center"
-                                            FontSize="{DynamicResource OptionsFontSize}"
-                                            ToolTip="Robocopy-equivalent copy checkboxes for the native Mercury copier (not robocopy.exe)."/>
-                                </Grid>
-                                <Border Visibility="{Binding RoboFlagsExpanded, Converter={StaticResource BoolToVis}}"
-                                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
-                                        Padding="10,8" Margin="0,8,0,0" CornerRadius="4"
-                                        Background="{DynamicResource PanelAltBrush}">
-                                    <StackPanel>
-                                        <TextBlock Text="Native copy flags (hover for the robocopy cousin). Defaults keep creation time, last-write, attributes, directory times, and empty folders."
-                                                   TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,8"/>
-                                        <WrapPanel>
-                                            <CheckBox Content="Timestamps" IsChecked="{Binding CopyTimestamps}" Width="200"
-                                                      ToolTip="/COPY:T — copy source creation time and last-write to dest. Default on. Windows copy otherwise sets dest CreationTime to now."/>
-                                            <CheckBox Content="Attributes" IsChecked="{Binding CopyAttributes}" Width="200"
-                                                      ToolTip="/COPY:A — copy file attributes (read-only, hidden, archive, …). Default on."/>
-                                            <CheckBox Content="NTFS ACL / security" IsChecked="{Binding CopySecurity}" Width="200"
-                                                      ToolTip="/COPY:S / /SEC — copy NTFS DACL. Default off. Fail-soft + log if denied."/>
-                                            <CheckBox Content="Owner" IsChecked="{Binding CopyOwner}" Width="200"
-                                                      ToolTip="/COPY:O — copy owner. Default off. May need elevation; fail-soft + log."/>
-                                            <CheckBox Content="Directory timestamps" IsChecked="{Binding CopyDirectoryTimestamps}" Width="200"
-                                                      ToolTip="/DCOPY:T — copy folder creation and last-write times. Default on with file timestamps."/>
-                                            <CheckBox Content="Empty directories" IsChecked="{Binding CopyEmptyDirectories}" Width="200"
-                                                      ToolTip="/E — create empty source folders at dest (vs /S). Default on."/>
-                                            <CheckBox Content="Force unbuffered I/O" IsChecked="{Binding UnbufferedIo}" Width="220"
-                                                      ToolTip="/J — write-through unbuffered I/O. Checked: always on. Unchecked (default): auto-probe on large sequential files (video, ISO, VHD) unless a speed cap is already limiting the job. Small files stay buffered."/>
-                                            <CheckBox Content="Copy symbolic links as links" IsChecked="{Binding CopySymbolicLinksAsLinks}" Width="200"
-                                                      ToolTip="/SL — copy symlinks as links. Default off: skip reparse points (do not follow), same as today."/>
-                                            <CheckBox Content="FAT 2s times" IsChecked="{Binding FatTimestampTolerance}" Width="200"
-                                                      ToolTip="/FFT — treat timestamps within 2 seconds as equal (FAT). Default off. Turn on for FAT dest."/>
-                                            <CheckBox Content="Exclude hidden/system" IsChecked="{Binding ExcludeHiddenSystem}" Width="200"
-                                                      ToolTip="/XA:HS — skip hidden and system files and folders. Default off."/>
-                                            <CheckBox Content="Purge extra dest files" IsChecked="{Binding PurgeExtraDestFiles}" Width="200"
-                                                      ToolTip="/PURGE — delete dest files and folders that are not in the source. Default off. Destructive; confirms before start."/>
-                                        </WrapPanel>
-                                    </StackPanel>
-                                </Border>
-                            </StackPanel>
+                            <local:JobOptionsPanel/>
                         </GroupBox>
 
                         <GroupBox Header="Global bandwidth (all jobs)">
-                            <Grid Margin="0,2,0,0">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Style="{StaticResource OptionsLabel}" Text="Min MB/s"/>
-                                <TextBox Grid.Column="1" Style="{StaticResource OptionsField}" Width="72"
-                                         Text="{Binding GlobalMinText, UpdateSourceTrigger=PropertyChanged}"
-                                         ToolTip="Do not throttle the aggregate below this when work is available. Applies immediately."/>
-                                <CheckBox Grid.Column="2" Style="{StaticResource OptionsCheckBox}"
-                                          Content="Unlimited" IsChecked="{Binding GlobalMaxUnlimited}"
-                                          ToolTip="No global max. Per-job Max MB/s still applies."/>
-                                <TextBlock Grid.Column="3" Style="{StaticResource OptionsLabel}" Text="Max"/>
-                                <TextBox Grid.Column="4" Style="{StaticResource OptionsField}" Width="72"
-                                         Text="{Binding GlobalMaxText, UpdateSourceTrigger=PropertyChanged}"
-                                         IsEnabled="{Binding GlobalMaxUnlimited, Converter={StaticResource InverseBool}}"
-                                         ToolTip="Applies immediately to running jobs."/>
-                                <CheckBox Grid.Column="5" Style="{StaticResource OptionsCheckBox}" Margin="0,0,8,0"
-                                          Content="Throttle active PC" IsChecked="{Binding IdleThrottleEnabled}"
-                                          ToolTip="When other programs are using the PC (CPU above about 18%, excluding Mercury’s copy when possible), cap every job to this speed. Idle uses Unlimited / Max. Applies immediately — no restart."/>
-                                <TextBox Grid.Column="6" Style="{StaticResource OptionsField}" Width="72" Margin="0"
-                                         Text="{Binding IdleThrottleText, UpdateSourceTrigger=PropertyChanged}"
-                                         IsEnabled="{Binding IdleThrottleEnabled}"
-                                         ToolTip="MB/s while the PC is busy. Leave Throttle active PC off to use only Unlimited / Max."/>
-                            </Grid>
+                            <StackPanel>
+                                <CheckBox Style="{StaticResource OptionsCheckBox}" Margin="0,0,0,8"
+                                          Content="Show speeds in Mbps"
+                                          IsChecked="{Binding ShowSpeedInMegabits}"
+                                          ToolTip="When on, Min / Max / Throttle boxes and Progress Speed use megabits per second (1 MB/s = 8 Mbps). Stored caps stay MB/s."/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Style="{StaticResource OptionsLabel}" Text="Min"/>
+                                    <TextBox Grid.Column="1" Style="{StaticResource OptionsField}" Width="72"
+                                             Text="{Binding GlobalMinText, UpdateSourceTrigger=PropertyChanged}"
+                                             ToolTip="Do not throttle the aggregate below this when work is available. Applies immediately."/>
+                                    <TextBlock Grid.Column="2" Style="{StaticResource OptionsLabel}" Text="{Binding SpeedUnitLabel}" Margin="0,0,16,0"/>
+                                    <CheckBox Grid.Column="3" Style="{StaticResource OptionsCheckBox}"
+                                              Content="Unlimited" IsChecked="{Binding GlobalMaxUnlimited}"
+                                              ToolTip="No global max. Per-job Max still applies."/>
+                                    <TextBlock Grid.Column="4" Style="{StaticResource OptionsLabel}" Text="Max"/>
+                                    <TextBox Grid.Column="5" Style="{StaticResource OptionsField}" Width="72"
+                                             Text="{Binding GlobalMaxText, UpdateSourceTrigger=PropertyChanged}"
+                                             IsEnabled="{Binding GlobalMaxUnlimited, Converter={StaticResource InverseBool}}"
+                                             ToolTip="Applies immediately to running jobs."/>
+                                    <TextBlock Grid.Column="6" Style="{StaticResource OptionsLabel}" Text="{Binding SpeedUnitLabel}" Margin="0,0,16,0"/>
+                                    <CheckBox Grid.Column="7" Style="{StaticResource OptionsCheckBox}" Margin="0,0,8,0"
+                                              Content="Throttle active PC" IsChecked="{Binding IdleThrottleEnabled}"
+                                              ToolTip="When other programs are using the PC (CPU above about 18%, excluding Mercury’s copy when possible), cap every job to this speed. Idle uses Unlimited / Max. Applies immediately — no restart."/>
+                                    <TextBox Grid.Column="8" Style="{StaticResource OptionsField}" Width="72"
+                                             Text="{Binding IdleThrottleText, UpdateSourceTrigger=PropertyChanged}"
+                                             IsEnabled="{Binding IdleThrottleEnabled}"
+                                             ToolTip="Speed while the PC is busy. Leave Throttle active PC off to use only Unlimited / Max."/>
+                                    <TextBlock Grid.Column="9" Style="{StaticResource OptionsLabel}" Text="{Binding SpeedUnitLabel}" Margin="0"/>
+                                </Grid>
+                            </StackPanel>
                         </GroupBox>
 
                         <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Button" Margin="0,4,0,12">
@@ -425,7 +314,7 @@
 
                         <GroupBox Header="Saved jobs" Margin="0,16,0,0" Visibility="{Binding HasSavedJobs, Converter={StaticResource BoolToVis}}">
                             <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="PanelAltBrush">
-                            <ListBox ItemsSource="{Binding SavedJobs}" FontFamily="Segoe UI" FontSize="13" MaxHeight="140">
+                            <ListBox ItemsSource="{Binding SavedJobs}" FontFamily="{DynamicResource BodyFontFamily}" FontSize="{DynamicResource BodyFontSize}" MaxHeight="140">
                                 <ListBox.ItemTemplate>
                                     <DataTemplate>
                                         <DockPanel>
@@ -556,42 +445,17 @@
                                        Foreground="{DynamicResource MutedBrush}"/>
                         </Border>
                     </DockPanel>
-                    <GroupBox DockPanel.Dock="Bottom" Header="Selected job" Visibility="{Binding HasSelectedQueueJob, Converter={StaticResource BoolToVis}}">
-                        <StackPanel>
-                            <ItemsControl ItemsSource="{Binding SelectedQueueJob.OptionBadges}"
-                                          ItemTemplate="{StaticResource OptionBadgeChip}"
-                                          Visibility="{Binding SelectedQueueJob.HasOptionBadges, Converter={StaticResource BoolToVis}}"
-                                          Margin="0,0,0,8">
-                                <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate>
-                                        <WrapPanel/>
-                                    </ItemsPanelTemplate>
-                                </ItemsControl.ItemsPanel>
-                            </ItemsControl>
-                            <WrapPanel>
-                                <Button Content="Job Options" Style="{StaticResource ToolbarButton}"
-                                        Command="{Binding OpenSelectedQueueJobOptionsCommand}"
-                                        ToolTip="Edit this queued job’s options (not the Transfer tab)."/>
-                                <CheckBox Content="Unlimited speed" IsChecked="{Binding SelectedQueueJob.UnlimitedSpeed}"
-                                          IsEnabled="{Binding SelectedQueueJob.CanEditSpeed}"
-                                          ToolTip="Applies immediately if this job is running."/>
-                                <TextBlock Text="Max MB/s" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                <TextBox Width="80"
-                                         Text="{Binding SelectedQueueJob.MaxMBpsText, UpdateSourceTrigger=PropertyChanged}"
-                                         IsEnabled="{Binding SelectedQueueJob.CanEditLimitedSpeed}"/>
-                            </WrapPanel>
-                            <local:TransferRundownBlock DataContext="{Binding SelectedQueueJob.Rundown}"/>
-                        </StackPanel>
-                    </GroupBox>
                     <TextBlock DockPanel.Dock="Top" Text="No jobs in the queue." Opacity="0.7" Margin="0,8,0,8"
                                Visibility="{Binding HasQueueJobs, Converter={StaticResource InverseBoolToVis}}"/>
                     <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="QueueBackgroundBrush"
+                            MinHeight="160"
                             Visibility="{Binding HasQueueJobs, Converter={StaticResource BoolToVis}}">
                     <ListBox x:Name="QueueList"
                              ItemsSource="{Binding QueueJobs}"
                              SelectedItem="{Binding SelectedQueueJob}"
-                             FontFamily="Segoe UI"
-                             FontSize="13"
+                             IsSynchronizedWithCurrentItem="False"
+                             FontFamily="{DynamicResource BodyFontFamily}"
+                             FontSize="{DynamicResource BodyFontSize}"
                              Background="{DynamicResource QueueBackgroundBrush}"
                              HorizontalContentAlignment="Stretch"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
@@ -607,17 +471,13 @@
                             <DataTemplate>
                                 <DockPanel>
                                     <WrapPanel DockPanel.Dock="Right" VerticalAlignment="Top">
-                                        <Button Content="Job Options" Style="{StaticResource CompactButton}"
-                                                Command="{Binding DataContext.OpenQueueJobOptionsCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                CommandParameter="{Binding}"
-                                                ToolTip="Edit this job’s options."/>
-                                        <Button Content="Pause" Style="{StaticResource CompactButton}"
-                                                IsEnabled="{Binding CanPause}"
-                                                Command="{Binding DataContext.PauseQueueJobCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                CommandParameter="{Binding}"/>
                                         <Button Content="{Binding ResumeLabel}" Style="{StaticResource CompactButton}"
                                                 IsEnabled="{Binding CanResume}"
                                                 Command="{Binding DataContext.ResumeQueueJobCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}"/>
+                                        <Button Content="Pause" Style="{StaticResource CompactButton}"
+                                                IsEnabled="{Binding CanPause}"
+                                                Command="{Binding DataContext.PauseQueueJobCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                 CommandParameter="{Binding}"/>
                                         <Button Content="Stop" Style="{StaticResource CompactButton}"
                                                 IsEnabled="{Binding CanStop}"
@@ -627,6 +487,10 @@
                                                 IsEnabled="{Binding CanToggleHold}"
                                                 Command="{Binding DataContext.ToggleHoldQueueJobCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                 CommandParameter="{Binding}"/>
+                                        <Button Content="Job Options" Style="{StaticResource CompactButton}"
+                                                Command="{Binding DataContext.OpenQueueJobOptionsCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}"
+                                                ToolTip="Edit this job’s options."/>
                                         <Button Content="Remove" Style="{StaticResource CompactButton}"
                                                 IsEnabled="{Binding CanRemove}"
                                                 Command="{Binding DataContext.RemoveQueueJobCommand, RelativeSource={RelativeSource AncestorType=Window}}"
@@ -641,9 +505,13 @@
                                                 CommandParameter="{Binding}"/>
                                     </WrapPanel>
                                     <StackPanel Margin="0,0,12,0">
-                                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold"/>
+                                        <TextBlock FontWeight="SemiBold">
+                                            <Run Text="{Binding OrderText, Mode=OneWay}"/>
+                                            <Run Text="  "/>
+                                            <Run Text="{Binding Title, Mode=OneWay}"/>
+                                        </TextBlock>
                                         <TextBlock Text="{Binding Route}" Opacity="0.8" TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
-                                        <TextBlock Text="{Binding StatusLabel}" Margin="0,4,0,4"/>
+                                        <TextBlock Text="{Binding TileStatus}" FontWeight="SemiBold" Margin="0,4,0,4"/>
                                         <ItemsControl ItemsSource="{Binding OptionBadges}"
                                                       ItemTemplate="{StaticResource OptionBadgeChip}"
                                                       Visibility="{Binding HasOptionBadges, Converter={StaticResource BoolToVis}}"
@@ -655,26 +523,6 @@
                                             </ItemsControl.ItemsPanel>
                                         </ItemsControl>
                                         <ProgressBar Value="{Binding Percent}" Maximum="100" Height="14"/>
-                                        <local:ProgressStatsLine DataContext="{Binding Stats}"/>
-                                        <TextBlock Text="{Binding RundownLine}" Margin="0,4,0,0" TextWrapping="Wrap"
-                                                   Visibility="{Binding HasRundown, Converter={StaticResource BoolToVis}}">
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding Rundown.Highlight}" Value="Ok">
-                                                            <Setter Property="Foreground" Value="{DynamicResource OkBrush}"/>
-                                                        </DataTrigger>
-                                                        <DataTrigger Binding="{Binding Rundown.Highlight}" Value="Warn">
-                                                            <Setter Property="Foreground" Value="{DynamicResource WarnBrush}"/>
-                                                        </DataTrigger>
-                                                        <DataTrigger Binding="{Binding Rundown.Highlight}" Value="Danger">
-                                                            <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
                                     </StackPanel>
                                 </DockPanel>
                             </DataTemplate>
@@ -747,8 +595,8 @@
                             Visibility="{Binding HasHistoryItems, Converter={StaticResource BoolToVis}}">
                     <ListBox ItemsSource="{Binding HistoryItems}"
                              SelectedItem="{Binding SelectedHistoryItem}"
-                             FontFamily="Segoe UI"
-                             FontSize="13"
+                             FontFamily="{DynamicResource BodyFontFamily}"
+                             FontSize="{DynamicResource BodyFontSize}"
                              Background="{DynamicResource QueueBackgroundBrush}"
                              HorizontalContentAlignment="Stretch"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
@@ -870,7 +718,7 @@
                     </GroupBox>
                     <TextBlock DockPanel.Dock="Top" Text="Every file and folder Mercury writes. Open folder to show it in Explorer."
                                Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,8" TextWrapping="Wrap"/>
-                    <ListBox ItemsSource="{Binding DataPaths}" FontFamily="Segoe UI" FontSize="13"
+                    <ListBox ItemsSource="{Binding DataPaths}" FontFamily="{DynamicResource BodyFontFamily}" FontSize="{DynamicResource BodyFontSize}"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                              HorizontalContentAlignment="Stretch">
                         <ListBox.ItemTemplate>
@@ -894,7 +742,7 @@
                         <TextBlock Text="Search" VerticalAlignment="Center" Margin="0,0,8,0"/>
                         <TextBox Text="{Binding HelpSearch, UpdateSourceTrigger=PropertyChanged}"/>
                     </DockPanel>
-                    <ListBox ItemsSource="{Binding HelpSections}" FontFamily="Segoe UI" FontSize="13"
+                    <ListBox ItemsSource="{Binding HelpSections}" FontFamily="{DynamicResource BodyFontFamily}" FontSize="{DynamicResource BodyFontSize}"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                              HorizontalContentAlignment="Stretch">
                         <ListBox.ItemTemplate>

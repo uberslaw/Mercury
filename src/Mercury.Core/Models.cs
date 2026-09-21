@@ -154,6 +154,8 @@ public sealed class BandwidthSettings
     public double? IdleThrottleMegabytesPerSecond { get; set; }
     /// <summary>Other-process CPU % (Mercury’s own copy excluded when possible) that counts as “in use”.</summary>
     public double IdleCpuPercentThreshold { get; set; } = MachineLoadSampler.DefaultBusyPercent;
+    /// <summary>When true, bandwidth boxes and Progress Speed use Mbps (1 MB/s = 8 Mbps). Stored caps stay MB/s.</summary>
+    public bool ShowSpeedInMegabits { get; set; }
 
     public double? GlobalMinBytesPerSecond =>
         GlobalMinMegabytesPerSecond is > 0 ? GlobalMinMegabytesPerSecond.Value * 1024 * 1024 : null;
@@ -235,19 +237,16 @@ public sealed class JobProgress
     public int RundownTotal { get; init; }
     public double RundownPerSecond { get; init; }
 
+    public DateTimeOffset? EndedUtc { get; init; }
+
     public bool IsRundownStage => CopyPipeline.IsRundown(StageName, Message);
 
     public double Percent
     {
         get
         {
-            if (IsRundownStage)
+            if (IsRundownStage && RundownTotal > 0)
             {
-                if (RundownTotal <= 0)
-                {
-                    return 0;
-                }
-
                 return Math.Clamp(100.0 * RundownDone / RundownTotal, 0, 100);
             }
 
@@ -266,7 +265,7 @@ public sealed class JobProgress
     }
 
     public TimeSpan ElapsedAt(DateTimeOffset now) =>
-        Duration(StartedUtc, now);
+        Duration(StartedUtc, EndedUtc ?? now);
 
     public TimeSpan StageElapsedAt(DateTimeOffset now) =>
         Duration(StageStartedUtc, now);

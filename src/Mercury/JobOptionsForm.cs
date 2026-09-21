@@ -41,6 +41,8 @@ public sealed class JobOptionsForm : INotifyPropertyChanged
     private DateTime? _scheduledDate = DateTime.Today;
     private string _scheduledTime = "09:00";
     private bool _showCatcherTemplate;
+    private bool _showIncludeFolder = true;
+    private bool _showSpeedInMegabits;
     private bool _canEditCatcher = true;
     private bool _showAddToQueue;
     private string _windowTitle = "Job options";
@@ -91,6 +93,33 @@ public sealed class JobOptionsForm : INotifyPropertyChanged
             }
         }
     }
+    public bool ShowIncludeFolder { get => _showIncludeFolder; set => SetField(ref _showIncludeFolder, value); }
+
+    public string SpeedUnitLabel => BandwidthUnit.Label(ShowSpeedInMegabits);
+
+    public bool ShowSpeedInMegabits
+    {
+        get => _showSpeedInMegabits;
+        set
+        {
+            if (_showSpeedInMegabits == value)
+            {
+                return;
+            }
+
+            var from = _showSpeedInMegabits;
+            _showSpeedInMegabits = value;
+            var converted = BandwidthUnit.ConvertDisplayText(_maxMBpsText, from, value);
+            var loading = _loading;
+            _loading = true;
+            _maxMBpsText = converted;
+            _loading = loading;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowSpeedInMegabits)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SpeedUnitLabel)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MaxMBpsText)));
+        }
+    }
+
     public bool CanEditCatcher { get => _canEditCatcher; set => SetField(ref _canEditCatcher, value); }
     public bool ShowAddToQueue
     {
@@ -223,7 +252,7 @@ public sealed class JobOptionsForm : INotifyPropertyChanged
         {
             UnlimitedSpeed = options.MaxMegabytesPerSecond is null or <= 0;
             MaxMBpsText = options.MaxMegabytesPerSecond is > 0
-                ? options.MaxMegabytesPerSecond.Value.ToString("0.###", CultureInfo.InvariantCulture)
+                ? BandwidthUnit.FormatMegabytes(options.MaxMegabytesPerSecond.Value, ShowSpeedInMegabits)
                 : "";
             HoursEnabled = options.HoursEnabled;
             HoursStart = options.HoursStart.ToString("HH:mm");
@@ -315,7 +344,7 @@ public sealed class JobOptionsForm : INotifyPropertyChanged
     public JobOptions ToOptions()
     {
         double? max = null;
-        if (!UnlimitedSpeed && double.TryParse(MaxMBpsText, NumberStyles.Float, CultureInfo.InvariantCulture, out var mb) && mb > 0)
+        if (!UnlimitedSpeed && BandwidthUnit.TryParseMegabytes(MaxMBpsText, ShowSpeedInMegabits, out var mb))
         {
             max = mb;
         }

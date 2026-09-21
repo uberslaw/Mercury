@@ -52,9 +52,11 @@ public static class HelpDocument
             Id = "options",
             Title = "Job options",
             Body =
-                "Max MB/s throttles this job; Global bandwidth Min / Unlimited / Max on the same tab apply to all jobs immediately.\n\n" +
-                "Throttle active PC (Global bandwidth): while other programs are using the PC " +
-                "(CPU above about 18%, excluding Mercury’s own copy when possible), every job is capped at that MB/s. " +
+                "Job options order: Start after + Window, then Overwrite + Verify, then Unlimited / Max / Dry Run / Small Files / Skip compressed / Ignore Storage Limit / RoboFlags / Retries / Wait.\n\n" +
+                "Max throttles this job. The unit (MB/s or Mbps) sits to the right of the box and follows Global bandwidth → Show speeds in Mbps (1 MB/s = 8 Mbps). Stored caps stay MB/s.\n\n" +
+                "Global bandwidth Min / Unlimited / Max / Throttle active PC apply to all jobs immediately. Each number box has its unit on the right. Show speeds in Mbps also switches Progress Speed.\n\n" +
+                "Throttle active PC: while other programs are using the PC " +
+                "(CPU above about 18%, excluding Mercury’s own copy when possible), every job is capped at that speed. " +
                 "When the PC is idle, Unlimited / Max still apply. The cap takes effect mid-job — no restart.\n\n" +
                 "Window pauses copying outside the daily hours (status: Paused — outside hours).\n\n" +
                 "Retries / Wait: immediate retries on a locked file. If those fail with a sharing/lock error, Mercury defers the file and retries at 25%, 50%, 75%, and 100% of bytes copied (or at the end of a small job) so you can close the file.\n\n" +
@@ -97,13 +99,15 @@ public static class HelpDocument
             Id = "progress",
             Title = "Progress header",
             Body =
-                "The pink header is Progress. Current and Overall bars stay on one row after Start (Overall matches Current when there is a single job). Each bar shows its percent in the middle. " +
-                "Below 1%, the label uses one decimal (0.1%) or <1% so a started job never shows 0%. Elapsed sits at the top right of the header. " +
+                "The pink header is Progress. Current and Overall bars stay on one row for running, paused, stopped, and finished (Overall hides only when there is a single job). Each bar shows its percent in the middle. " +
+                "Below 1%, the label uses one decimal (0.1%) or <1% so a started job never shows 0%. " +
+                "The stats table is always Stage / File / Elapsed / This stage / Files / Bytes / Speed / ETA — inactive cells show — (or last known values), not a different rundown-only layout. Exception text never replaces the table; errors go to Console and History. " +
+                "Show speeds in Mbps (Global bandwidth) switches Speed between MB/s and Mbps (1 MB/s = 8 Mbps). " +
                 "Job n of m is which queue item (example: 3 of 3). Stage is that job’s pipeline step: enumerate, copy, verify, writing rundown. " +
                 "With no running or resumable job the header stays collapsed — no 0/0 files or empty rundown. A part-way last job still shows its last percent and counts so you can Resume last. " +
                 "When two or more jobs are in the queue, the stats table includes Overall files (example: Files: 12/400). " +
                 "Job: 2 of 5 is the running job’s place in the listed queue (omitted when there is a single job). " +
-                "Stats sit under the bars in a table (key: value), including the current File name. Status text and the transfer rundown live in this header — the Transfer tab no longer repeats them. " +
+                "Stats sit under the bars in a table (key: value), including the current File name. Status text lives in this header — the Transfer tab no longer repeats them. " +
                 "During enumerate, Types shows a mix such as Video: 40 files, 2.1 TB. " +
                 "Writing rundown runs in the background after copy and verify so the next queued job can start transferring. " +
                 "The copier stays one job at a time; Start is enabled when that copy slot is free. Stop during rundown is immediate."
@@ -124,15 +128,15 @@ public static class HelpDocument
             Title = "Queue tab",
             Body =
                 "Jobs wait here until you Start them, or until the previous job finishes (queue drain). Add to queue never auto-starts. " +
-                "Job Options on this tab pops out the same fields as Transfer (speed, Window, retries, overwrite, verify, Dry Run, Small Files, Skip compressed, Ignore Storage Limit, Start after, RoboFlags, Include source folder name, Catcher template). " +
-                "Those values are stored on the job you Add — they are not locked to the Transfer tab while a copy runs. Open Job Options on a tile (or the selected-job toolbar) to edit that row later. " +
+                "An empty queue shows one line: No jobs in the queue. Each job is a tile: order #, source → dest, status (Pending / Running / Paused / On hold / Stopped / Done), flag badges, and per-tile Start / Pause / Stop (plus Hold, Job Options, Remove, Up, Down). " +
+                "Job Options on a tile pops out the same fields as Transfer (speed, Window, retries, overwrite, verify, Dry Run, Small Files, Skip compressed, Ignore Storage Limit, Start after, RoboFlags, Include source folder name, Catcher template). " +
+                "Those values are stored on the job you Add — they are not locked to the Transfer tab while a copy runs. " +
                 "Tiles show compact badges for non-default flags (Dry Run, Small Files, Ignore Storage Limit, Window, Hold, Catcher, Contents only when wrap is off). " +
                 "Source/Dest/Browse/Add on this tab stay enabled while a transfer is running — only Transfer-tab paths lock with the active job. " +
                 "One copy runs at a time, in listed order: after a job finishes, the first not-on-hold Pending job that is due starts next " +
                 "(a later job will not jump a not-due job ahead of it). Writing rundown for a finished job can continue in the background while the next copy starts. " +
                 "Hold marks a queued job On hold so it never auto-starts; it stays until you Unhold or Start/Resume that row. " +
-                "Per-row Pause / Resume / Stop / Hold / Remove / Up / Down. " +
-                "Speed on a queued job can be edited while it is pending or running. Pause all affects every active job."
+                "Pause all affects every active job."
         },
         new()
         {

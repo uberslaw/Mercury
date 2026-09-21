@@ -58,7 +58,8 @@ public sealed class JobJournal : IDisposable
 
     private void InitSchema()
     {
-        using var cmd = CreateCommand();
+        using var cmdGuard = new CommandGuard(CreateCommand());
+            var cmd = cmdGuard.Command;
         cmd.CommandText = """
             PRAGMA journal_mode=WAL;
             CREATE TABLE IF NOT EXISTS meta (
@@ -91,7 +92,8 @@ public sealed class JobJournal : IDisposable
 
     private void EnsureColumn(string table, string column, string typeSql)
     {
-        using var cmd = CreateCommand();
+        using var cmdGuard = new CommandGuard(CreateCommand());
+            var cmd = cmdGuard.Command;
         cmd.CommandText = $"PRAGMA table_info({table})";
         using (var reader = cmd.ExecuteReader())
         {
@@ -104,7 +106,8 @@ public sealed class JobJournal : IDisposable
             }
         }
 
-        using var alter = CreateCommand();
+        using var alterGuard = new CommandGuard(CreateCommand());
+        var alter = alterGuard.Command;
         alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {typeSql}";
         alter.ExecuteNonQuery();
     }
@@ -113,6 +116,20 @@ public sealed class JobJournal : IDisposable
     {
         SetMeta("job", JsonSerializer.Serialize(job, Json));
         SetMeta("status", job.Status.ToString());
+    }
+
+    /// <summary>Best-effort save for rundown/UI. Returns false if the journal is closed or busy-dead.</summary>
+    public bool TrySaveJob(Job job)
+    {
+        try
+        {
+            SaveJob(job);
+            return true;
+        }
+        catch (Exception ex) when (IsJournalFault(ex))
+        {
+            return false;
+        }
     }
 
     public Job LoadJob()
@@ -125,7 +142,8 @@ public sealed class JobJournal : IDisposable
     {
         lock (_lock)
         {
-            using var cmd = CreateCommand();
+            using var cmdGuard = new CommandGuard(CreateCommand());
+            var cmd = cmdGuard.Command;
             cmd.CommandText = """
                 INSERT INTO files (relative_path, source_path, dest_path, size, last_write_utc, hash, status, error, retry_count, copied_bytes, payload_kind)
                 VALUES ($rel, $src, $dst, $size, $lw, $hash, $status, $error, $retry, $copied, $kind)
@@ -160,7 +178,8 @@ public sealed class JobJournal : IDisposable
     {
         lock (_lock)
         {
-            using var cmd = CreateCommand();
+            using var cmdGuard = new CommandGuard(CreateCommand());
+            var cmd = cmdGuard.Command;
             cmd.CommandText = "UPDATE files SET copied_bytes = $n WHERE relative_path = $rel";
             cmd.Parameters.AddWithValue("$n", Math.Max(0, bytesCopied));
             cmd.Parameters.AddWithValue("$rel", relativePath);
@@ -172,7 +191,8 @@ public sealed class JobJournal : IDisposable
     {
         lock (_lock)
         {
-            using var cmd = CreateCommand();
+            using var cmdGuard = new CommandGuard(CreateCommand());
+            var cmd = cmdGuard.Command;
             cmd.CommandText = "UPDATE files SET status = 'Copied', hash = COALESCE($hash, hash), error = NULL, copied_bytes = size WHERE relative_path = $rel";
             cmd.Parameters.AddWithValue("$hash", (object?)hash ?? DBNull.Value);
             cmd.Parameters.AddWithValue("$rel", relativePath ?? "");
@@ -186,8 +206,9 @@ public sealed class JobJournal : IDisposable
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             using var tx = _connection.BeginTransaction();
-            using (var cmd = CreateCommand())
+            using (var cmdGuard = new CommandGuard(CreateCommand()))
             {
+                var cmd = cmdGuard.Command;
                 cmd.Transaction = tx;
                 cmd.CommandText = "UPDATE files SET status = 'Copied', error = NULL WHERE status IN ('Pending','Failed')";
                 cmd.ExecuteNonQuery();
@@ -195,7 +216,8 @@ public sealed class JobJournal : IDisposable
 
             if (hashes is { Count: > 0 })
             {
-                using var cmd = CreateCommand();
+                using var cmdGuard = new CommandGuard(CreateCommand());
+                var cmd = cmdGuard.Command;
                 cmd.Transaction = tx;
                 cmd.CommandText = "UPDATE files SET hash = $hash WHERE relative_path = $rel";
                 var hashP = cmd.Parameters.Add("$hash", SqliteType.Text);
@@ -216,7 +238,8 @@ public sealed class JobJournal : IDisposable
     {
         lock (_lock)
         {
-            using var cmd = CreateCommand();
+            using var cmdGuard = new CommandGuard(CreateCommand());
+            var cmd = cmdGuard.Command;
             cmd.CommandText = "UPDATE files SET status = 'Unpacked', error = NULL WHERE relative_path = $rel";
             cmd.Parameters.AddWithValue("$rel", relativePath);
             cmd.ExecuteNonQuery();
@@ -227,7 +250,8 @@ public sealed class JobJournal : IDisposable
     {
         lock (_lock)
         {
-            using var cmd = CreateCommand();
+            using var cmdGuard = new CommandGuard(CreateCommand());
+            var cmd = cmdGuard.Command;
             cmd.CommandText = "UPDATE files SET status = 'Skipped', error = $err WHERE relative_path = $rel";
             cmd.Parameters.AddWithValue("$err", reason);
             cmd.Parameters.AddWithValue("$rel", relativePath);
@@ -239,12 +263,21 @@ public sealed class JobJournal : IDisposable
     {
         lock (_lock)
         {
-            using var cmd = CreateCommand();
-            cmd.CommandText = "UPDATE files SET status = 'Failed', error = $err, retry_count = $retry WHERE relative_path = $rel";
-            cmd.Parameters.AddWithValue("$err", error);
-            cmd.Parameters.AddWithValue("$retry", retryCount);
-            cmd.Parameters.AddWithValue("$rel", relativePath);
-            cmd.ExecuteNonQuery();
+            try
+            {
+                using var cmdGuard = new CommandGuard(CreateCommand());
+                var cmd = cmdGuard.Command;
+                cmd.CommandText = "UPDATE files SET status = 'Failed', error = $err, retry_count = $retry WHERE relative_path = $rel";
+                cmd.Parameters.AddWithValue("$err", error ?? "");
+                cmd.Parameters.AddWithValue("$retry", retryCount);
+                cmd.Parameters.AddWithValue("$rel", relativePath ?? "");
+                Execute(cmd);
+            }
+            catch (Exception ex) when (IsJournalFault(ex))
+            {
+                _disposed = true;
+                throw new ObjectDisposedException(nameof(JobJournal), ex);
+            }
         }
     }
 
@@ -252,7 +285,8 @@ public sealed class JobJournal : IDisposable
     {
         lock (_lock)
         {
-            using var cmd = CreateCommand();
+            using var cmdGuard = new CommandGuard(CreateCommand());
+            var cmd = cmdGuard.Command;
             cmd.CommandText = "UPDATE files SET status = 'Deferred', error = $err, retry_count = $retry WHERE relative_path = $rel";
             cmd.Parameters.AddWithValue("$err", error);
             cmd.Parameters.AddWithValue("$retry", retryCount);
@@ -316,15 +350,19 @@ public sealed class JobJournal : IDisposable
 
     private void Checkpoint()
     {
-        try
+        lock (_lock)
         {
-            using var cmd = CreateCommand();
-            cmd.CommandText = "PRAGMA wal_checkpoint(PASSIVE);";
-            cmd.ExecuteNonQuery();
-        }
-        catch
-        {
-            // WAL checkpoint is best-effort; sidecar is the durable dirty flag
+            try
+            {
+                using var cmdGuard = new CommandGuard(CreateCommand());
+                var cmd = cmdGuard.Command;
+                cmd.CommandText = "PRAGMA wal_checkpoint(PASSIVE);";
+                Execute(cmd);
+            }
+            catch
+            {
+                // WAL checkpoint is best-effort; sidecar is the durable dirty flag
+            }
         }
     }
 
@@ -340,7 +378,8 @@ public sealed class JobJournal : IDisposable
     {
         lock (_lock)
         {
-            using var cmd = CreateCommand();
+            using var cmdGuard = new CommandGuard(CreateCommand());
+            var cmd = cmdGuard.Command;
             cmd.CommandText = "INSERT INTO issues (relative_path, kind, message, utc) VALUES ($rel, $kind, $msg, $utc)";
             cmd.Parameters.AddWithValue("$rel", (object?)issue.RelativePath ?? DBNull.Value);
             cmd.Parameters.AddWithValue("$kind", issue.Kind.ToString());
@@ -354,7 +393,8 @@ public sealed class JobJournal : IDisposable
     {
         lock (_lock)
         {
-            using var cmd = CreateCommand();
+            using var cmdGuard = new CommandGuard(CreateCommand());
+            var cmd = cmdGuard.Command;
             cmd.CommandText = status is null
                 ? "SELECT relative_path, source_path, dest_path, size, last_write_utc, hash, status, error, retry_count, copied_bytes, payload_kind FROM files"
                 : "SELECT relative_path, source_path, dest_path, size, last_write_utc, hash, status, error, retry_count, copied_bytes, payload_kind FROM files WHERE status = $status";
@@ -378,7 +418,8 @@ public sealed class JobJournal : IDisposable
     {
         lock (_lock)
         {
-            using var cmd = CreateCommand();
+            using var cmdGuard = new CommandGuard(CreateCommand());
+            var cmd = cmdGuard.Command;
             cmd.CommandText = """
                 SELECT
                   COUNT(*) as n,
@@ -403,7 +444,8 @@ public sealed class JobJournal : IDisposable
     {
         lock (_lock)
         {
-            using var cmd = CreateCommand();
+            using var cmdGuard = new CommandGuard(CreateCommand());
+            var cmd = cmdGuard.Command;
             cmd.CommandText = "SELECT COUNT(*) FROM issues";
             return Convert.ToInt32(cmd.ExecuteScalar());
         }
@@ -413,7 +455,8 @@ public sealed class JobJournal : IDisposable
     {
         lock (_lock)
         {
-            using var cmd = CreateCommand();
+            using var cmdGuard = new CommandGuard(CreateCommand());
+            var cmd = cmdGuard.Command;
             cmd.CommandText = "SELECT relative_path, kind, message, utc FROM issues ORDER BY id";
             var list = new List<TransferIssue>();
             using var reader = cmd.ExecuteReader();
@@ -436,11 +479,20 @@ public sealed class JobJournal : IDisposable
     {
         lock (_lock)
         {
-            using var cmd = CreateCommand();
-            cmd.CommandText = "INSERT INTO meta(key, value) VALUES ($k, $v) ON CONFLICT(key) DO UPDATE SET value = excluded.value";
-            cmd.Parameters.AddWithValue("$k", key);
-            cmd.Parameters.AddWithValue("$v", value);
-            Execute(cmd);
+            try
+            {
+                using var cmdGuard = new CommandGuard(CreateCommand());
+                var cmd = cmdGuard.Command;
+                cmd.CommandText = "INSERT INTO meta(key, value) VALUES ($k, $v) ON CONFLICT(key) DO UPDATE SET value = excluded.value";
+                cmd.Parameters.AddWithValue("$k", key ?? "");
+                cmd.Parameters.AddWithValue("$v", value ?? "");
+                Execute(cmd);
+            }
+            catch (Exception ex) when (IsJournalFault(ex))
+            {
+                _disposed = true;
+                throw new ObjectDisposedException(nameof(JobJournal), ex);
+            }
         }
     }
 
@@ -448,7 +500,8 @@ public sealed class JobJournal : IDisposable
     {
         lock (_lock)
         {
-            using var cmd = CreateCommand();
+            using var cmdGuard = new CommandGuard(CreateCommand());
+            var cmd = cmdGuard.Command;
             cmd.CommandText = "SELECT value FROM meta WHERE key = $k";
             cmd.Parameters.AddWithValue("$k", key);
             return cmd.ExecuteScalar() as string;
@@ -490,7 +543,14 @@ public sealed class JobJournal : IDisposable
             }
 
             _disposed = true;
-            _connection.Dispose();
+            try
+            {
+                _connection.Dispose();
+            }
+            catch (Exception ex) when (IsJournalFault(ex))
+            {
+                // already closed
+            }
         }
     }
 
@@ -501,7 +561,7 @@ public sealed class JobJournal : IDisposable
         {
             return _connection.CreateCommand();
         }
-        catch (Exception ex) when (ex is ObjectDisposedException or NullReferenceException or InvalidOperationException)
+        catch (Exception ex) when (IsJournalFault(ex))
         {
             _disposed = true;
             throw new ObjectDisposedException(nameof(JobJournal), ex);
@@ -514,9 +574,34 @@ public sealed class JobJournal : IDisposable
         {
             cmd.ExecuteNonQuery();
         }
-        catch (Exception ex) when (ex is ObjectDisposedException or NullReferenceException or InvalidOperationException)
+        catch (Exception ex) when (IsJournalFault(ex))
         {
             throw new ObjectDisposedException(nameof(JobJournal), ex);
+        }
+    }
+
+    internal static bool IsJournalFault(Exception ex) =>
+        ex is ObjectDisposedException or NullReferenceException or InvalidOperationException;
+
+    /// <summary>
+    /// SqliteCommand.Dispose calls connection.RemoveCommand, which NREs if the connection
+    /// was already disposed (heartbeat/rundown racing copy). Never let that NRE escape.
+    /// </summary>
+    private readonly struct CommandGuard : IDisposable
+    {
+        public SqliteCommand Command { get; }
+
+        public CommandGuard(SqliteCommand command) => Command = command;
+
+        public void Dispose()
+        {
+            try
+            {
+                Command.Dispose();
+            }
+            catch (Exception ex) when (IsJournalFault(ex))
+            {
+            }
         }
     }
 }

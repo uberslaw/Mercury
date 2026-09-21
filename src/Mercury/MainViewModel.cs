@@ -62,6 +62,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private bool _globalMaxUnlimited = true;
     private bool _idleThrottleEnabled;
     private string _idleThrottleText = "";
+    private bool _showSpeedInMegabits;
     private bool _errorsOnly;
     private string _consoleSearch = "";
     private bool _followConsole = true;
@@ -130,21 +131,22 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         _scheduler.Log.LineWritten += OnLog;
 
         var settings = AppSettingsStore.Load(paths);
+        _showSpeedInMegabits = settings.ShowSpeedInMegabits;
         if (settings.GlobalMinMegabytesPerSecond is > 0)
         {
-            GlobalMinText = settings.GlobalMinMegabytesPerSecond.Value.ToString("0.###", CultureInfo.InvariantCulture);
+            GlobalMinText = BandwidthUnit.FormatMegabytes(settings.GlobalMinMegabytesPerSecond.Value, _showSpeedInMegabits);
         }
 
         if (settings.GlobalMaxMegabytesPerSecond is > 0)
         {
             GlobalMaxUnlimited = false;
-            GlobalMaxText = settings.GlobalMaxMegabytesPerSecond.Value.ToString("0.###", CultureInfo.InvariantCulture);
+            GlobalMaxText = BandwidthUnit.FormatMegabytes(settings.GlobalMaxMegabytesPerSecond.Value, _showSpeedInMegabits);
         }
 
         if (settings.IdleThrottleMegabytesPerSecond is > 0)
         {
             IdleThrottleEnabled = true;
-            IdleThrottleText = settings.IdleThrottleMegabytesPerSecond.Value.ToString("0.###", CultureInfo.InvariantCulture);
+            IdleThrottleText = BandwidthUnit.FormatMegabytes(settings.IdleThrottleMegabytesPerSecond.Value, _showSpeedInMegabits);
         }
 
         DataPathLabel = paths.IsPortable
@@ -204,7 +206,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         QueueDraft = new JobOptionsForm
         {
             ConfirmPurge = ConfirmPurge,
-            CanAdd = () => HasQueuePaths
+            CanAdd = () => HasQueuePaths,
+            ShowSpeedInMegabits = _showSpeedInMegabits
         };
         QueueDraft.AddToQueueRequested += AddToQueueFromQueue;
         QueueDraft.Applied += RaiseQueueDraftBadges;
@@ -716,26 +719,25 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public string OverallPercentText => ProgressHeader.PercentLabel(OverallPercent, JobStats.Bytes.HasValue || JobStats.Files.HasValue);
 
-    public bool ShowOverallProgress => true;
+    public bool ShowOverallProgress => ProgressHeader.ShowOverall(QueueJobs.Count);
     public ProgressStats HeaderStats => JobStats;
-    public TransferRundown HeaderRundown => Rundown;
-    public string HeaderRundownLine => Rundown.OneLine;
+    public TransferRundown HeaderRundown => TransferRundown.Empty;
+    public string HeaderRundownLine => "";
     public string HeaderElapsedText => JobStats.Elapsed.HasValue ? JobStats.Elapsed.Value : "";
     public bool ShowHeaderElapsed => ShowProgressDetail && !string.IsNullOrWhiteSpace(HeaderElapsedText);
     public bool ShowHeaderStatus =>
-        ShowProgressDetail && !string.IsNullOrWhiteSpace(StatusText);
-    public bool ShowHeaderRundown =>
         ShowProgressDetail
-        && !string.IsNullOrWhiteSpace(Rundown.OneLine)
-        && Rundown.OneLine.Contains(" · ", StringComparison.Ordinal);
+        && !string.IsNullOrWhiteSpace(StatusText)
+        && !ProgressHeader.IsExceptionDump(StatusText);
+    public bool ShowHeaderRundown => false;
     public bool ShowProgressDetail =>
         IsRunning
         || HasBackgroundRundown
         || !string.IsNullOrWhiteSpace(ResultBanner)
-        || Rundown.IsVisible
         || JobPercent > 0.05
         || JobStats.Files.HasValue
-        || JobStats.Bytes.HasValue;
+        || JobStats.Bytes.HasValue
+        || JobStats.Stage.HasValue;
 
     public bool FolderTreeEmpty
     {
@@ -814,8 +816,48 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool QueueDestIsCatcher => QueueDestKindIndex == 1;
     public bool QueueDestIsFolder => !QueueDestIsCatcher;
     public bool ShowCatcherTemplate => false;
+    public bool ShowIncludeFolder => false;
     public bool CanEditCatcher => true;
     public string SpeedToolTip => "Applies immediately to the running job.";
+    public string SpeedUnitLabel => BandwidthUnit.Label(ShowSpeedInMegabits);
+
+    public bool ShowSpeedInMegabits
+    {
+        get => _showSpeedInMegabits;
+        set
+        {
+            if (_showSpeedInMegabits == value)
+            {
+                return;
+            }
+
+            var from = _showSpeedInMegabits;
+            _showSpeedInMegabits = value;
+            _globalMinText = BandwidthUnit.ConvertDisplayText(_globalMinText, from, value);
+            _globalMaxText = BandwidthUnit.ConvertDisplayText(_globalMaxText, from, value);
+            _idleThrottleText = BandwidthUnit.ConvertDisplayText(_idleThrottleText, from, value);
+            _maxMBpsText = BandwidthUnit.ConvertDisplayText(_maxMBpsText, from, value);
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowSpeedInMegabits)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SpeedUnitLabel)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(GlobalMinText)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(GlobalMaxText)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IdleThrottleText)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MaxMBpsText)));
+            QueueDraft.ShowSpeedInMegabits = value;
+            if (_jobForm is not null)
+            {
+                _jobForm.ShowSpeedInMegabits = value;
+            }
+
+            SaveBandwidth();
+            if (_lastProgress is not null)
+            {
+                JobStats = ComposeStats(_lastProgress);
+            }
+
+            NotifyHeader();
+        }
+    }
     public IReadOnlyList<string> QueueDraftBadges =>
         QueueDraft.PreviewBadges(QueueDestIsCatcher, QueueSelectedCatcherTemplate);
     public bool HasQueueDraftBadges => QueueDraftBadges.Count > 0;
@@ -916,11 +958,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 _selectedQueueJob?.SyncSpeedFromJob();
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasSelectedQueueJob)));
                 (OpenSelectedQueueJobOptionsCommand as RelayCommand)?.RaiseCanExecuteChanged();
-                if (value?.Job.Status is JobStatus.Completed or JobStatus.Incomplete
-                    or JobStatus.Cancelled or JobStatus.Failed)
-                {
-                    ApplyResult(value.Job);
-                }
             }
         }
     }
@@ -1675,7 +1712,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private JobOptions BuildOptions()
     {
         double? max = null;
-        if (!UnlimitedSpeed && double.TryParse(MaxMBpsText, NumberStyles.Float, CultureInfo.InvariantCulture, out var mb) && mb > 0)
+        if (!UnlimitedSpeed && BandwidthUnit.TryParseMegabytes(MaxMBpsText, ShowSpeedInMegabits, out var mb))
         {
             max = mb;
         }
@@ -1748,7 +1785,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             UnlimitedSpeed = options.MaxMegabytesPerSecond is null or <= 0;
             MaxMBpsText = options.MaxMegabytesPerSecond is > 0
-                ? options.MaxMegabytesPerSecond.Value.ToString("0.###", CultureInfo.InvariantCulture)
+                ? BandwidthUnit.FormatMegabytes(options.MaxMegabytesPerSecond.Value, ShowSpeedInMegabits)
                 : "";
             HoursEnabled = options.HoursEnabled;
             HoursStart = options.HoursStart.ToString("HH:mm");
@@ -1788,19 +1825,19 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private void SaveBandwidth()
     {
         double? min = null;
-        if (double.TryParse(GlobalMinText, NumberStyles.Float, CultureInfo.InvariantCulture, out var minMb) && minMb > 0)
+        if (BandwidthUnit.TryParseMegabytes(GlobalMinText, ShowSpeedInMegabits, out var minMb))
         {
             min = minMb;
         }
 
         double? max = null;
-        if (!GlobalMaxUnlimited && double.TryParse(GlobalMaxText, NumberStyles.Float, CultureInfo.InvariantCulture, out var maxMb) && maxMb > 0)
+        if (!GlobalMaxUnlimited && BandwidthUnit.TryParseMegabytes(GlobalMaxText, ShowSpeedInMegabits, out var maxMb))
         {
             max = maxMb;
         }
 
         double? idle = null;
-        if (IdleThrottleEnabled && double.TryParse(IdleThrottleText, NumberStyles.Float, CultureInfo.InvariantCulture, out var idleMb) && idleMb > 0)
+        if (IdleThrottleEnabled && BandwidthUnit.TryParseMegabytes(IdleThrottleText, ShowSpeedInMegabits, out var idleMb))
         {
             idle = idleMb;
         }
@@ -1810,7 +1847,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             GlobalMinMegabytesPerSecond = min,
             GlobalMaxMegabytesPerSecond = max,
             IdleThrottleMegabytesPerSecond = idle,
-            IdleCpuPercentThreshold = MachineLoadSampler.DefaultBusyPercent
+            IdleCpuPercentThreshold = MachineLoadSampler.DefaultBusyPercent,
+            ShowSpeedInMegabits = ShowSpeedInMegabits
         };
         AppSettingsStore.Save(_paths, settings);
         _scheduler.Budget.Apply(settings);
@@ -1830,21 +1868,32 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private void ApplyQueueJobSpeed(QueueJobItem item)
     {
-        WriteSpeedToJob(item.Job, item.UnlimitedSpeed, item.MaxMBpsText);
+        WriteSpeedToJob(item.Job, item.UnlimitedSpeed, item.MaxMBpsText, displayUnits: false);
         item.RaiseComputed();
     }
 
-    private void WriteSpeedToJob(Job job, bool unlimited, string maxText)
+    private void WriteSpeedToJob(Job job, bool unlimited, string maxText, bool displayUnits = true)
     {
         double? max = null;
         if (!unlimited)
         {
-            if (!double.TryParse(maxText, NumberStyles.Float, CultureInfo.InvariantCulture, out var mb) || mb <= 0)
+            if (displayUnits)
+            {
+                if (!BandwidthUnit.TryParseMegabytes(maxText, ShowSpeedInMegabits, out var mb))
+                {
+                    return;
+                }
+
+                max = mb;
+            }
+            else if (!double.TryParse(maxText, NumberStyles.Float, CultureInfo.InvariantCulture, out var mb) || mb <= 0)
             {
                 return;
             }
-
-            max = mb;
+            else
+            {
+                max = mb;
+            }
         }
 
         job.Options.MaxMegabytesPerSecond = max;
@@ -2061,6 +2110,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private void OpenQueueDraftOptions()
     {
         EnsureQueueDraftSeeded();
+        QueueDraft.ShowSpeedInMegabits = ShowSpeedInMegabits;
         QueueDraft.PrepareDraft(
             CatcherTemplates,
             QueueDestIsCatcher,
@@ -2080,6 +2130,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         SelectedQueueJob = item;
         _jobFormItem = item;
         _jobForm ??= new JobOptionsForm { ConfirmPurge = ConfirmPurge };
+        _jobForm.ShowSpeedInMegabits = ShowSpeedInMegabits;
         _jobForm.Applied -= OnJobFormApplied;
         _jobForm.SpeedChanged -= OnJobFormSpeed;
         _jobForm.LoadFrom(item.Job, CatcherTemplates);
@@ -2412,10 +2463,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
         JobStats = ComposeStats(e);
         var overall = _scheduler.GetOverallProgress();
-        JobPercent = e.Percent;
-        OverallPercent = overall.Percent;
-        CurrentFile = e.CurrentFile ?? "";
-        StatusText = e.Message ?? e.Status.ToString();
+        if (e.BytesTotal > 0 || e.FilesTotal > 0 || e.Percent > JobPercent)
+        {
+            JobPercent = e.Percent;
+        }
+
+        OverallPercent = ProgressHeader.ShowOverall(QueueJobs.Count) ? overall.Percent : JobPercent;
+        CurrentFile = e.CurrentFile ?? CurrentFile;
+        StatusText = ProgressHeader.HeaderStatus(e.Message, e.Status);
         OverallStats = ComposeStats(overall, includeStage: false);
         CloudWarning = e.CloudDestination;
         if (_closeAfterPause && e.Status == JobStatus.Paused)
@@ -2597,6 +2652,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             var item = new QueueJobItem(jobs[i], ApplyQueueJobSpeed)
             {
+                Order = i + 1,
                 CanMoveUp = i > 0,
                 CanMoveDown = i < jobs.Count - 1
             };
@@ -2644,7 +2700,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             overall: overall,
             jobIndex: index,
             jobCount: count,
-            pauseAfter: PauseAfterPair());
+            pauseAfter: PauseAfterPair(),
+            megabits: ShowSpeedInMegabits);
     }
 
     private StatPair PauseAfterPair()
@@ -2885,7 +2942,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private void ApplyResult(Job job)
     {
-        ResultBanner = job.ResultMessage ?? job.Status.ToString();
+        ResultBanner = ProgressHeader.HeaderResult(job);
         ResultBrush = job.Status switch
         {
             JobStatus.Completed => (Brush)Application.Current.FindResource("OkBrush"),
@@ -2894,7 +2951,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             _ => (Brush)Application.Current.FindResource("MutedBrush")
         };
         StatusText = ResultBanner;
-        ApplyRundown(job);
     }
 
     private void ApplyRundown(Job job)

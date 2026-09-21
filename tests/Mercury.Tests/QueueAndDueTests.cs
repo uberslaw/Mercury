@@ -400,14 +400,17 @@ public class IdleThrottleSettingsTests
             {
                 GlobalMaxMegabytesPerSecond = 80,
                 IdleThrottleMegabytesPerSecond = 12,
-                IdleCpuPercentThreshold = 18
+                IdleCpuPercentThreshold = 18,
+                ShowSpeedInMegabits = true
             });
 
             var loaded = AppSettingsStore.Load(paths);
             Assert.Equal(80, loaded.GlobalMaxMegabytesPerSecond);
             Assert.Equal(12, loaded.IdleThrottleMegabytesPerSecond);
             Assert.Equal(18, loaded.IdleCpuPercentThreshold);
+            Assert.True(loaded.ShowSpeedInMegabits);
             Assert.Equal(12 * 1024 * 1024, loaded.IdleThrottleBytesPerSecond);
+            Assert.Contains("showSpeedInMegabits", File.ReadAllText(paths.SettingsFile), StringComparison.Ordinal);
         }
         finally
         {

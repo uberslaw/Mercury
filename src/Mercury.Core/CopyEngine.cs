@@ -264,57 +264,90 @@ public sealed class CopyEngine : ICopyEngine
 
                     reporter.Update($"Copying {file.RelativePath}", file.RelativePath, speed);
 
-                    if (ShouldSkip(file, job.Options))
+                    try
                     {
-                        journal.MarkSkipped(file.RelativePath, "Destination is newer or equal");
-                        log.Info(job.Id, name, $"Skip {file.RelativePath} (dest newer or equal)");
-                        speed.Add(file.Size);
-                        continue;
-                    }
+                        if (ShouldSkip(file, job.Options))
+                        {
+                            TryJournal(journal, () => journal.MarkSkipped(file.RelativePath, "Destination is newer or equal"), log, job.Id, name);
+                            log.Info(job.Id, name, $"Skip {file.RelativePath} (dest newer or equal)");
+                            speed.Add(file.Size);
+                            continue;
+                        }
 
-                    pause.BeginFile(file.RelativePath, file.Size);
-                    var copied = await CopyWithRetriesAsync(job, file, journal, budget, pause, log, name, speed, cancellationToken, io)
-                        .ConfigureAwait(false);
-                    pause.EndFile();
-                    if (copied.ok)
-                    {
-                        try
+                        pause.BeginFile(file.RelativePath, file.Size);
+                        var copied = await CopyWithRetriesAsync(job, file, journal, budget, pause, log, name, speed, cancellationToken, io)
+                            .ConfigureAwait(false);
+                        pause.EndFile();
+                        if (copied.ok)
                         {
-                            journal.MarkCopied(file.RelativePath, copied.hash);
-                        }
-                        catch (ObjectDisposedException ex)
-                        {
-                            throw new IOException("Job journal was closed while files were still copying.", ex);
-                        }
-                        deferred.Remove(file.RelativePath);
-                        log.Info(job.Id, name, $"Copied {file.RelativePath} ({ByteFormatter.ToString(file.Size)})");
-                    }
-                    else
-                    {
-                        var error = copied.error ?? "Copy failed after retries";
-                        if (copied.transient)
-                        {
-                            deferred.Defer(file, error);
+                            if (!TryJournal(journal, () => journal.MarkCopied(file.RelativePath, copied.hash), log, job.Id, name))
+                            {
+                                deferred.Defer(file, "Journal error after copy — deferred for retry");
+                            }
+                            else
+                            {
+                                deferred.Remove(file.RelativePath);
+                                log.Info(job.Id, name, $"Copied {file.RelativePath} ({ByteFormatter.ToString(file.Size)})");
+                            }
                         }
                         else
                         {
-                            journal.MarkFailed(file.RelativePath, error, job.Options.RetryCount);
-                            journal.AddIssue(new TransferIssue
+                            var error = copied.error ?? "Copy failed after retries";
+                            if (copied.transient || ProgressHeader.IsExceptionDump(error))
                             {
-                                RelativePath = file.RelativePath,
-                                Kind = IssueKind.CopyError,
-                                Message = error
-                            });
-                            log.Error(job.Id, name, $"Failed {file.RelativePath}: {error}");
+                                deferred.Defer(file, error);
+                            }
+                            else
+                            {
+                                if (!TryJournal(journal, () =>
+                                    {
+                                        journal.MarkFailed(file.RelativePath, error, job.Options.RetryCount);
+                                        journal.AddIssue(new TransferIssue
+                                        {
+                                            RelativePath = file.RelativePath,
+                                            Kind = IssueKind.CopyError,
+                                            Message = error
+                                        });
+                                    }, log, job.Id, name))
+                                {
+                                    deferred.Defer(file, error);
+                                }
+                                else
+                                {
+                                    log.Error(job.Id, name, $"Failed {file.RelativePath}: {error}");
+                                }
+                            }
                         }
                     }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        pause.EndFile();
+                        var error = ProgressHeader.DescribeFileError(ex);
+                        log.Error(job.Id, name, $"File error {file.RelativePath}: {error}");
+                        deferred.Defer(file, error);
+                    }
 
-                    await PauseAfterFileIfRequestedAsync(job, journal, pause, log, name, file.RelativePath, reporter, cancellationToken)
-                        .ConfigureAwait(false);
-                    await RetryDeferredCopyAsync(
-                            job, journal, deferred, budget, pause, log, name, reporter, speed, fileCount, totalBytes,
-                            afterFile: true, endOfPass: false, cancellationToken, io)
-                        .ConfigureAwait(false);
+                    try
+                    {
+                        await PauseAfterFileIfRequestedAsync(job, journal, pause, log, name, file.RelativePath, reporter, cancellationToken)
+                            .ConfigureAwait(false);
+                        await RetryDeferredCopyAsync(
+                                job, journal, deferred, budget, pause, log, name, reporter, speed, fileCount, totalBytes,
+                                afterFile: true, endOfPass: false, cancellationToken, io)
+                            .ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Error(job.Id, name, "Continuing after file-level error: " + ProgressHeader.DescribeFileError(ex));
+                    }
                 }
 
                 await RetryDeferredCopyAsync(
@@ -609,14 +642,14 @@ public sealed class CopyEngine : ICopyEngine
         }
 
         job.Status = JobStatus.Paused;
-        journal.SaveJob(job);
+        TryJournal(journal, () => journal.SaveJob(job), log, job.Id, name);
         log.Info(job.Id, name, $"Paused after completing {relativePath}.");
         reporter.Update($"Paused after completing {relativePath}");
         await pause.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
         if (job.Status == JobStatus.Paused)
         {
             job.Status = JobStatus.Copying;
-            journal.SaveJob(job);
+            TryJournal(journal, () => journal.SaveJob(job), log, job.Id, name);
             log.Info(job.Id, name, "Resumed.");
         }
     }
@@ -655,39 +688,65 @@ public sealed class CopyEngine : ICopyEngine
             cancellationToken.ThrowIfCancellationRequested();
             await pause.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
             reporter.Update($"Retrying deferred {file.RelativePath}", file.RelativePath, speed);
+            try
+            {
             pause.BeginFile(file.RelativePath, file.Size);
             var copied = await CopyWithRetriesAsync(job, file, journal, budget, pause, log, name, speed, cancellationToken, io)
                 .ConfigureAwait(false);
             pause.EndFile();
             if (copied.ok)
             {
-                journal.MarkCopied(file.RelativePath, copied.hash);
-                deferred.Remove(file.RelativePath);
-                log.Info(job.Id, name, $"Deferred retry succeeded {file.RelativePath} ({ByteFormatter.ToString(file.Size)})");
+                if (!TryJournal(journal, () => journal.MarkCopied(file.RelativePath, copied.hash), log, job.Id, name))
+                {
+                    deferred.Keep(file, "Journal error after copy — deferred for retry");
+                }
+                else
+                {
+                    deferred.Remove(file.RelativePath);
+                    log.Info(job.Id, name, $"Deferred retry succeeded {file.RelativePath} ({ByteFormatter.ToString(file.Size)})");
+                }
             }
             else
             {
                 var error = copied.error ?? "Copy failed after retries";
                 log.Error(job.Id, name, $"Deferred retry still failing {file.RelativePath}: {error}");
-                if (copied.transient)
+                if (copied.transient || ProgressHeader.IsExceptionDump(error))
                 {
                     deferred.Keep(file, error);
                 }
                 else
                 {
                     deferred.Remove(file.RelativePath);
-                    journal.MarkFailed(file.RelativePath, error, job.Options.RetryCount);
-                    journal.AddIssue(new TransferIssue
+                    if (!TryJournal(journal, () =>
+                        {
+                            journal.MarkFailed(file.RelativePath, error, job.Options.RetryCount);
+                            journal.AddIssue(new TransferIssue
+                            {
+                                RelativePath = file.RelativePath,
+                                Kind = IssueKind.CopyError,
+                                Message = error
+                            });
+                        }, log, job.Id, name))
                     {
-                        RelativePath = file.RelativePath,
-                        Kind = IssueKind.CopyError,
-                        Message = error
-                    });
+                        deferred.Keep(file, error);
+                    }
                 }
             }
 
             await PauseAfterFileIfRequestedAsync(job, journal, pause, log, name, file.RelativePath, reporter, cancellationToken)
                 .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                pause.EndFile();
+                var error = ProgressHeader.DescribeFileError(ex);
+                log.Error(job.Id, name, $"File error {file.RelativePath}: {error}");
+                deferred.Keep(file, error);
+            }
         }
     }
 
@@ -712,7 +771,17 @@ public sealed class CopyEngine : ICopyEngine
             {
                 var hash = await CopyOneAsync(
                         job, file, budget, pause, speed, cancellationToken, log, name, io,
-                        onCopied: n => journal.SetCopiedBytes(file.RelativePath, n))
+                        onCopied: n =>
+                        {
+                            try
+                            {
+                                journal.SetCopiedBytes(file.RelativePath, n);
+                            }
+                            catch (Exception ex) when (JobJournal.IsJournalFault(ex))
+                            {
+                                // never fail a file copy because heartbeat/journal progress could not flush
+                            }
+                        })
                     .ConfigureAwait(false);
                 return (true, hash, null, false);
             }
@@ -988,40 +1057,75 @@ public sealed class CopyEngine : ICopyEngine
             }
 
             reporter?.Update($"Copying {file.RelativePath} (already compressed)", file.RelativePath, speed);
-            if (ShouldSkip(file, job.Options))
+            try
             {
-                journal.MarkSkipped(file.RelativePath, "Destination is newer or equal");
-                log.Info(job.Id, name, $"Skip {file.RelativePath} (already compressed, dest newer or equal)");
-                continue;
-            }
+                if (ShouldSkip(file, job.Options))
+                {
+                    TryJournal(journal, () => journal.MarkSkipped(file.RelativePath, "Destination is newer or equal"), log, job.Id, name);
+                    log.Info(job.Id, name, $"Skip {file.RelativePath} (already compressed, dest newer or equal)");
+                    continue;
+                }
 
-            pause.BeginFile(file.RelativePath, file.Size);
-            var copied = await CopyWithRetriesAsync(job, file, journal, budget, pause, log, name, speed, cancellationToken, io)
-                .ConfigureAwait(false);
-            pause.EndFile();
+                pause.BeginFile(file.RelativePath, file.Size);
+                var copied = await CopyWithRetriesAsync(job, file, journal, budget, pause, log, name, speed, cancellationToken, io)
+                    .ConfigureAwait(false);
+                pause.EndFile();
             if (copied.ok)
             {
-                journal.MarkCopied(file.RelativePath, copied.hash);
-                journal.MarkUnpacked(file.RelativePath);
-                log.Info(job.Id, name, $"Copied {file.RelativePath} as-is (already compressed, {ByteFormatter.ToString(file.Size)})");
+                if (!TryJournal(journal, () =>
+                    {
+                        journal.MarkCopied(file.RelativePath, copied.hash);
+                        journal.MarkUnpacked(file.RelativePath);
+                    }, log, job.Id, name))
+                {
+                    log.Error(job.Id, name, $"Copied {file.RelativePath} but could not journal it — continuing.");
+                }
+                else
+                {
+                    log.Info(job.Id, name, $"Copied {file.RelativePath} as-is (already compressed, {ByteFormatter.ToString(file.Size)})");
+                }
             }
             else
             {
                 var error = copied.error ?? "Copy failed after retries";
-                journal.MarkFailed(file.RelativePath, error, job.Options.RetryCount);
-                journal.AddIssue(new TransferIssue
+                if (ProgressHeader.IsExceptionDump(error) || DeferredRetry.IsTransient(new IOException(error)))
                 {
-                    RelativePath = file.RelativePath,
-                    Kind = IssueKind.CopyError,
-                    Message = error
-                });
-                log.Error(job.Id, name, $"Failed {file.RelativePath}: {error}");
+                    log.Error(job.Id, name, $"Deferred {file.RelativePath}: {error}");
+                }
+
+                if (!TryJournal(journal, () =>
+                    {
+                        journal.MarkFailed(file.RelativePath, error, job.Options.RetryCount);
+                        journal.AddIssue(new TransferIssue
+                        {
+                            RelativePath = file.RelativePath,
+                            Kind = IssueKind.CopyError,
+                            Message = error
+                        });
+                    }, log, job.Id, name))
+                {
+                    log.Error(job.Id, name, $"Failed {file.RelativePath} (journal unavailable): {error}");
+                }
+                else
+                {
+                    log.Error(job.Id, name, $"Failed {file.RelativePath}: {error}");
+                }
             }
 
             if (reporter is not null)
             {
                 await PauseAfterFileIfRequestedAsync(job, journal, pause, log, name, file.RelativePath, reporter, cancellationToken)
                     .ConfigureAwait(false);
+            }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                pause.EndFile();
+                log.Error(job.Id, name, $"File error {file.RelativePath}: {ProgressHeader.DescribeFileError(ex)}");
             }
         }
     }
@@ -1304,6 +1408,20 @@ public sealed class CopyEngine : ICopyEngine
         catch (OperationCanceledException)
         {
             // run finished
+        }
+    }
+
+    private static bool TryJournal(JobJournal journal, Action action, IJobLog log, string jobId, string name)
+    {
+        try
+        {
+            action();
+            return true;
+        }
+        catch (Exception ex) when (JobJournal.IsJournalFault(ex))
+        {
+            log.Error(jobId, name, "Journal unavailable: " + ProgressHeader.DescribeFileError(ex));
+            return false;
         }
     }
 

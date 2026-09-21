@@ -18,16 +18,19 @@
                           ToolTip="Catcher HTTPS destination for this job."/>
             </Grid>
         </StackPanel>
-        <CheckBox Style="{StaticResource OptionsCheckBox}" Margin="0,0,0,4"
-                  Content="Include source folder name"
-                  IsChecked="{Binding IncludeSourceFolderName}"
-                  ToolTip="On (default, like Explorer): dest gets a folder named after the source (D:\Anchor Span → dest\Anchor Span\...). Off (Contents only): files and subfolders land directly in dest. Drive roots always dump contents into dest. Mercury does not uncheck this because dest already has a child folder."/>
-        <TextBlock Text="{Binding LandingPreview}" TextWrapping="Wrap"
-                   Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,8"
-                   Visibility="{Binding ShowLandingPreview, Converter={StaticResource BoolToVis}}"/>
+        <StackPanel Visibility="{Binding ShowIncludeFolder, Converter={StaticResource BoolToVis}}">
+            <CheckBox Style="{StaticResource OptionsCheckBox}" Margin="0,0,0,4"
+                      Content="Include source folder name"
+                      IsChecked="{Binding IncludeSourceFolderName}"
+                      ToolTip="On (default, like Explorer): dest gets a folder named after the source (D:\Anchor Span → dest\Anchor Span\...). Off (Contents only): files and subfolders land directly in dest. Drive roots always dump contents into dest. Mercury does not uncheck this because dest already has a child folder."/>
+            <TextBlock Text="{Binding LandingPreview}" TextWrapping="Wrap"
+                       Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,8"
+                       Visibility="{Binding ShowLandingPreview, Converter={StaticResource BoolToVis}}"/>
+        </StackPanel>
+
         <Grid Margin="0,4,0,0">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto" MinWidth="88"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
@@ -35,12 +38,23 @@
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <CheckBox Style="{StaticResource OptionsCheckBox}" Content="Unlimited speed" IsChecked="{Binding UnlimitedSpeed}"/>
-            <TextBlock Grid.Column="1" Style="{StaticResource OptionsLabel}" Text="Max MB/s"/>
-            <TextBox Grid.Column="2" Style="{StaticResource OptionsField}" Width="72"
-                     Text="{Binding MaxMBpsText, UpdateSourceTrigger=PropertyChanged}"
-                     IsEnabled="{Binding UnlimitedSpeed, Converter={StaticResource InverseBool}}"
-                     ToolTip="{Binding SpeedToolTip}"/>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <CheckBox Style="{StaticResource OptionsCheckBox}"
+                      Content="Start after" IsChecked="{Binding ScheduleEnabled}"
+                      ToolTip="Calendar start. Window hours still apply if enabled."/>
+            <DatePicker Grid.Column="1"
+                        SelectedDate="{Binding ScheduledDate}" IsEnabled="{Binding ScheduleEnabled}"
+                        Width="140" Margin="0,0,8,8" VerticalAlignment="Center"
+                        FontSize="{DynamicResource BodyFontSize}"/>
+            <TextBox Grid.Column="2" Style="{StaticResource OptionsField}" Width="64"
+                     Text="{Binding ScheduledTime, UpdateSourceTrigger=PropertyChanged}"
+                     IsEnabled="{Binding ScheduleEnabled}" ToolTip="Time (HH:mm)"/>
             <CheckBox Grid.Column="3" Style="{StaticResource OptionsCheckBox}"
                       Content="Window" IsChecked="{Binding HoursEnabled}"
                       ToolTip="Pause copying outside this daily window (status: Paused — outside hours)."/>
@@ -49,86 +63,60 @@
             <TextBlock Grid.Column="5" Style="{StaticResource OptionsLabel}" Text="–" Margin="0,0,6,0"/>
             <TextBox Grid.Column="6" Style="{StaticResource OptionsField}" Width="64" Margin="0"
                      Text="{Binding HoursEnd}" ToolTip="Window end (HH:mm)"/>
-        </Grid>
-        <Grid Margin="0,8,0,0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
-            <TextBlock Style="{StaticResource OptionsLabel}" Text="Retries"/>
-            <TextBox Grid.Column="1" Style="{StaticResource OptionsField}" Width="56"
-                     Text="{Binding RetryCount}"/>
-            <TextBlock Grid.Column="2" Style="{StaticResource OptionsLabel}" Text="Wait (sec)"/>
-            <TextBox Grid.Column="3" Style="{StaticResource OptionsField}" Width="56"
-                     Text="{Binding RetryWait}"/>
-            <TextBlock Grid.Column="4" Style="{StaticResource OptionsLabel}" Text="Overwrite"/>
-            <ComboBox Grid.Column="5" VerticalAlignment="Center"
-                      FontSize="{DynamicResource OptionsFontSize}"
+
+            <TextBlock Grid.Row="1" Style="{StaticResource OptionsLabel}" Text="Overwrite" Margin="0,8,8,8"/>
+            <ComboBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,8,16,8"
+                      FontSize="{DynamicResource BodyFontSize}"
                       local:ComboBoxFit.ToContent="True"
                       SelectedIndex="{Binding OverwriteIndex}">
                 <ComboBoxItem>Skip if dest is newer or equal</ComboBoxItem>
                 <ComboBoxItem>Always overwrite</ComboBoxItem>
                 <ComboBoxItem>Never if dest exists</ComboBoxItem>
             </ComboBox>
-        </Grid>
-        <Grid Margin="0,8,0,0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
-            <TextBlock Style="{StaticResource OptionsLabel}" Text="Verify"/>
-            <ComboBox Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0"
-                      FontSize="{DynamicResource OptionsFontSize}"
+            <TextBlock Grid.Row="1" Grid.Column="3" Style="{StaticResource OptionsLabel}" Text="Verify" Margin="0,8,8,8"/>
+            <ComboBox Grid.Row="1" Grid.Column="4" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="0,8,0,8"
+                      FontSize="{DynamicResource BodyFontSize}"
                       local:ComboBoxFit.ToContent="True"
                       SelectedIndex="{Binding VerifyIndex}">
                 <ComboBoxItem>Quick (size + time)</ComboBoxItem>
                 <ComboBoxItem>Thorough (xxHash64)</ComboBoxItem>
             </ComboBox>
-            <CheckBox Grid.Column="2" Style="{StaticResource OptionsCheckBox}"
+        </Grid>
+
+        <WrapPanel Margin="0,8,0,0" VerticalAlignment="Center">
+            <CheckBox Style="{StaticResource OptionsCheckBox}" Content="Unlimited speed" IsChecked="{Binding UnlimitedSpeed}"/>
+            <TextBlock Style="{StaticResource OptionsLabel}" Text="Max"/>
+            <TextBox Style="{StaticResource OptionsField}" Width="72"
+                     Text="{Binding MaxMBpsText, UpdateSourceTrigger=PropertyChanged}"
+                     IsEnabled="{Binding UnlimitedSpeed, Converter={StaticResource InverseBool}}"
+                     ToolTip="{Binding SpeedToolTip}"/>
+            <TextBlock Style="{StaticResource OptionsLabel}" Text="{Binding SpeedUnitLabel}" Margin="0,0,16,0"/>
+            <CheckBox Style="{StaticResource OptionsCheckBox}"
                       Content="Dry Run" IsChecked="{Binding DryRun}"
                       ToolTip="Enumerate only — nothing is written."/>
-            <CheckBox Grid.Column="3" Style="{StaticResource OptionsCheckBox}"
+            <CheckBox Style="{StaticResource OptionsCheckBox}"
                       Content="Small Files" IsChecked="{Binding PackAsZip}"
                       ToolTip="Packs many small files into one stored (uncompressed) transport zip so USB / lots of tiny files write sequentially. Already-compressed files (video, photos, audio, zip/7z/rar, ISO) are copied as-is and not wrapped. Mercury unpacks a normal folder tree at dest and deletes the zip. If every file is already compressed, packing is skipped. Leave off to copy file-by-file."/>
-            <CheckBox Grid.Column="4" Style="{StaticResource OptionsCheckBox}"
+            <CheckBox Style="{StaticResource OptionsCheckBox}"
                       Content="Skip compressed" IsChecked="{Binding SkipCompressedWhenPacking}"
                       IsEnabled="{Binding PackAsZip}"
                       ToolTip="Default on with Small Files. Video, photos, audio, zip/7z/rar, ISO, and similar copy as files — not wrapped in the transport zip. If the whole job is already compressed, packing is skipped entirely."/>
-            <CheckBox Grid.Column="5" Style="{StaticResource OptionsCheckBox}" Margin="0"
+            <CheckBox Style="{StaticResource OptionsCheckBox}"
                       Content="Ignore Storage Limit" IsChecked="{Binding IgnoreFreeSpaceCheck}"
                       ToolTip="Still reports Need vs available, but does not abort if the destination is thin-provisioned or can grow."/>
-        </Grid>
-        <Grid Margin="0,8,0,0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
-            <CheckBox Style="{StaticResource OptionsCheckBox}"
-                      Content="Start after" IsChecked="{Binding ScheduleEnabled}"
-                      ToolTip="Calendar start. Window hours still apply if enabled."/>
-            <DatePicker Grid.Column="1"
-                        SelectedDate="{Binding ScheduledDate}" IsEnabled="{Binding ScheduleEnabled}"
-                        Width="140" Margin="0,0,16,0" VerticalAlignment="Center"
-                        FontSize="{DynamicResource OptionsFontSize}"/>
-            <TextBox Grid.Column="2" Style="{StaticResource OptionsField}" Width="64"
-                     Text="{Binding ScheduledTime, UpdateSourceTrigger=PropertyChanged}"
-                     IsEnabled="{Binding ScheduleEnabled}" ToolTip="Time (HH:mm)"/>
-            <Button Grid.Column="3" Content="RoboFlags" Style="{StaticResource CompactButton}"
+            <Button Content="RoboFlags" Style="{StaticResource CompactButton}"
                     Command="{Binding ToggleRoboFlagsCommand}"
-                    Margin="0" VerticalAlignment="Center"
-                    FontSize="{DynamicResource OptionsFontSize}"
+                    Margin="0,0,16,0" VerticalAlignment="Center"
+                    FontSize="{DynamicResource BodyFontSize}"
                     ToolTip="Robocopy-equivalent copy checkboxes for the native Mercury copier (not robocopy.exe)."/>
-        </Grid>
+            <TextBlock Style="{StaticResource OptionsLabel}" Text="Retries"/>
+            <TextBox Style="{StaticResource OptionsField}" Width="56"
+                     Text="{Binding RetryCount}"/>
+            <TextBlock Style="{StaticResource OptionsLabel}" Text="Wait (sec)"/>
+            <TextBox Style="{StaticResource OptionsField}" Width="56" Margin="0"
+                     Text="{Binding RetryWait}"/>
+        </WrapPanel>
+
         <Border Visibility="{Binding RoboFlagsExpanded, Converter={StaticResource BoolToVis}}"
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
                 Padding="10,8" Margin="0,8,0,0" CornerRadius="4"

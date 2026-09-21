@@ -30,11 +30,18 @@ public static class ByteFormatter
         return value.ToString(format, CultureInfo.InvariantCulture) + " " + Units[unit];
     }
 
-    public static string Speed(double bytesPerSecond)
+    public static string Speed(double bytesPerSecond, bool megabits = false)
     {
         if (bytesPerSecond < 0)
         {
             bytesPerSecond = 0;
+        }
+
+        if (megabits)
+        {
+            var mbps = bytesPerSecond / (1024d * 1024d) * BandwidthUnit.MegabitsPerMegabyte;
+            var format = mbps >= 100 ? "0" : mbps >= 10 ? "0.0" : "0.00";
+            return mbps.ToString(format, CultureInfo.InvariantCulture) + " Mbps";
         }
 
         return ToString((long)bytesPerSecond) + "/s";

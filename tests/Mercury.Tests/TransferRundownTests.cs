@@ -98,6 +98,58 @@ public class TransferRundownTests
     }
 
     [Fact]
+    public void ProgressStatsSpeedUsesMbpsWhenAsked()
+    {
+        var stats = ProgressStats.From(new JobProgress
+        {
+            Status = JobStatus.Copying,
+            BytesCopied = 10 * 1024 * 1024,
+            BytesTotal = 100 * 1024 * 1024,
+            BytesPerSecond = 10 * 1024 * 1024,
+            StartedUtc = DateTimeOffset.UtcNow.AddSeconds(-1)
+        }, megabits: true);
+
+        Assert.Contains("Mbps", stats.Speed.Value, StringComparison.Ordinal);
+        Assert.Equal(ProgressHeader.LayoutKeys, stats.LayoutKeys);
+    }
+
+    [Fact]
+    public void ProgressStatsFinishedKeepsTheSameLayoutKeys()
+    {
+        var live = ProgressStats.From(new JobProgress
+        {
+            Status = JobStatus.Copying,
+            StageName = "Copying files",
+            StageIndex = 3,
+            StageCount = 6,
+            CurrentFile = "a.bin",
+            FilesCopied = 1,
+            FilesTotal = 2,
+            BytesCopied = 10,
+            BytesTotal = 20,
+            StartedUtc = DateTimeOffset.UtcNow.AddSeconds(-5)
+        });
+        var finished = ProgressStats.From(new JobProgress
+        {
+            Status = JobStatus.Completed,
+            StageName = "Copying files",
+            StageIndex = 3,
+            StageCount = 6,
+            CurrentFile = "a.bin",
+            FilesCopied = 2,
+            FilesTotal = 2,
+            BytesCopied = 20,
+            BytesTotal = 20,
+            StartedUtc = DateTimeOffset.UtcNow.AddMinutes(-2),
+            EndedUtc = DateTimeOffset.UtcNow
+        });
+
+        Assert.Equal(ProgressHeader.LayoutKeys, live.LayoutKeys);
+        Assert.Equal(live.LayoutKeys, finished.LayoutKeys);
+        Assert.Equal("—", finished.Speed.Value);
+    }
+
+    [Fact]
     public void RundownStatsUseFileRateAndAvoidDashEta()
     {
         var stats = ProgressStats.From(new JobProgress

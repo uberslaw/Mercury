@@ -105,10 +105,10 @@ public sealed class ThemeService
     public static IReadOnlyList<ThemeFontSlot> FontSlots { get; } =
     [
         new("Progress", "Current / overall progress stats", "Segoe UI", 15),
-        new("Label", "Labels / keys", "Segoe UI", 13),
-        new("Value", "Values", "Segoe UI", 13),
-        new("Body", "Body / tabs", "Segoe UI", 13),
-        new("Button", "Buttons", "Segoe UI", 13),
+        new("Label", "Labels / keys", "Segoe UI", 15),
+        new("Value", "Values", "Segoe UI", 15),
+        new("Body", "Body / tabs", "Segoe UI", 15),
+        new("Button", "Buttons", "Segoe UI", 15),
         new("Console", "Console", "Consolas", 12)
     ];
 
@@ -685,6 +685,13 @@ public sealed class ThemeService
 
         resources[slot.Key + "FontFamily"] = new FontFamily(family);
         resources[slot.Key + "FontSize"] = size;
+        if (slot.Key == "Body")
+        {
+            resources["OptionsFontSize"] = size;
+            resources["ControlMinHeight"] = Math.Max(28, size * 2);
+            var pad = Math.Max(4, size * 0.35);
+            resources["ControlPadding"] = new Thickness(8, pad, 8, pad);
+        }
     }
 
     private Dictionary<string, string> SnapshotFonts()

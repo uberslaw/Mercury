@@ -28,12 +28,43 @@ public sealed class QueueJobItem : INotifyPropertyChanged
 
     public string Title => string.IsNullOrWhiteSpace(Job.Name) ? Job.Id[..8] : Job.Name;
 
+    public int Order { get; set; } = 1;
+
+    public string OrderText => "#" + Order.ToString(CultureInfo.InvariantCulture);
+
     public string Route => $"{Job.SourcePath}  →  {Job.DestinationPath}";
 
     private bool _writingRundown;
 
-    public string StatusLabel =>
-        _writingRundown ? CopyPipeline.RundownLabel : JobDue.StatusLabel(Job, DateTimeOffset.Now);
+    public string StatusLabel => TileStatus;
+
+    public string TileStatus
+    {
+        get
+        {
+            if (Job.OnHold)
+            {
+                return "On hold";
+            }
+
+            if (_writingRundown)
+            {
+                return "Running";
+            }
+
+            return Job.Status switch
+            {
+                JobStatus.Pending => "Pending",
+                JobStatus.Paused or JobStatus.PausedOutsideHours => "Paused",
+                JobStatus.Cancelled => "Stopped",
+                JobStatus.Completed => "Done",
+                JobStatus.Failed => "Failed",
+                JobStatus.Incomplete => "Incomplete",
+                JobStatus.Preparing or JobStatus.Enumerating or JobStatus.Copying or JobStatus.Verifying => "Running",
+                _ => Job.Status.ToString()
+            };
+        }
+    }
 
     public TransferRundown Rundown => TransferRundown.From(Job);
 
@@ -210,6 +241,8 @@ public sealed class QueueJobItem : INotifyPropertyChanged
     public void RaiseComputed()
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StatusLabel)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TileStatus)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(OrderText)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SettingsSummary)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(OptionBadges)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasOptionBadges)));

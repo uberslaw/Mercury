@@ -46,16 +46,18 @@
         <SolidColorBrush x:Key="QueueBackgroundBrush" Color="#ffe7cb" po:Freeze="False"/>
 
         <FontFamily x:Key="BodyFontFamily">Segoe UI</FontFamily>
-        <sys:Double x:Key="BodyFontSize">13</sys:Double>
+        <sys:Double x:Key="BodyFontSize">15</sys:Double>
         <FontFamily x:Key="ProgressFontFamily">Segoe UI</FontFamily>
         <sys:Double x:Key="ProgressFontSize">15</sys:Double>
         <FontFamily x:Key="LabelFontFamily">Segoe UI</FontFamily>
-        <sys:Double x:Key="LabelFontSize">13</sys:Double>
+        <sys:Double x:Key="LabelFontSize">15</sys:Double>
         <sys:Double x:Key="OptionsFontSize">15</sys:Double>
+        <sys:Double x:Key="ControlMinHeight">30</sys:Double>
+        <Thickness x:Key="ControlPadding">8,5,8,5</Thickness>
         <FontFamily x:Key="ValueFontFamily">Segoe UI</FontFamily>
-        <sys:Double x:Key="ValueFontSize">13</sys:Double>
+        <sys:Double x:Key="ValueFontSize">15</sys:Double>
         <FontFamily x:Key="ButtonFontFamily">Segoe UI</FontFamily>
-        <sys:Double x:Key="ButtonFontSize">13</sys:Double>
+        <sys:Double x:Key="ButtonFontSize">15</sys:Double>
         <FontFamily x:Key="ConsoleFontFamily">Consolas</FontFamily>
         <sys:Double x:Key="ConsoleFontSize">12</sys:Double>
 
@@ -119,6 +121,7 @@
             <Setter Property="Margin" Value="0,0,8,0"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="MinWidth" Value="88"/>
+            <Setter Property="MinHeight" Value="{DynamicResource ControlMinHeight}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
@@ -182,9 +185,12 @@
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="Padding" Value="{DynamicResource ControlPadding}"/>
+            <Setter Property="MinHeight" Value="{DynamicResource ControlMinHeight}"/>
             <Setter Property="CaretBrush" Value="{DynamicResource TextBrush}"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="FontFamily" Value="{DynamicResource BodyFontFamily}"/>
+            <Setter Property="FontSize" Value="{DynamicResource BodyFontSize}"/>
         </Style>
         <Style x:Key="ThemeHexBox" TargetType="TextBox">
             <Setter Property="Foreground" Value="#4A2F2C"/>
@@ -202,33 +208,44 @@
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
             <Setter Property="Margin" Value="0,4,16,4"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="FontFamily" Value="{DynamicResource BodyFontFamily}"/>
+            <Setter Property="FontSize" Value="{DynamicResource BodyFontSize}"/>
         </Style>
         <Style x:Key="OptionsLabel" TargetType="TextBlock">
             <Setter Property="VerticalAlignment" Value="Center"/>
             <Setter Property="FontFamily" Value="{DynamicResource BodyFontFamily}"/>
-            <Setter Property="FontSize" Value="{DynamicResource OptionsFontSize}"/>
+            <Setter Property="FontSize" Value="{DynamicResource BodyFontSize}"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Margin" Value="0,0,8,0"/>
         </Style>
         <Style x:Key="OptionsCheckBox" TargetType="CheckBox" BasedOn="{StaticResource {x:Type CheckBox}}">
             <Setter Property="FontFamily" Value="{DynamicResource BodyFontFamily}"/>
-            <Setter Property="FontSize" Value="{DynamicResource OptionsFontSize}"/>
+            <Setter Property="FontSize" Value="{DynamicResource BodyFontSize}"/>
             <Setter Property="Margin" Value="0,0,16,0"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="MinHeight" Value="{DynamicResource ControlMinHeight}"/>
         </Style>
         <Style x:Key="OptionsField" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
-            <Setter Property="FontSize" Value="{DynamicResource OptionsFontSize}"/>
-            <Setter Property="MinHeight" Value="30"/>
+            <Setter Property="FontSize" Value="{DynamicResource BodyFontSize}"/>
+            <Setter Property="MinHeight" Value="{DynamicResource ControlMinHeight}"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
-            <Setter Property="Margin" Value="0,0,16,0"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
         </Style>
         <Style TargetType="ComboBox">
             <Setter Property="Background" Value="{DynamicResource InputBackgroundBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
-            <Setter Property="Padding" Value="6,4"/>
-            <Setter Property="MinHeight" Value="28"/>
+            <Setter Property="Padding" Value="{DynamicResource ControlPadding}"/>
+            <Setter Property="MinHeight" Value="{DynamicResource ControlMinHeight}"/>
+            <Setter Property="FontFamily" Value="{DynamicResource BodyFontFamily}"/>
+            <Setter Property="FontSize" Value="{DynamicResource BodyFontSize}"/>
+        </Style>
+        <Style TargetType="DatePicker">
+            <Setter Property="FontFamily" Value="{DynamicResource BodyFontFamily}"/>
+            <Setter Property="FontSize" Value="{DynamicResource BodyFontSize}"/>
+            <Setter Property="MinHeight" Value="{DynamicResource ControlMinHeight}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
         <Style TargetType="TabControl">
             <Setter Property="Background" Value="{DynamicResource PanelBrush}"/>
@@ -240,6 +257,8 @@
             <Setter Property="Background" Value="{DynamicResource TabBackgroundBrush}"/>
             <Setter Property="Padding" Value="16,8"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontFamily" Value="{DynamicResource BodyFontFamily}"/>
+            <Setter Property="FontSize" Value="{DynamicResource BodyFontSize}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TabItem">
@@ -300,11 +319,31 @@
             <Setter Property="FontFamily" Value="{DynamicResource ConsoleFontFamily}"/>
             <Setter Property="FontSize" Value="{DynamicResource ConsoleFontSize}"/>
         </Style>
+        <Style TargetType="TreeView">
+            <Setter Property="FontFamily" Value="{DynamicResource BodyFontFamily}"/>
+            <Setter Property="FontSize" Value="{DynamicResource BodyFontSize}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource PanelAltBrush}"/>
+        </Style>
         <Style TargetType="GroupBox">
-            <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
             <Setter Property="Padding" Value="10"/>
             <Setter Property="Margin" Value="0,0,0,12"/>
+            <Setter Property="FontFamily" Value="{DynamicResource BodyFontFamily}"/>
+            <Setter Property="FontSize" Value="{DynamicResource BodyFontSize}"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="HeaderTemplate">
+                <Setter.Value>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding}"
+                                   FontFamily="{DynamicResource BodyFontFamily}"
+                                   FontSize="{DynamicResource BodyFontSize}"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextBrush}"/>
+                    </DataTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
     </Application.Resources>
 </Application>

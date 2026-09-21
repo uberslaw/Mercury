@@ -18,6 +18,7 @@ public class PathAndTreeUiTests
         try
         {
             vm = new MainViewModel(new AppPaths(root));
+            Assert.True(vm.HasQueueJobs == false);
             Assert.True(vm.PathsEditable);
             Assert.True(vm.BrowseSourceCommand.CanExecute(null));
 
@@ -261,6 +262,43 @@ public class PathAndTreeUiTests
                 }
             }
         });
+    }
+
+    [Fact]
+    public void QueueTileShowsStartAndPending()
+    {
+        var item = new QueueJobItem(new Job
+        {
+            Name = "lab",
+            SourcePath = @"D:\src",
+            DestinationPath = @"E:\dst",
+            Status = JobStatus.Pending
+        });
+        Assert.Equal("Pending", item.TileStatus);
+        Assert.Equal("Start", item.ResumeLabel);
+        Assert.Equal("#1", item.OrderText);
+        Assert.Contains("D:\\src", item.Route, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("E:\\dst", item.Route, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void JobOptionsForm_MbpsToggleStoresMegabytes()
+    {
+        var form = new JobOptionsForm
+        {
+            ShowSpeedInMegabits = true,
+            UnlimitedSpeed = false,
+            MaxMBpsText = "80"
+        };
+        Assert.Equal("Mbps", form.SpeedUnitLabel);
+        Assert.Equal(10, form.ToOptions().MaxMegabytesPerSecond);
+
+        form.LoadFrom(new JobOptions { MaxMegabytesPerSecond = 10 }, scheduledStart: null);
+        Assert.Equal("80", form.MaxMBpsText);
+        form.ShowSpeedInMegabits = false;
+        Assert.Equal("MB/s", form.SpeedUnitLabel);
+        Assert.Equal("10", form.MaxMBpsText);
+        Assert.Equal(10, form.ToOptions().MaxMegabytesPerSecond);
     }
 
     private static TreeViewItem? FindTreeItem(DependencyObject root)

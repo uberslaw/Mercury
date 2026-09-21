@@ -53,6 +53,9 @@ public sealed class ProgressStats
         }
     }
 
+    public IReadOnlyList<string> LayoutKeys =>
+        TableCells.Select(p => p.Key).Where(k => ProgressHeader.LayoutKeys.Contains(k)).ToArray();
+
     public static ProgressStats From(
         JobProgress e,
         DateTimeOffset? now = null,
@@ -60,25 +63,33 @@ public sealed class ProgressStats
         JobProgress? overall = null,
         int jobIndex = 1,
         int jobCount = 1,
-        StatPair? pauseAfter = null)
+        StatPair? pauseAfter = null,
+        bool megabits = false)
     {
         var clock = now ?? DateTimeOffset.UtcNow;
         var live = e.Status is JobStatus.Preparing or JobStatus.Enumerating or JobStatus.Copying
             or JobStatus.Verifying or JobStatus.Paused or JobStatus.PausedOutsideHours
             || e.IsRundownStage
             || string.Equals(e.Message, "Retrying deferred files", StringComparison.Ordinal);
-        var showStage = includeStage && live && e.StageIndex > 0 && e.StageCount > 0 && !string.IsNullOrWhiteSpace(e.StageName);
         var stageName = string.Equals(e.Message, "Retrying deferred files", StringComparison.Ordinal)
             ? "Retrying deferred files"
             : e.StageName;
-        var stage = showStage
-            ? new StatPair("Stage", $"{e.StageIndex} of {e.StageCount} — {stageName}")
+        var stageValue = e.StageIndex > 0 && e.StageCount > 0 && !string.IsNullOrWhiteSpace(stageName)
+            ? $"{e.StageIndex} of {e.StageCount} — {stageName}"
+            : ProgressHeader.DashOr(stageName);
+        var stage = includeStage
+            ? new StatPair("Stage", stageValue)
             : StatPair.Empty;
-        var elapsed = includeStage && live && e.StartedUtc is not null
-            ? new StatPair("Elapsed", ByteFormatter.Duration(e.ElapsedAt(clock)))
-            : StatPair.Empty;
-        var thisStage = includeStage && live && e.StartedUtc is not null
-            ? new StatPair("This stage", ByteFormatter.Duration(e.StageElapsedAt(clock)))
+        var elapsedClock = e.EndedUtc ?? clock;
+        var elapsed = includeStage && e.StartedUtc is not null
+            ? new StatPair("Elapsed", ByteFormatter.Duration(e.ElapsedAt(elapsedClock)))
+            : includeStage
+                ? new StatPair("Elapsed", "—")
+                : StatPair.Empty;
+        var thisStage = includeStage
+            ? new StatPair("This stage", live && e.StageStartedUtc is not null
+                ? ByteFormatter.Duration(e.StageElapsedAt(clock))
+                : "—")
             : StatPair.Empty;
 
         var count = Math.Max(1, jobCount);
@@ -86,54 +97,42 @@ public sealed class ProgressStats
         var jobPair = count > 1
             ? new StatPair("Job", $"{index} of {count}")
             : StatPair.Empty;
-        var files = new StatPair("Files", $"{e.FilesCopied}/{e.FilesTotal}");
-        var file = string.IsNullOrWhiteSpace(e.CurrentFile)
-            ? StatPair.Empty
-            : new StatPair("File", e.CurrentFile);
+        var hasCounts = e.FilesTotal > 0 || e.FilesCopied > 0;
+        var files = new StatPair("Files", hasCounts ? $"{e.FilesCopied}/{e.FilesTotal}" : "—");
+        var file = new StatPair("File", ProgressHeader.DashOr(e.CurrentFile));
         var overallFiles = ProgressHeader.ShowOverall(jobCount) && overall is not null
             ? new StatPair("Overall files", $"{overall.FilesCopied}/{overall.FilesTotal}")
             : StatPair.Empty;
 
         var rundown = e.IsRundownStage;
-        var rate = ByteFormatter.EffectiveRate(e.BytesPerSecond, e.BytesCopied, e.ElapsedAt(clock));
+        var rate = ByteFormatter.EffectiveRate(e.BytesPerSecond, e.BytesCopied, e.ElapsedAt(elapsedClock));
         var eta = e.Eta;
-        if (!rundown && eta is null && rate >= 1 && e.BytesTotal > e.BytesCopied)
+        if (live && !rundown && eta is null && rate >= 1 && e.BytesTotal > e.BytesCopied)
         {
             eta = TimeSpan.FromSeconds((e.BytesTotal - e.BytesCopied) / rate);
         }
 
-        var speedPair = !live
-            ? StatPair.Empty
-            : rundown
-                ? new StatPair("Speed", FormatRundownSpeed(e.RundownPerSecond))
-                : new StatPair("Speed", ByteFormatter.Speed(rate));
-        var etaPair = !live
-            ? StatPair.Empty
-            : new StatPair("ETA", rundown && eta is null ? "…" : ByteFormatter.Eta(eta));
+        var speedPair = new StatPair("Speed",
+            !live ? "—"
+            : rundown ? FormatRundownSpeed(e.RundownPerSecond)
+            : ByteFormatter.Speed(rate, megabits));
+        var etaPair = new StatPair("ETA",
+            !live ? "—"
+            : rundown && eta is null ? "…"
+            : ByteFormatter.Eta(eta));
 
-        var idleCounts = !live && e.FilesTotal == 0 && e.BytesTotal == 0 && e.FilesCopied == 0 && e.BytesCopied == 0;
-        if (idleCounts)
-        {
-            return new ProgressStats
-            {
-                Job = jobPair,
-                PauseAfter = pauseAfter ?? StatPair.Empty,
-                Stage = stage,
-                File = file,
-                Elapsed = elapsed,
-                ThisStage = thisStage,
-                Types = string.IsNullOrWhiteSpace(e.TypeSummary)
-                    ? StatPair.Empty
-                    : new StatPair("Types", e.TypeSummary)
-            };
-        }
+        var hasBytes = e.BytesTotal > 0 || e.BytesCopied > 0;
+        var bytes = new StatPair("Bytes",
+            hasBytes
+                ? $"{ByteFormatter.ToString(e.BytesCopied)} / {ByteFormatter.ToString(e.BytesTotal)}"
+                : "—");
 
         return new ProgressStats
         {
             Job = jobPair,
             Files = files,
             OverallFiles = overallFiles,
-            Bytes = new StatPair("Bytes", $"{ByteFormatter.ToString(e.BytesCopied)} / {ByteFormatter.ToString(e.BytesTotal)}"),
+            Bytes = bytes,
             Speed = speedPair,
             Eta = etaPair,
             PauseAfter = pauseAfter ?? StatPair.Empty,

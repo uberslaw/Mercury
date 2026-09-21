@@ -132,7 +132,8 @@ public sealed class DeferredRetrySession
         file.Error = error;
         file.RetryCount = _job.Options.RetryCount;
         _items[file.RelativePath] = file;
-        _journal.MarkDeferred(file.RelativePath, error, file.RetryCount);
+        TryJournal(() => _journal.MarkDeferred(file.RelativePath, error, file.RetryCount),
+            $"Could not journal deferred {file.RelativePath}");
         _log.Info(_job.Id, _name,
             $"Deferred {file.RelativePath} ({error}) — will retry at 25/50/75/100% progress, or at the end of this pass. Close or unlock the file if you can.");
     }
@@ -143,7 +144,8 @@ public sealed class DeferredRetrySession
         file.Error = error;
         file.RetryCount = _job.Options.RetryCount;
         _items[file.RelativePath] = file;
-        _journal.MarkDeferred(file.RelativePath, error, file.RetryCount);
+        TryJournal(() => _journal.MarkDeferred(file.RelativePath, error, file.RetryCount),
+            $"Could not journal deferred {file.RelativePath}");
     }
 
     public void Remove(string relativePath) => _items.Remove(relativePath);
@@ -191,7 +193,8 @@ public sealed class DeferredRetrySession
     public void NoteRetry(long copied, long total, bool endOfPass)
     {
         _firedQuarters = endOfPass ? 4 : Math.Max(_firedQuarters, DeferredRetry.Quarter(copied, total));
-        _journal.SetMetaInt(DeferredRetry.QuartersMetaKey, _firedQuarters);
+        TryJournal(() => _journal.SetMetaInt(DeferredRetry.QuartersMetaKey, _firedQuarters),
+            "Could not save deferred-retry checkpoint");
     }
 
     public void FinalizeFailures(IssueKind kind = IssueKind.CopyError)
@@ -199,19 +202,35 @@ public sealed class DeferredRetrySession
         foreach (var file in _items.Values.ToList())
         {
             var error = file.Error ?? "Copy failed after deferred retries";
-            _journal.MarkFailed(file.RelativePath, error, file.RetryCount);
-            _journal.AddIssue(new TransferIssue
+            TryJournal(() =>
             {
-                RelativePath = file.RelativePath,
-                Kind = kind,
-                Message = error
-            });
+                _journal.MarkFailed(file.RelativePath, error, file.RetryCount);
+                _journal.AddIssue(new TransferIssue
+                {
+                    RelativePath = file.RelativePath,
+                    Kind = kind,
+                    Message = error
+                });
+            }, $"Could not journal failure for {file.RelativePath}");
             _log.Error(_job.Id, _name, $"Deferred retry failed {file.RelativePath}: {error}");
         }
 
         _items.Clear();
         _firedQuarters = 4;
-        _journal.SetMetaInt(DeferredRetry.QuartersMetaKey, _firedQuarters);
+        TryJournal(() => _journal.SetMetaInt(DeferredRetry.QuartersMetaKey, _firedQuarters),
+            "Could not save deferred-retry checkpoint");
+    }
+
+    private void TryJournal(Action action, string failed)
+    {
+        try
+        {
+            action();
+        }
+        catch (Exception ex) when (JobJournal.IsJournalFault(ex))
+        {
+            _log.Error(_job.Id, _name, failed + ": " + ProgressHeader.DescribeFileError(ex));
+        }
     }
 }
 
@@ -226,6 +245,55 @@ public static class ProgressHeader
     /// Bar label. Integer percents at 1% and above. Below 1% uses one decimal (0.1%)
     /// so a started job never shows 0% (911 MB / 826 GB would otherwise round down).
     /// </summary>
+    public static readonly string[] LayoutKeys =
+        ["Stage", "File", "Elapsed", "This stage", "Files", "Bytes", "Speed", "ETA"];
+
+    public static bool IsExceptionDump(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        return text.Contains("Object reference not set", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("NullReferenceException", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("ObjectDisposedException", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("at Mercury.", StringComparison.Ordinal)
+            || text.Contains("at Microsoft.Data.Sqlite", StringComparison.Ordinal);
+    }
+
+    public static string HeaderStatus(string? message, JobStatus status)
+    {
+        if (IsExceptionDump(message))
+        {
+            return status switch
+            {
+                JobStatus.Failed => "Failed — see Console",
+                JobStatus.Cancelled => "Stopped",
+                JobStatus.Incomplete => "Incomplete — see Console",
+                JobStatus.Paused or JobStatus.PausedOutsideHours => "Paused",
+                _ => "See Console for details"
+            };
+        }
+
+        return string.IsNullOrWhiteSpace(message) ? status.ToString() : message;
+    }
+
+    public static string HeaderResult(Job job) => HeaderStatus(job.ResultMessage, job.Status);
+
+    public static string DescribeFileError(Exception ex)
+    {
+        if (ex is ObjectDisposedException or NullReferenceException)
+        {
+            return "Journal error while recording this file — deferred for retry";
+        }
+
+        return string.IsNullOrWhiteSpace(ex.Message) ? ex.GetType().Name : ex.Message;
+    }
+
+    public static string DashOr(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "—" : value;
+
     public static string PercentLabel(double percent, bool workStarted = false)
     {
         var p = Math.Clamp(percent, 0, 100);

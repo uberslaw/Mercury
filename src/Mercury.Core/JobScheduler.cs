@@ -360,7 +360,7 @@ public sealed class JobScheduler : IDisposable
         catch (Exception ex)
         {
             job.Status = JobStatus.Failed;
-            job.ResultMessage = ex is NullReferenceException
+            job.ResultMessage = ProgressHeader.IsExceptionDump(ex.Message) || ex is NullReferenceException or ObjectDisposedException
                 ? "Internal error while copying. Progress is saved; you can Resume. See the Console log."
                 : ex.Message;
             Log.Error(job.Id, job.Name, ex.ToString());
@@ -859,7 +859,9 @@ public sealed class JobScheduler : IDisposable
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     next.Status = JobStatus.Failed;
-                    next.ResultMessage = ex.Message;
+                    next.ResultMessage = ProgressHeader.IsExceptionDump(ex.Message) || ex is NullReferenceException or ObjectDisposedException
+                        ? "Internal error while copying. Progress is saved; you can Resume. See the Console log."
+                        : ex.Message;
                     lock (_queueLock)
                     {
                         SaveQueue();
@@ -949,16 +951,27 @@ public sealed class JobScheduler : IDisposable
 
     private void ReportFinal(Job job)
     {
+        var last = GetProgress(job.Id);
         var p = new JobProgress
         {
             JobId = job.Id,
             JobName = job.Name,
             Status = job.Status,
-            Message = job.ResultMessage,
+            Message = ProgressHeader.HeaderResult(job),
             IssueCount = job.IssueCount,
             StartedUtc = job.StartedUtc,
-            StageIndex = 0,
-            StageCount = 0
+            EndedUtc = job.EndedUtc,
+            CurrentFile = last?.CurrentFile,
+            BytesCopied = last?.BytesCopied > 0 ? last.BytesCopied : job.BytesCopied,
+            BytesTotal = last?.BytesTotal ?? 0,
+            FilesCopied = last?.FilesCopied > 0 ? last.FilesCopied : job.DestFiles,
+            FilesTotal = last?.FilesTotal > 0 ? last.FilesTotal : job.SourceFiles,
+            StageIndex = last?.StageIndex ?? 0,
+            StageCount = last?.StageCount ?? 0,
+            StageName = last?.StageName,
+            StageStartedUtc = last?.StageStartedUtc,
+            TypeSummary = last?.TypeSummary,
+            BytesPerSecond = last?.BytesPerSecond ?? 0
         };
         _progress[job.Id] = p;
         ProgressChanged?.Invoke(this, p);
@@ -1005,6 +1018,7 @@ public sealed class JobScheduler : IDisposable
             StartedUtc = started,
             StageStartedUtc = p.StageStartedUtc,
             TypeSummary = p.TypeSummary,
+            EndedUtc = job.EndedUtc ?? p.EndedUtc,
             RundownDone = p.RundownDone,
             RundownTotal = p.RundownTotal,
             RundownPerSecond = p.RundownPerSecond
@@ -1066,7 +1080,7 @@ public sealed class JobScheduler : IDisposable
         catch (Exception ex)
         {
             Log.Error(job.Id, name, ex.ToString());
-            if (ex is NullReferenceException &&
+            if (ex is NullReferenceException or ObjectDisposedException &&
                 (string.IsNullOrWhiteSpace(job.ResultMessage)
                  || job.ResultMessage.Contains("Object reference not set", StringComparison.OrdinalIgnoreCase)))
             {
