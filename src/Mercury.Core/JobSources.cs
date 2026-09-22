@@ -31,7 +31,11 @@ public static class JobSources
                 string normalized;
                 try
                 {
-                    normalized = PathNormalizer.Normalize(raw);
+                    normalized = PathNormalizer.Normalize(raw).TrimEnd('\\', '/');
+                    if (normalized.Length == 2 && normalized[1] == ':')
+                    {
+                        normalized += "\\";
+                    }
                 }
                 catch
                 {

@@ -189,6 +189,7 @@
                                         <ColumnDefinition Width="90"/>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0" Text="Source" VerticalAlignment="Center"/>
                                     <Border Grid.Column="1" Margin="0,0,8,8" Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="InputBackgroundBrush">
@@ -199,11 +200,36 @@
                                                   ItemsSource="{Binding RecentSources}"
                                                   IsEnabled="{Binding PathsEditable}"
                                                   AllowDrop="True" PreviewDragOver="Path_PreviewDragOver" Drop="Source_Drop"
-                                                  ToolTip="File, folder, or drive — anything Explorer can open. Open the list for recent sources."/>
+                                                  ToolTip="Type or paste a path, then Add. Browse picks multiple folders in one dialog and adds them without removing earlier picks. Drop folders from Explorer to add."/>
                                     </Border>
                                     <Button Grid.Column="2" Content="Browse" Style="{StaticResource ToolbarButton}"
-                                            Command="{Binding BrowseSourceCommand}" Margin="0,0,0,8"/>
+                                            Command="{Binding BrowseSourceCommand}" Margin="0,0,8,8"
+                                            ToolTip="Multi-select folders from this location, then browse another parent and add more. Does not wipe the list."/>
+                                    <Button Grid.Column="3" Content="Add" Style="{StaticResource ToolbarButton}"
+                                            Command="{Binding AddSourceCommand}" Margin="0,0,0,8"
+                                            ToolTip="Add the path in the box to this job’s source list."/>
                                 </Grid>
+                                <DockPanel Margin="90,0,0,8" Visibility="{Binding HasSourceFolders, Converter={StaticResource BoolToVis}}">
+                                    <Button DockPanel.Dock="Right" Content="Clear" Style="{StaticResource CompactButton}"
+                                            Command="{Binding ClearSourcesCommand}" Margin="8,0,0,0"
+                                            VerticalAlignment="Top"/>
+                                    <ListBox ItemsSource="{Binding SourceFolders}" MaxHeight="88"
+                                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                             HorizontalContentAlignment="Stretch"
+                                             ToolTip="Every selected source folder for this job. Remove one without affecting the others.">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <DockPanel>
+                                                    <Button DockPanel.Dock="Right" Content="Remove" Style="{StaticResource CompactButton}" Margin="8,0,0,0"
+                                                            Command="{Binding DataContext.RemoveSourceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                            CommandParameter="{Binding}"/>
+                                                    <TextBlock Text="{Binding Path}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                                                               ToolTip="{Binding Path}"/>
+                                                </DockPanel>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </DockPanel>
 
                                 <Grid Margin="0,0,0,8">
                                     <Grid.ColumnDefinitions>
@@ -382,6 +408,7 @@
                                     <ColumnDefinition Width="90"/>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="Source" VerticalAlignment="Center"/>
                                 <Border Grid.Column="1" Margin="0,0,8,8" Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="InputBackgroundBrush">
@@ -390,11 +417,33 @@
                                               local:ComboBoxFit.PreserveText="True"
                                               Text="{Binding QueueSourcePath, UpdateSourceTrigger=PropertyChanged}"
                                               ItemsSource="{Binding RecentSources}"
-                                              ToolTip="File, folder, or drive for the next queued job. Always editable."/>
+                                              ToolTip="Type a path then Add. Browse adds folders without wiping earlier picks."/>
                                 </Border>
                                 <Button Grid.Column="2" Content="Browse" Style="{StaticResource ToolbarButton}"
-                                        Command="{Binding BrowseQueueSourceCommand}" Margin="0,0,0,8"/>
+                                        Command="{Binding BrowseQueueSourceCommand}" Margin="0,0,8,8"
+                                        ToolTip="Multi-select folders, then browse another parent and add more."/>
+                                <Button Grid.Column="3" Content="Add" Style="{StaticResource ToolbarButton}"
+                                        Command="{Binding AddQueueSourceCommand}" Margin="0,0,0,8"/>
                             </Grid>
+                            <DockPanel Margin="90,0,0,8" Visibility="{Binding HasQueueSourceFolders, Converter={StaticResource BoolToVis}}">
+                                <Button DockPanel.Dock="Right" Content="Clear" Style="{StaticResource CompactButton}"
+                                        Command="{Binding ClearQueueSourcesCommand}" Margin="8,0,0,0"
+                                        VerticalAlignment="Top"/>
+                                <ListBox ItemsSource="{Binding QueueSourceFolders}" MaxHeight="88"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         HorizontalContentAlignment="Stretch">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <DockPanel>
+                                                <Button DockPanel.Dock="Right" Content="Remove" Style="{StaticResource CompactButton}" Margin="8,0,0,0"
+                                                        Command="{Binding DataContext.RemoveQueueSourceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}"/>
+                                                <TextBlock Text="{Binding Path}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                            </DockPanel>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </DockPanel>
                             <Grid Margin="0,0,0,8">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="90"/>
@@ -744,8 +793,51 @@
             <TabItem x:Name="ThemeTab" Header="Theme">
                 <local:ThemePanel DataContext="{Binding Theme}"/>
             </TabItem>
-            <TabItem Header="Settings">
+            <TabItem x:Name="SettingsTab" Header="Settings">
                 <DockPanel Margin="12">
+                    <GroupBox Header="Pack / skip extensions" DockPanel.Dock="Top" Margin="0,0,0,12">
+                        <StackPanel>
+                            <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,8"
+                                       Text="Never-pack extensions copy as files (not zipped). Pack extensions stay eligible for small-file pockets even if they look already-compressed (for example adding .mp4 opts video into packing). Unspecified extensions keep automated detection. Job options → Extensions… opens this page. Defaults match Skip Compressed: video, photos, audio, zip/7z/rar, ISO."/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="12"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Text="Never pack (copy as-is)" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                                    <ListBox ItemsSource="{Binding NeverPackExtensions}"
+                                             SelectedItem="{Binding SelectedNeverPack}"
+                                             Height="140" Margin="0,0,0,8"/>
+                                    <DockPanel>
+                                        <Button DockPanel.Dock="Right" Content="Reset defaults" Style="{StaticResource CompactButton}"
+                                                Command="{Binding ResetNeverPackCommand}" Margin="8,0,0,0"/>
+                                        <Button DockPanel.Dock="Right" Content="Remove" Style="{StaticResource CompactButton}"
+                                                Command="{Binding RemoveNeverPackCommand}" Margin="8,0,0,0"/>
+                                        <Button DockPanel.Dock="Right" Content="Add" Style="{StaticResource CompactButton}"
+                                                Command="{Binding AddNeverPackCommand}" Margin="8,0,0,0"/>
+                                        <TextBox Text="{Binding NeverPackDraft, UpdateSourceTrigger=PropertyChanged}"
+                                                 ToolTip="Extension with or without a dot (mp4 or .mp4)."/>
+                                    </DockPanel>
+                                </StackPanel>
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Text="Always consider packing" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                                    <ListBox ItemsSource="{Binding PackExtensions}"
+                                             SelectedItem="{Binding SelectedPackExtension}"
+                                             Height="140" Margin="0,0,0,8"/>
+                                    <DockPanel>
+                                        <Button DockPanel.Dock="Right" Content="Remove" Style="{StaticResource CompactButton}"
+                                                Command="{Binding RemovePackExtensionCommand}" Margin="8,0,0,0"/>
+                                        <Button DockPanel.Dock="Right" Content="Add" Style="{StaticResource CompactButton}"
+                                                Command="{Binding AddPackExtensionCommand}" Margin="8,0,0,0"/>
+                                        <TextBox Text="{Binding PackExtensionDraft, UpdateSourceTrigger=PropertyChanged}"
+                                                 ToolTip="Opt an extension into packing pockets even if Skip Compressed would skip it."/>
+                                    </DockPanel>
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </GroupBox>
                     <GroupBox Header="Data location" DockPanel.Dock="Top">
                         <StackPanel>
                             <TextBlock Text="{Binding DataRootSummary}" TextWrapping="Wrap" Margin="0,0,0,8"/>

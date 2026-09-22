@@ -30,6 +30,14 @@ public partial class MainWindow : Window
         vm.Theme.OpenPreviewRequested = OpenThemePreview;
         vm.Theme.PopOutEditorRequested = OpenThemeEditor;
         vm.OpenJobOptionsRequested = OpenJobOptions;
+        vm.OpenSettingsRequested = () =>
+        {
+            LeaveThemeSession();
+            if (SettingsTab is not null)
+            {
+                SettingsTab.IsSelected = true;
+            }
+        };
         vm.CloseWindowRequested = () =>
         {
             _forceClose = true;
@@ -383,9 +391,13 @@ public partial class MainWindow : Window
 
     private void Source_Drop(object sender, DragEventArgs e)
     {
-        if (TryGetDroppedPath(e, out var path))
+        if (TryGetDroppedPaths(e, out var paths))
         {
-            Vm.SetDroppedSource(path);
+            foreach (var path in paths)
+            {
+                Vm.SetDroppedSource(path);
+            }
+
             e.Handled = true;
         }
     }
@@ -399,10 +411,22 @@ public partial class MainWindow : Window
         }
     }
 
+    private static bool TryGetDroppedPaths(DragEventArgs e, out string[] paths)
+    {
+        paths = [];
+        if (e.Data.GetData(DataFormats.FileDrop) is not string[] dropped || dropped.Length == 0)
+        {
+            return false;
+        }
+
+        paths = dropped;
+        return true;
+    }
+
     private static bool TryGetDroppedPath(DragEventArgs e, out string path)
     {
         path = "";
-        if (e.Data.GetData(DataFormats.FileDrop) is not string[] paths || paths.Length == 0)
+        if (!TryGetDroppedPaths(e, out var paths))
         {
             return false;
         }

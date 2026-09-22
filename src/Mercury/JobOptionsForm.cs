@@ -63,6 +63,7 @@ public sealed class JobOptionsForm : INotifyPropertyChanged
             CloseRequested?.Invoke();
         });
         AddToQueueCommand = new RelayCommand(() => AddToQueueRequested?.Invoke(), () => CanAddToQueue);
+        OpenPackExtensionsCommand = new RelayCommand(() => OpenPackExtensions?.Invoke());
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -78,6 +79,9 @@ public sealed class JobOptionsForm : INotifyPropertyChanged
     public ICommand ApplyCommand { get; }
     public ICommand CloseCommand { get; }
     public ICommand AddToQueueCommand { get; }
+    public ICommand OpenPackExtensionsCommand { get; }
+
+    public Action? OpenPackExtensions { get; set; }
 
     public string WindowTitle { get => _windowTitle; set => SetField(ref _windowTitle, value); }
     public string Hint { get => _hint; set => SetField(ref _hint, value); }

@@ -136,6 +136,70 @@ public class PathAndTreeUiTests
     }
 
     [Fact]
+    public void AddingSecondSourceDoesNotWipeFirst()
+    {
+        WpfSta.Run(() =>
+        {
+            WpfSta.EnsureApp();
+            var root = Path.Combine(Path.GetTempPath(), "mercury-multisrc-" + Guid.NewGuid().ToString("N"));
+            var a = Path.Combine(root, "Photos");
+            var b = Path.Combine(root, "Videos");
+            var dest = Path.Combine(root, "dest");
+            Directory.CreateDirectory(a);
+            Directory.CreateDirectory(b);
+            Directory.CreateDirectory(dest);
+            MainViewModel? vm = null;
+            try
+            {
+                vm = new MainViewModel(new AppPaths(root));
+                vm.SourcePath = a;
+                vm.AddSourceCommand.Execute(null);
+                vm.SourcePath = b;
+                vm.AddSourceCommand.Execute(null);
+                Assert.Equal(2, vm.SourceFolders.Count);
+                Assert.Contains(vm.SourceFolders, f => f.Path.Equals(a, StringComparison.OrdinalIgnoreCase));
+                Assert.Contains(vm.SourceFolders, f => f.Path.Equals(b, StringComparison.OrdinalIgnoreCase));
+                vm.DestPath = dest;
+                Assert.True(vm.HasPaths);
+                Assert.Contains("Photos", vm.LandingPreview, StringComparison.OrdinalIgnoreCase);
+                Assert.Contains("Videos", vm.LandingPreview, StringComparison.OrdinalIgnoreCase);
+                vm.SourcePath = a;
+                vm.AddSourceCommand.Execute(null);
+                Assert.Equal(2, vm.SourceFolders.Count);
+            }
+            finally
+            {
+                vm?.Dispose();
+                try { Directory.Delete(root, true); } catch { /* leftover */ }
+            }
+        });
+    }
+
+    [Fact]
+    public void EmptySourceListCannotStart()
+    {
+        WpfSta.Run(() =>
+        {
+            WpfSta.EnsureApp();
+            var root = Path.Combine(Path.GetTempPath(), "mercury-empty-src-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(root);
+            MainViewModel? vm = null;
+            try
+            {
+                vm = new MainViewModel(new AppPaths(root));
+                vm.DestPath = Path.Combine(root, "dest");
+                Assert.False(vm.HasPaths);
+                Assert.False(vm.HasSourceFolders);
+            }
+            finally
+            {
+                vm?.Dispose();
+                try { Directory.Delete(root, true); } catch { /* leftover */ }
+            }
+        });
+    }
+
+    [Fact]
     public void DestTypeCombo_SizesToSelectionNotFullWidth()
     {
         WpfSta.Run(() =>

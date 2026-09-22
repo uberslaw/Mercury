@@ -8,12 +8,12 @@ Copy any Explorer path (file, folder, or whole drive) to any writable destinatio
 
 1. Copy the `Mercury` folder onto the PC or a USB toolkit drive.
 2. Double-click `Mercury.exe` to send, or `MercuryCatcher.exe` to receive over HTTPS.
-3. Pick source and destination (browse, paste, or drop from Explorer).
+3. Pick source folder(s) and destination (browse, paste, or drop from Explorer). Browse Source can multi-select folders, then browse another parent and add more — they all go in one job.
 4. Set speed / hours / verify if you want, then **Start** or **Add to queue**.
 
 Speed limits (per-job Max MB/s, global min/max, and **Throttle to X MB/s when not idle**) apply immediately while a job is running — no restart. Other in-flight option changes (hours, overwrite, verify, retries, dest) are a later pass.
 
-**Many small files / USB hard drive:** turn on **Pack as zip**. Mercury writes one stored (uncompressed) `.zip` for the transfer (one sequential write — much faster on USB HDDs), then **unpacks it at the destination** into a normal folder tree and deletes the zip. Do not open the zip in Explorer — Mercury unpacks it in place (including on a network dest). Leave the option off to copy files one-by-one.
+**Small files / USB:** leave **Small Files** off unless you want to force packing everything eligible. Mercury plans at the start of the job: already-compressed and large files copy immediately while small-file pockets are packed (stored zip). Uncertain pockets sample about 256 MB. **Skip Compressed** (default on) plus **Settings → Pack / skip extensions** control which types never pack or are opted in. **Extensions…** on Job options opens that Settings page. Packed zips unpack to a normal folder tree and are deleted — do not open the zip in Explorer.
 
 There is no setup, no admin prompt, and no .NET SDK required on the machine that runs it. The published folder includes the runtime.
 

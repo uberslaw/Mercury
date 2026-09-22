@@ -29,10 +29,12 @@ public static class HelpDocument
             Body =
                 "Source and Destination accept browse, paste, or drag-drop. Destination can be a folder or Catcher (HTTPS). " +
                 "Browse Source remembers the last Source folder; Browse Destination remembers the last Destination. Recents stay independent.\n\n" +
+                "You can pick several source folders in one Browse dialog (same parent), then Browse again from another location — each Add/Browse appends without wiping earlier picks. The selected-folders list under Source has Remove and Clear. Destination remains one folder. " +
                 "A selected folder copies as dest\\FolderName (Explorer-style) — Include source folder name is on by default. " +
-                "Pick the parent destination; Will land in under Destination shows the full path before Start (D:\\Anchor Span → dest\\Anchor Span). " +
-                "Uncheck it only for contents-only (robocopy-style) so children such as compressed land directly in dest. " +
-                "Drive roots always dump contents into dest (no extra D). Dest already containing a child folder does not uncheck wrap. " +
+                "Two sources both named Photos land as dest\\Photos and dest\\Photos (2). Multiple folders keep their names even if Include is off, so trees do not smash. " +
+                "Pick the parent destination; Will land in under Destination shows every landing path before Start. " +
+                "Uncheck Include only for a single source when you want contents-only (robocopy-style). " +
+                "Drive roots always dump contents into dest (no extra D) unless several sources are selected (then dest\\C, dest\\D). " +
                 "Browsing Destination inside a previous copy will nest FolderName again.\n\n" +
                 "Start, Pause, Pause after this file, and Stop live at the bottom of the Progress header, under the file currently copying. Add to queue and Save job stay at the bottom of this tab. " +
                 "Start runs the job now. If the job is paused, or Source/Dest match a stopped, incomplete, or queued job, Start relabels to Resume and continues that same job id — it does not mint a duplicate. Add to queue stores a new Pending row and does not start it. Resume last (Queue tab) continues the journal of the last job (including deferred files). " +
@@ -64,9 +66,14 @@ public static class HelpDocument
                 "Overwrite: skip if dest is newer or equal (2-second FAT tolerance only when RoboFlags → FAT 2s times is on), always, or never if dest exists. The combo is sized to the longest choice.\n\n" +
                 "Verify Quick checks size + timestamp. Thorough also hashes (xxHash64).\n\n" +
                 "Dry Run enumerates only.\n\n" +
-                "Small Files writes one uncompressed transport zip (fast on USB / many small files), unpacks a normal folder tree at dest, then deletes the zip. " +
-                "Skip Compressed (default on with Small Files) copies video, photos, audio, zip/7z/rar, ISO, and similar as files — they are not wrapped in that zip. " +
-                "If the whole job is already compressed, packing is skipped entirely (no zip-of-zips). Leave Small Files off to copy file-by-file. Large as-is files resume from .mercury.tmp offset after Stop.\n\n" +
+                "By default Mercury plans the job after enumerate: already-compressed and large sequential files start copying immediately while a pack worker zips small-file pockets (stored/uncompressed zip unless a sample shows deflate wins). " +
+                "Small Files is an override to pack every non-compressed file into a transport zip (USB / many tiny files), then unpack a normal folder tree and delete the zip. " +
+                "Skip Compressed (default on) copies video, photos, audio, zip/7z/rar, ISO, and similar as files. " +
+                "If the whole job is already compressed, packing is skipped entirely (no zip-of-zips). " +
+                "Uncertain pockets sample about 256 MB (100–500 MB class, bounded by pocket size) and skip packing when it would not help. " +
+                "Settings holds Never pack and Always consider packing extension lists (add/remove; with or without a leading dot). " +
+                "Job options → Extensions… jumps to that Settings page. Pack list wins over Skip Compressed; never-pack always copies as-is; other extensions keep automated classification. " +
+                "Leave Small Files off unless you want to force packing everything eligible.\n\n" +
                 "Ignore Storage Limit: still logs Need vs free space but does not abort on thin/growable volumes.\n\n" +
                 "RoboFlags (button on this tab) opens native copy checkboxes — see the RoboFlags help section. Timestamps default on so dest keeps source creation time.\n\n" +
                 "Include source folder name (default on): the selected top-level folder is created at dest. Uncheck for Contents only.\n\n" +
@@ -132,7 +139,7 @@ public static class HelpDocument
             Body =
                 "Jobs wait here until you Start them, or until the previous job finishes (queue drain). Add to queue never auto-starts. " +
                 "An empty queue shows one line: No jobs in the queue. Each job is a tile: order #, source → dest, status (Pending / Running / Paused / On hold / Stopped / Done), flag badges, and per-tile Start / Pause / Stop (plus Hold, Job Options, Remove, Up, Down). " +
-                "Job Options on a tile pops out the same fields as Transfer (speed, Window, retries, overwrite, verify, Dry Run, Small Files, Skip Compressed, Ignore Storage Limit, Start After, RoboFlags, Include source folder name, Catcher template). " +
+                "Job Options on a tile pops out the same fields as Transfer (speed, Window, retries, overwrite, verify, Dry Run, Small Files, Skip Compressed, Extensions…, Ignore Storage Limit, Start After, RoboFlags, Include source folder name, Catcher template). " +
                 "Those values are stored on the job you Add — they are not locked to the Transfer tab while a copy runs. " +
                 "Tiles show compact badges for non-default flags (Dry Run, Small Files, Ignore Storage Limit, Window, Hold, Catcher, Contents only when wrap is off). " +
                 "Source/Dest/Browse/Add on this tab stay enabled while a transfer is running — only Transfer-tab paths lock with the active job. " +
@@ -197,6 +204,8 @@ public static class HelpDocument
             Body =
                 "Lists every path Mercury writes (data folder, error log, job logs, journals, settings.json, last-job.json, queue.json, history.db, themes.json, Catcher files). " +
                 "Open folder jumps to that location in Explorer.\n\n" +
+                "Pack / skip extensions: never-pack copies those types as files; pack list opts types into small-file pockets even if they look compressed. " +
+                "Defaults match Skip Compressed (video, photos, audio, archives, ISO). Reset defaults restores that set. Job options → Extensions… opens this section.\n\n" +
                 "Default data root is %APPDATA%\\Mercury. Portable (beside the exe) is off unless you tick it (takes effect on next launch) " +
                 "or Mercury finds jobs beside the exe and none in AppData — it will keep that journal so Resume last still works."
         }

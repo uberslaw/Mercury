@@ -248,7 +248,7 @@ public sealed class CopyEngine : ICopyEngine
                 TransferPlanner.ApplySample(plan, pocket, sample);
             }
 
-            pack = catcher is not null ? mappings.All(m => !m.SingleFile) : plan.HasPacking || ZipPack.AppliesAny(job, mappings);
+            pack = catcher is not null ? mappings.All(m => !m.SingleFile) : plan.HasPacking;
             var overlap = pack && catcher is null && plan.Stream.Count > 0 && plan.HasPacking;
             reporter.ReplaceStages(CopyPipeline.For(job, hasJournalFiles: true, pack, overlap));
             if (!string.IsNullOrWhiteSpace(plan.Summary))
@@ -287,7 +287,7 @@ public sealed class CopyEngine : ICopyEngine
                 reporter.Enter(CopyStageKind.Transferring, JobStatus.Copying, "Copying and packing…");
                 journal.SaveJob(job);
                 await RunOverlappedAsync(
-                        job, mappings, plan, journal, budget, pause, log, name, reporter, cloud, speed, cancellationToken, io)
+                        job, plan, journal, budget, pause, log, name, reporter, cloud, speed, cancellationToken, io)
                     .ConfigureAwait(false);
             }
             else if (pack)
@@ -647,7 +647,6 @@ public sealed class CopyEngine : ICopyEngine
 
     private static async Task RunOverlappedAsync(
         Job job,
-        IReadOnlyList<CopyMapping> mappings,
         TransferPlan plan,
         JobJournal journal,
         BandwidthBudget budget,

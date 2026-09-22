@@ -30,6 +30,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private DispatcherTimer? _elapsedTimer;
 
     private string _sourcePath = "";
+    private string _neverPackDraft = "";
+    private string _packExtensionDraft = "";
+    private string? _selectedNeverPack;
+    private string? _selectedPackExtension;
     private string _destPath = "";
     private string _maxMBpsText = "";
     private bool _unlimitedSpeed = true;
@@ -178,9 +182,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         ResumeLastCommand = new RelayCommand(ResumeLast, () => !IsRunning && CanResumeLast);
         BrowseSourceCommand = new RelayCommand(BrowseSource, () => PathsEditable);
         BrowseDestCommand = new RelayCommand(BrowseDest, () => PathsEditable);
+        BrowseQueueSourceCommand = new RelayCommand(BrowseQueueSource);
+        BrowseQueueDestCommand = new RelayCommand(BrowseQueueDest);
         OpenPackExtensionsCommand = new RelayCommand(OpenPackExtensions);
         AddSourceCommand = new RelayCommand(AddSourceFromDraft, () => PathsEditable);
-        RemoveSourceCommand = new RelayCommand(p => RemoveSource(p as SourceFolderItem), () => PathsEditable);
+        RemoveSourceCommand = new RelayCommand(p => RemoveSource(p as SourceFolderItem), _ => PathsEditable);
         ClearSourcesCommand = new RelayCommand(ClearSources, () => PathsEditable && SourceFolders.Count > 0);
         AddQueueSourceCommand = new RelayCommand(AddQueueSourceFromDraft);
         RemoveQueueSourceCommand = new RelayCommand(p => RemoveQueueSource(p as SourceFolderItem));
@@ -222,6 +228,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             CanAdd = () => HasQueuePaths,
             ShowSpeedInMegabits = _showSpeedInMegabits
         };
+        QueueDraft.OpenPackExtensions = OpenPackExtensions;
         QueueDraft.AddToQueueRequested += AddToQueueFromQueue;
         QueueDraft.Applied += RaiseQueueDraftBadges;
         QueueDraft.PropertyChanged += OnQueueDraftPropertyChanged;
@@ -235,6 +242,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         RefreshResume();
         if (_lastJob is { } last && IsResumable(last.Status))
         {
+            LoadSourceFolders(JobSources.Roots(last));
             SourcePath = last.SourcePath;
             DestPath = last.DestinationPath;
             ApplyJobOptions(last.Options);
@@ -259,6 +267,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public ObservableCollection<SettingsPathItem> DataPaths { get; } = [];
     public ObservableCollection<HelpSection> HelpSections { get; } = [];
     public ObservableCollection<FolderTreeItem> FolderTree { get; } = [];
+    public ObservableCollection<SourceFolderItem> SourceFolders { get; } = [];
+    public ObservableCollection<SourceFolderItem> QueueSourceFolders { get; } = [];
+    public ObservableCollection<string> NeverPackExtensions { get; } = [];
+    public ObservableCollection<string> PackExtensions { get; } = [];
     public ICollectionView ConsoleView { get; private set; } = CollectionViewSource.GetDefaultView(Array.Empty<ConsoleLine>());
 
     public ICommand StartCommand { get; }
@@ -275,6 +287,18 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public ICommand BrowseDestCommand { get; }
     public ICommand BrowseQueueSourceCommand { get; }
     public ICommand BrowseQueueDestCommand { get; }
+    public ICommand AddSourceCommand { get; }
+    public ICommand RemoveSourceCommand { get; }
+    public ICommand ClearSourcesCommand { get; }
+    public ICommand AddQueueSourceCommand { get; }
+    public ICommand RemoveQueueSourceCommand { get; }
+    public ICommand ClearQueueSourcesCommand { get; }
+    public ICommand OpenPackExtensionsCommand { get; }
+    public ICommand AddNeverPackCommand { get; }
+    public ICommand RemoveNeverPackCommand { get; }
+    public ICommand ResetNeverPackCommand { get; }
+    public ICommand AddPackExtensionCommand { get; }
+    public ICommand RemovePackExtensionCommand { get; }
     public ICommand SaveJobCommand { get; }
     public ICommand ToggleRoboFlagsCommand { get; }
     public ICommand LoadSavedJobCommand { get; }
@@ -302,6 +326,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public Action? CloseWindowRequested { get; set; }
     public Action<JobOptionsForm>? OpenJobOptionsRequested { get; set; }
+    public Action? OpenSettingsRequested { get; set; }
 
     public string SourcePath
     {
@@ -514,6 +539,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool DryRun { get => _dryRun; set => SetField(ref _dryRun, value); }
     public bool PackAsZip { get => _packAsZip; set => SetField(ref _packAsZip, value); }
     public bool SkipCompressedWhenPacking { get => _skipCompressedWhenPacking; set => SetField(ref _skipCompressedWhenPacking, value); }
+    public string NeverPackDraft { get => _neverPackDraft; set => SetField(ref _neverPackDraft, value); }
+    public string PackExtensionDraft { get => _packExtensionDraft; set => SetField(ref _packExtensionDraft, value); }
+    public string? SelectedNeverPack { get => _selectedNeverPack; set => SetField(ref _selectedNeverPack, value); }
+    public string? SelectedPackExtension { get => _selectedPackExtension; set => SetField(ref _selectedPackExtension, value); }
     public bool IgnoreFreeSpaceCheck { get => _ignoreFreeSpaceCheck; set => SetField(ref _ignoreFreeSpaceCheck, value); }
     public bool RoboFlagsExpanded { get => _roboFlagsExpanded; set => SetField(ref _roboFlagsExpanded, value); }
     public bool CopyTimestamps { get => _copyTimestamps; set => SetField(ref _copyTimestamps, value); }
@@ -823,11 +852,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool HasRecentSources => RecentSources.Count > 0;
     public bool HasRecentDestinations => RecentDestinations.Count > 0;
     public bool HasPaths =>
-        !string.IsNullOrWhiteSpace(SourcePath) &&
+        CollectedSources().Count > 0 &&
         (DestIsCatcher ? SelectedCatcherTemplate is not null : !string.IsNullOrWhiteSpace(DestPath));
     public bool HasQueuePaths =>
-        !string.IsNullOrWhiteSpace(QueueSourcePath) &&
+        CollectedQueueSources().Count > 0 &&
         (QueueDestIsCatcher ? QueueSelectedCatcherTemplate is not null : !string.IsNullOrWhiteSpace(QueueDestPath));
+    public bool HasSourceFolders => SourceFolders.Count > 0;
+    public bool HasQueueSourceFolders => QueueSourceFolders.Count > 0;
     public bool DestIsCatcher => DestKindIndex == 1;
     public bool DestIsFolder => !DestIsCatcher;
     public bool QueueDestIsCatcher => QueueDestKindIndex == 1;
@@ -884,16 +915,16 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             if (QueueDestIsCatcher)
             {
-                return string.IsNullOrWhiteSpace(QueueSourcePath)
+                return CollectedQueueSources().Count == 0
                     ? ""
                     : "Will land in: Catcher receive folder (named source folders keep their top folder).";
             }
 
-            var path = CopyShape.PreviewLandingPath(
-                QueueSourcePath,
+            var path = CopyShape.PreviewLandingSummary(
+                CollectedQueueSources(),
                 QueueDestPath,
                 QueueDraft.IncludeSourceFolderName);
-            return string.IsNullOrEmpty(path) ? "" : "Will land in: " + path;
+            return path;
         }
     }
     public bool ShowQueueLandingPreview => !string.IsNullOrEmpty(QueueLandingPreview);
@@ -901,14 +932,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     {
         get
         {
-            if (!DestIsFolder || string.IsNullOrWhiteSpace(SourcePath))
+            if (!DestIsFolder || CollectedSources().Count == 0)
             {
                 return false;
             }
 
             try
             {
-                return CopyShape.DetectKind(SourcePath) == SourceKind.Folder;
+                return CollectedSources().Any(p => CopyShape.DetectKind(p) == SourceKind.Folder);
             }
             catch (Exception)
             {
@@ -923,7 +954,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             if (DestIsCatcher)
             {
-                if (string.IsNullOrWhiteSpace(SourcePath) || SelectedCatcherTemplate is null)
+                if (CollectedSources().Count == 0 || SelectedCatcherTemplate is null)
                 {
                     return "";
                 }
@@ -931,13 +962,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 return "Will land in: Catcher receive folder (named source folders keep their top folder).";
             }
 
-            if (string.IsNullOrWhiteSpace(SourcePath) || string.IsNullOrWhiteSpace(DestPath))
+            if (CollectedSources().Count == 0 || string.IsNullOrWhiteSpace(DestPath))
             {
                 return "";
             }
 
-            var path = CopyShape.PreviewLandingPath(SourcePath, DestPath, IncludeSourceFolderName);
-            return string.IsNullOrEmpty(path) ? "" : "Will land in: " + path;
+            return CopyShape.PreviewLandingSummary(CollectedSources(), DestPath, IncludeSourceFolderName);
         }
     }
 
@@ -1084,7 +1114,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             return;
         }
 
-        SourcePath = path;
+        AddSourcePath(path);
         RememberPath(isSource: true, path);
     }
 
@@ -1120,6 +1150,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
 
         SourcePath = job.SourcePath;
+        LoadSourceFolders(JobSources.Roots(job));
         if (job.Catcher is null)
         {
             DestPath = job.DestinationPath;
@@ -1311,7 +1342,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private Job? FindMatchingResumable(Job form) =>
         FindMatchingResumable(
-            form.SourcePath,
+            JobSources.Roots(form).ToList(),
             form.Catcher is not null,
             form.Catcher?.TemplateId,
             form.DestinationPath);
@@ -1324,18 +1355,18 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
 
         return FindMatchingResumable(
-            PathNormalizer.Normalize(SourcePath),
+            CollectedSources(),
             DestIsCatcher,
             SelectedCatcherTemplate?.Id,
             DestIsCatcher ? "" : PathNormalizer.Normalize(DestPath));
     }
 
-    private Job? FindMatchingResumable(string source, bool isCatcher, string? catcherTemplateId, string dest)
+    private Job? FindMatchingResumable(IReadOnlyList<string> sources, bool isCatcher, string? catcherTemplateId, string dest)
     {
         Job? best = null;
         foreach (var queued in _scheduler.Queue)
         {
-            if (!IsResumable(queued.Status) || queued.OnHold || !SameRoute(queued, source, isCatcher, catcherTemplateId, dest))
+            if (!IsResumable(queued.Status) || queued.OnHold || !SameRoute(queued, sources, isCatcher, catcherTemplateId, dest))
             {
                 continue;
             }
@@ -1358,7 +1389,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
 
         var last = _lastJob ?? _scheduler.TryLoadLastJob();
-        if (last is not null && IsResumable(last.Status) && SameRoute(last, source, isCatcher, catcherTemplateId, dest))
+        if (last is not null && IsResumable(last.Status) && SameRoute(last, sources, isCatcher, catcherTemplateId, dest))
         {
             return last;
         }
@@ -1366,9 +1397,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         return null;
     }
 
-    private static bool SameRoute(Job queued, string source, bool isCatcher, string? catcherTemplateId, string dest)
+    private static bool SameRoute(Job queued, IReadOnlyList<string> sources, bool isCatcher, string? catcherTemplateId, string dest)
     {
-        if (!string.Equals(queued.SourcePath, source, StringComparison.OrdinalIgnoreCase))
+        if (!JobSources.Same(queued, sources))
         {
             return false;
         }
@@ -1470,6 +1501,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
 
         last.SourcePath = string.IsNullOrWhiteSpace(SourcePath) ? last.SourcePath : SourcePath;
+        var uiSources = CollectedSources();
+        if (uiSources.Count > 0)
+        {
+            JobSources.Set(last, uiSources);
+        }
         last.DestinationPath = string.IsNullOrWhiteSpace(DestPath) ? last.DestinationPath : DestPath;
         if (last.Catcher is not null || DestIsCatcher)
         {
@@ -1715,10 +1751,30 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         JobOptions? options = null,
         DateTimeOffset? scheduledStart = null)
     {
-        var source = PathNormalizer.Normalize(sourcePath ?? SourcePath);
         var catcherDest = (destKindIndex ?? DestKindIndex) == 1;
         var builtOptions = options ?? BuildOptions();
         var start = scheduledStart ?? (options is null ? BuildScheduledStart() : scheduledStart);
+        var sources = sourcePath is not null
+            ? CollectedQueueSources()
+            : CollectedSources();
+        if (sources.Count == 0 && !string.IsNullOrWhiteSpace(sourcePath ?? SourcePath))
+        {
+            try
+            {
+                sources = [PathNormalizer.Normalize(sourcePath ?? SourcePath)];
+            }
+            catch
+            {
+                sources = [];
+            }
+        }
+
+        if (sources.Count == 0)
+        {
+            throw new InvalidOperationException("Pick at least one source folder or file.");
+        }
+
+        var source = sources[0];
         if (catcherDest)
         {
             var template = catcherTemplate ?? SelectedCatcherTemplate
@@ -1728,6 +1784,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             return new Job
             {
                 SourcePath = source,
+                SourcePaths = sources.ToList(),
                 DestinationPath = CatcherCrypto.FormatDestination(template.PublicHost, template.PublicPort, template.Name),
                 SourceKind = CopyShape.DetectKind(source),
                 Catcher = template.ToTarget(),
@@ -1741,6 +1798,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         return new Job
         {
             SourcePath = source,
+            SourcePaths = sources.ToList(),
             DestinationPath = dest,
             SourceKind = CopyShape.DetectKind(source),
             Options = builtOptions,
@@ -1791,6 +1849,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             DryRun = DryRun,
             PackAsZip = PackAsZip,
             SkipCompressedWhenPacking = SkipCompressedWhenPacking,
+            PackExtensions = PackExtensions.ToList(),
+            NeverPackExtensions = NeverPackExtensions.ToList(),
             IgnoreFreeSpaceCheck = IgnoreFreeSpaceCheck,
             CopyTimestamps = CopyTimestamps,
             CopyAttributes = CopyAttributes,
@@ -1893,14 +1953,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             idle = idleMb;
         }
 
-        var settings = new BandwidthSettings
-        {
-            GlobalMinMegabytesPerSecond = min,
-            GlobalMaxMegabytesPerSecond = max,
-            IdleThrottleMegabytesPerSecond = idle,
-            IdleCpuPercentThreshold = MachineLoadSampler.DefaultBusyPercent,
-            ShowSpeedInMegabits = ShowSpeedInMegabits
-        };
+        var settings = AppSettingsStore.Load(_paths);
+        settings.GlobalMinMegabytesPerSecond = min;
+        settings.GlobalMaxMegabytesPerSecond = max;
+        settings.IdleThrottleMegabytesPerSecond = idle;
+        settings.IdleCpuPercentThreshold = MachineLoadSampler.DefaultBusyPercent;
+        settings.ShowSpeedInMegabits = ShowSpeedInMegabits;
+        settings.PackExtensions = PackExtensions.ToList();
+        settings.NeverPackExtensions = NeverPackExtensions.ToList();
         AppSettingsStore.Save(_paths, settings);
         _scheduler.Budget.Apply(settings);
     }
@@ -2085,11 +2145,23 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private void BrowseSource()
     {
-        var path = BrowseAny("Choose source", isSource: true, current: SourcePath);
-        if (path is not null)
+        var added = BrowseFolders("Choose source folder(s)", current: SourcePath);
+        if (added.Count > 0)
         {
-            SourcePath = path;
-            RememberPath(isSource: true, path);
+            foreach (var folder in added)
+            {
+                AddSourcePath(folder);
+                RememberPath(isSource: true, folder);
+            }
+
+            return;
+        }
+
+        var file = BrowseFile("Choose source file", current: SourcePath);
+        if (file is not null)
+        {
+            AddSourcePath(file);
+            RememberPath(isSource: true, file);
         }
     }
 
@@ -2105,11 +2177,23 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private void BrowseQueueSource()
     {
-        var path = BrowseAny("Choose source", isSource: true, current: QueueSourcePath);
-        if (path is not null)
+        var added = BrowseFolders("Choose source folder(s)", current: QueueSourcePath);
+        if (added.Count > 0)
         {
-            QueueSourcePath = path;
-            RememberPath(isSource: true, path);
+            foreach (var folder in added)
+            {
+                AddQueueSourcePath(folder);
+                RememberPath(isSource: true, folder);
+            }
+
+            return;
+        }
+
+        var file = BrowseFile("Choose source file", current: QueueSourcePath);
+        if (file is not null)
+        {
+            AddQueueSourcePath(file);
+            RememberPath(isSource: true, file);
         }
     }
 
@@ -2129,6 +2213,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         QueueDestPath = DestPath;
         QueueDestKindIndex = DestKindIndex;
         QueueSelectedCatcherTemplate = SelectedCatcherTemplate;
+        LoadQueueSourceFolders(CollectedSources());
         EnsureQueueDraftSeeded();
         QueueDraft.CatcherTemplates = CatcherTemplates;
         QueueDraft.ShowCatcherTemplate = QueueDestIsCatcher;
@@ -2182,6 +2267,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         _jobFormItem = item;
         _jobForm ??= new JobOptionsForm { ConfirmPurge = ConfirmPurge };
         _jobForm.ShowSpeedInMegabits = ShowSpeedInMegabits;
+        _jobForm.OpenPackExtensions = OpenPackExtensions;
         _jobForm.Applied -= OnJobFormApplied;
         _jobForm.SpeedChanged -= OnJobFormSpeed;
         _jobForm.LoadFrom(item.Job, CatcherTemplates);
@@ -2272,6 +2358,337 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         return file.ShowDialog() == true ? file.FileName : null;
     }
 
+    private IReadOnlyList<string> BrowseFolders(string title, string? current)
+    {
+        var recents = LibraryStore.LoadRecents(_paths);
+        var start = LibraryStore.BrowseStartDir(true, recents, current ?? SourcePath);
+        var folder = new OpenFolderDialog { Title = title, Multiselect = true };
+        if (!string.IsNullOrEmpty(start))
+        {
+            folder.InitialDirectory = start;
+        }
+
+        if (folder.ShowDialog() != true)
+        {
+            return [];
+        }
+
+        if (folder.FolderNames is { Length: > 0 })
+        {
+            return folder.FolderNames.Where(p => !string.IsNullOrWhiteSpace(p)).ToArray();
+        }
+
+        return string.IsNullOrWhiteSpace(folder.FolderName) ? [] : [folder.FolderName];
+    }
+
+    private string? BrowseFile(string title, string? current)
+    {
+        var recents = LibraryStore.LoadRecents(_paths);
+        var start = LibraryStore.BrowseStartDir(true, recents, current ?? SourcePath);
+        var file = new OpenFileDialog
+        {
+            Title = title,
+            CheckFileExists = true,
+            Multiselect = false
+        };
+        if (!string.IsNullOrEmpty(start))
+        {
+            file.InitialDirectory = start;
+        }
+
+        return file.ShowDialog() == true ? file.FileName : null;
+    }
+
+    private List<string> CollectedSources()
+    {
+        var list = SourceFolders.Select(f => f.Path).ToList();
+        if (list.Count == 0 && !string.IsNullOrWhiteSpace(SourcePath))
+        {
+            try
+            {
+                list.Add(PathNormalizer.Normalize(SourcePath));
+            }
+            catch
+            {
+                list.Add(SourcePath.Trim());
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(SourcePath) &&
+                 list.TrueForAll(p => !string.Equals(p, SourcePath, StringComparison.OrdinalIgnoreCase)))
+        {
+            try
+            {
+                var extra = PathNormalizer.Normalize(SourcePath);
+                if (list.TrueForAll(p => !string.Equals(p, extra, StringComparison.OrdinalIgnoreCase)))
+                {
+                    list.Add(extra);
+                }
+            }
+            catch
+            {
+                // typed path is already in the combo as an add-draft; ignore until Add
+            }
+        }
+
+        return list;
+    }
+
+    private List<string> CollectedQueueSources()
+    {
+        var list = QueueSourceFolders.Select(f => f.Path).ToList();
+        if (list.Count == 0 && !string.IsNullOrWhiteSpace(QueueSourcePath))
+        {
+            try
+            {
+                list.Add(PathNormalizer.Normalize(QueueSourcePath));
+            }
+            catch
+            {
+                list.Add(QueueSourcePath.Trim());
+            }
+        }
+
+        return list;
+    }
+
+    private void LoadSourceFolders(IReadOnlyList<string> paths)
+    {
+        SourceFolders.Clear();
+        foreach (var path in paths.Where(p => !string.IsNullOrWhiteSpace(p)))
+        {
+            SourceFolders.Add(new SourceFolderItem(path));
+        }
+
+        if (SourceFolders.Count > 0)
+        {
+            SourcePath = SourceFolders[0].Path;
+        }
+
+        NotifySourceFolders();
+    }
+
+    private void LoadQueueSourceFolders(IReadOnlyList<string> paths)
+    {
+        QueueSourceFolders.Clear();
+        foreach (var path in paths.Where(p => !string.IsNullOrWhiteSpace(p)))
+        {
+            QueueSourceFolders.Add(new SourceFolderItem(path));
+        }
+
+        if (QueueSourceFolders.Count > 0)
+        {
+            QueueSourcePath = QueueSourceFolders[0].Path;
+        }
+
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasQueueSourceFolders)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasQueuePaths)));
+        RaiseQueueDraftBadges();
+    }
+
+    private void AddSourceFromDraft()
+    {
+        if (!string.IsNullOrWhiteSpace(SourcePath))
+        {
+            AddSourcePath(SourcePath);
+        }
+    }
+
+    private void AddQueueSourceFromDraft()
+    {
+        if (!string.IsNullOrWhiteSpace(QueueSourcePath))
+        {
+            AddQueueSourcePath(QueueSourcePath);
+        }
+    }
+
+    private void AddSourcePath(string path)
+    {
+        try
+        {
+            path = PathNormalizer.Normalize(path);
+        }
+        catch
+        {
+            return;
+        }
+
+        if (SourceFolders.Any(f => string.Equals(f.Path, path, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        SourceFolders.Add(new SourceFolderItem(path));
+        if (SourceFolders.Count == 1)
+        {
+            SourcePath = path;
+        }
+
+        NotifySourceFolders();
+    }
+
+    private void AddQueueSourcePath(string path)
+    {
+        try
+        {
+            path = PathNormalizer.Normalize(path);
+        }
+        catch
+        {
+            return;
+        }
+
+        if (QueueSourceFolders.Any(f => string.Equals(f.Path, path, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        QueueSourceFolders.Add(new SourceFolderItem(path));
+        if (QueueSourceFolders.Count == 1)
+        {
+            QueueSourcePath = path;
+        }
+
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasQueueSourceFolders)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasQueuePaths)));
+        RaiseQueueDraftBadges();
+        RaiseRunCommands();
+    }
+
+    private void RemoveSource(SourceFolderItem? item)
+    {
+        if (item is null)
+        {
+            return;
+        }
+
+        SourceFolders.Remove(item);
+        if (SourceFolders.Count == 0)
+        {
+            SourcePath = "";
+        }
+        else if (string.Equals(SourcePath, item.Path, StringComparison.OrdinalIgnoreCase))
+        {
+            SourcePath = SourceFolders[0].Path;
+        }
+
+        NotifySourceFolders();
+    }
+
+    private void RemoveQueueSource(SourceFolderItem? item)
+    {
+        if (item is null)
+        {
+            return;
+        }
+
+        QueueSourceFolders.Remove(item);
+        if (QueueSourceFolders.Count == 0)
+        {
+            QueueSourcePath = "";
+        }
+
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasQueueSourceFolders)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasQueuePaths)));
+        RaiseQueueDraftBadges();
+        RaiseRunCommands();
+    }
+
+    private void ClearSources()
+    {
+        SourceFolders.Clear();
+        SourcePath = "";
+        NotifySourceFolders();
+    }
+
+    private void ClearQueueSources()
+    {
+        QueueSourceFolders.Clear();
+        QueueSourcePath = "";
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasQueueSourceFolders)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasQueuePaths)));
+        RaiseQueueDraftBadges();
+        RaiseRunCommands();
+    }
+
+    private void NotifySourceFolders()
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasSourceFolders)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasPaths)));
+        RaiseLandingPreview();
+        RaiseRunCommands();
+        (ClearSourcesCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (AddSourceCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (RemoveSourceCommand as RelayCommand)?.RaiseCanExecuteChanged();
+    }
+
+    private void OpenPackExtensions() => OpenSettingsRequested?.Invoke();
+
+    private void AddNeverPack()
+    {
+        var ext = PackPolicy.NormalizeExtension(NeverPackDraft);
+        if (ext.Length == 0 || NeverPackExtensions.Contains(ext, StringComparer.OrdinalIgnoreCase))
+        {
+            NeverPackDraft = "";
+            return;
+        }
+
+        NeverPackExtensions.Add(ext);
+        NeverPackDraft = "";
+        SavePackLists();
+    }
+
+    private void RemoveNeverPack()
+    {
+        if (string.IsNullOrEmpty(SelectedNeverPack))
+        {
+            return;
+        }
+
+        NeverPackExtensions.Remove(SelectedNeverPack);
+        SelectedNeverPack = null;
+        SavePackLists();
+    }
+
+    private void ResetNeverPack()
+    {
+        Replace(NeverPackExtensions, PackPolicy.DefaultNeverPackExtensions());
+        SavePackLists();
+    }
+
+    private void AddPackExtension()
+    {
+        var ext = PackPolicy.NormalizeExtension(PackExtensionDraft);
+        if (ext.Length == 0 || PackExtensions.Contains(ext, StringComparer.OrdinalIgnoreCase))
+        {
+            PackExtensionDraft = "";
+            return;
+        }
+
+        PackExtensions.Add(ext);
+        PackExtensionDraft = "";
+        SavePackLists();
+    }
+
+    private void RemovePackExtension()
+    {
+        if (string.IsNullOrEmpty(SelectedPackExtension))
+        {
+            return;
+        }
+
+        PackExtensions.Remove(SelectedPackExtension);
+        SelectedPackExtension = null;
+        SavePackLists();
+    }
+
+    private void SavePackLists()
+    {
+        var settings = AppSettingsStore.Load(_paths);
+        settings.PackExtensions = PackExtensions.ToList();
+        settings.NeverPackExtensions = NeverPackExtensions.ToList();
+        AppSettingsStore.Save(_paths, settings);
+    }
+
     private void RememberPath(bool isSource, string path)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -2333,6 +2750,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         if (existing is not null)
         {
             existing.SourcePath = SourcePath;
+            existing.SourcePaths = CollectedSources().ToList();
             existing.DestinationPath = DestPath;
             existing.Options = BuildOptions();
         }
@@ -2342,6 +2760,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             {
                 Name = name,
                 SourcePath = SourcePath,
+                SourcePaths = CollectedSources().ToList(),
                 DestinationPath = DestPath,
                 Options = BuildOptions()
             });
@@ -2360,6 +2779,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
 
         SourcePath = saved.SourcePath;
+        LoadSourceFolders(saved.SourcePaths is { Count: > 0 } ? saved.SourcePaths : string.IsNullOrWhiteSpace(saved.SourcePath) ? [] : [saved.SourcePath]);
         DestPath = saved.DestinationPath;
         ApplyJobOptions(saved.Options);
         StatusText = $"Loaded saved job “{saved.Name}”.";

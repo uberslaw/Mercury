@@ -17,6 +17,9 @@ public class FileClassifierTests
         Assert.Equal(PayloadKind.DiskImage, FileClassifier.FromExtension("raw.img"));
         Assert.Equal(PayloadKind.Other, FileClassifier.FromExtension("notes.txt"));
         Assert.Equal(PayloadKind.Other, FileClassifier.FromExtension("slide.docx"));
+        Assert.Contains(".mkv", FileClassifier.AllCompressedExtensions());
+        Assert.Contains(".jpg", FileClassifier.AllCompressedExtensions());
+        Assert.True(FileClassifier.IsCompressedExtension("mp4"));
     }
 
     [Fact]

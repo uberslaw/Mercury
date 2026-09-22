@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Text;
 
+using System.IO.Compression;
+
 namespace Mercury;
 
 public sealed class PackSampleResult
