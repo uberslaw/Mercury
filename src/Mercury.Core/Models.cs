@@ -75,8 +75,19 @@ public sealed class JobOptions
     /// <summary>
     /// When packing, copy video/photos/audio/archives/disk images as-is instead of wrapping them in the transport zip.
     /// Default on. If every file is already compressed, skip packing entirely.
+    /// Settings pack/never-pack extension lists override this per extension.
     /// </summary>
     public bool SkipCompressedWhenPacking { get; set; } = true;
+
+    /// <summary>
+    /// Extensions the planner may pack even if they look already-compressed (with or without a leading dot).
+    /// </summary>
+    public List<string> PackExtensions { get; set; } = [];
+
+    /// <summary>
+    /// Extensions that are never packed. Empty means use built-in compressed types (video, photos, audio, archives, ISO).
+    /// </summary>
+    public List<string> NeverPackExtensions { get; set; } = [];
 
     /// <summary>Creation + last-write from source after copy (/COPY:T). Default on — Windows copy otherwise sets dest CreationTime to now.</summary>
     public bool CopyTimestamps { get; set; } = true;
@@ -131,6 +142,8 @@ public sealed class JobOptions
         IgnoreFreeSpaceCheck = other.IgnoreFreeSpaceCheck;
         PackAsZip = other.PackAsZip;
         SkipCompressedWhenPacking = other.SkipCompressedWhenPacking;
+        PackExtensions = [..other.PackExtensions ?? []];
+        NeverPackExtensions = [..other.NeverPackExtensions ?? []];
         CopyTimestamps = other.CopyTimestamps;
         CopyAttributes = other.CopyAttributes;
         CopySecurity = other.CopySecurity;
@@ -165,6 +178,14 @@ public sealed class BandwidthSettings
 
     public double? IdleThrottleBytesPerSecond =>
         IdleThrottleMegabytesPerSecond is > 0 ? IdleThrottleMegabytesPerSecond.Value * 1024 * 1024 : null;
+
+    /// <summary>Extensions to consider packing even if they look already-compressed.</summary>
+    public List<string> PackExtensions { get; set; } = [];
+
+    /// <summary>
+    /// Extensions that are never packed. Null in JSON means seed built-in defaults on load.
+    /// </summary>
+    public List<string>? NeverPackExtensions { get; set; }
 }
 
 public sealed class Job
@@ -172,6 +193,10 @@ public sealed class Job
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
     public string Name { get; set; } = "";
     public string SourcePath { get; set; } = "";
+    /// <summary>
+    /// All source roots for this job. Empty means <see cref="SourcePath"/> only (older jobs / single pick).
+    /// </summary>
+    public List<string> SourcePaths { get; set; } = [];
     public string DestinationPath { get; set; } = "";
     public SourceKind SourceKind { get; set; }
     private JobOptions _options = new();
@@ -319,6 +344,13 @@ public sealed class CopyMapping
     public string DestRoot { get; init; } = "";
     public bool SingleFile { get; init; }
     public string? SingleFileName { get; init; }
+    /// <summary>
+    /// When multiple sources share a job, journal relative paths are prefixed with this unique landing name.
+    /// Empty for a single-source job (unchanged resume keys).
+    /// </summary>
+    public string UniqueRelativePrefix { get; init; } = "";
+    /// <summary>Override transport zip path (Catcher multi-source combined pack).</summary>
+    public string? TransportZipPath { get; init; }
 }
 
 public readonly record struct DirectoryRecord(

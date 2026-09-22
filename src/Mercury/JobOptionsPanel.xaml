@@ -1,7 +1,6 @@
 <UserControl x:Class="Mercury.JobOptionsPanel"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:local="clr-namespace:Mercury">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <StackPanel>
         <StackPanel Visibility="{Binding ShowCatcherTemplate, Converter={StaticResource BoolToVis}}" Margin="0,0,0,8">
             <Grid>
@@ -10,7 +9,7 @@
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock Text="Template" VerticalAlignment="Center"/>
-                <ComboBox Grid.Column="1"
+                <ComboBox Grid.Column="1" Style="{StaticResource OptionsCombo}" Margin="0"
                           ItemsSource="{Binding CatcherTemplates}"
                           SelectedItem="{Binding SelectedCatcherTemplate}"
                           DisplayMemberPath="Display"
@@ -28,9 +27,8 @@
                        Visibility="{Binding ShowLandingPreview, Converter={StaticResource BoolToVis}}"/>
         </StackPanel>
 
-        <Grid Margin="0,4,0,0">
+        <Grid>
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
@@ -38,87 +36,86 @@
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="38"/>
+                <RowDefinition Height="38"/>
             </Grid.RowDefinitions>
 
-            <CheckBox Style="{StaticResource OptionsCheckBox}" Margin="0,0,12,8"
+            <CheckBox Style="{StaticResource OptionsCheckBox}" Margin="0,0,12,0"
                       Content="Start After" IsChecked="{Binding ScheduleEnabled}"
                       ToolTip="Calendar start. Window hours still apply if enabled."/>
-            <DatePicker Grid.Column="1"
-                        SelectedDate="{Binding ScheduledDate}" IsEnabled="{Binding ScheduleEnabled}"
-                        Width="140" Margin="0,0,8,8" VerticalAlignment="Center"
-                        FontSize="{DynamicResource BodyFontSize}"/>
-            <TextBox Grid.Column="2" Style="{StaticResource OptionsField}" Width="64" Margin="0,0,16,8"
-                     Text="{Binding ScheduledTime, UpdateSourceTrigger=PropertyChanged}"
-                     IsEnabled="{Binding ScheduleEnabled}" ToolTip="Time (HH:mm)"/>
-            <TextBlock Grid.Column="4" Style="{StaticResource OptionsLabel}" Text="Overwrite"
-                       VerticalAlignment="Center" Margin="0,0,8,8"/>
-            <ComboBox Grid.Column="5" VerticalAlignment="Center" Margin="0,0,0,8"
-                      HorizontalAlignment="Left"
-                      FontSize="{DynamicResource BodyFontSize}"
-                      local:ComboBoxFit.ToContent="True"
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                <DatePicker Style="{StaticResource OptionsDatePicker}"
+                            SelectedDate="{Binding ScheduledDate}" IsEnabled="{Binding ScheduleEnabled}"/>
+                <TextBox Style="{StaticResource OptionsNarrowField}"
+                         Text="{Binding ScheduledTime, UpdateSourceTrigger=PropertyChanged}"
+                         IsEnabled="{Binding ScheduleEnabled}" ToolTip="Time (HH:mm)"/>
+            </StackPanel>
+            <TextBlock Grid.Column="2" Style="{StaticResource OptionsLabel}" Text="Overwrite"/>
+            <ComboBox Grid.Column="3" Style="{StaticResource OptionsWideCombo}" Margin="0"
                       SelectedIndex="{Binding OverwriteIndex}">
                 <ComboBoxItem>Skip if dest is newer or equal</ComboBoxItem>
                 <ComboBoxItem>Always overwrite</ComboBoxItem>
                 <ComboBoxItem>Never if dest exists</ComboBoxItem>
             </ComboBox>
 
-            <CheckBox Grid.Row="1" Style="{StaticResource OptionsCheckBox}" Margin="0,0,12,8"
+            <CheckBox Grid.Row="1" Style="{StaticResource OptionsCheckBox}" Margin="0,0,12,0"
                       Content="Window" IsChecked="{Binding HoursEnabled}"
                       ToolTip="Pause copying outside this daily window (status: Paused — outside hours)."/>
-            <TextBox Grid.Row="1" Grid.Column="1" Style="{StaticResource OptionsField}" Width="64" Margin="0,0,8,8"
-                     Text="{Binding HoursStart}" ToolTip="Window start (HH:mm)"/>
-            <TextBlock Grid.Row="1" Grid.Column="2" Style="{StaticResource OptionsLabel}" Text="–" Margin="0,0,8,8"/>
-            <TextBox Grid.Row="1" Grid.Column="3" Style="{StaticResource OptionsField}" Width="64" Margin="0,0,16,8"
-                     Text="{Binding HoursEnd}" ToolTip="Window end (HH:mm)"/>
-            <TextBlock Grid.Row="1" Grid.Column="4" Style="{StaticResource OptionsLabel}" Text="Verify"
-                       VerticalAlignment="Center" Margin="0,0,8,8"/>
-            <ComboBox Grid.Row="1" Grid.Column="5" VerticalAlignment="Center" Margin="0,0,0,8"
-                      HorizontalAlignment="Left"
-                      FontSize="{DynamicResource BodyFontSize}"
-                      local:ComboBoxFit.ToContent="True"
+            <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBox Style="{StaticResource OptionsNarrowField}"
+                         Text="{Binding HoursStart}" ToolTip="Window start (HH:mm)"/>
+                <TextBlock Style="{StaticResource OptionsLabel}" Text="–"/>
+                <TextBox Style="{StaticResource OptionsNarrowField}"
+                         Text="{Binding HoursEnd}" ToolTip="Window end (HH:mm)"/>
+            </StackPanel>
+            <TextBlock Grid.Row="1" Grid.Column="2" Style="{StaticResource OptionsLabel}" Text="Verify"/>
+            <ComboBox Grid.Row="1" Grid.Column="3" Style="{StaticResource OptionsWideCombo}" Margin="0"
                       SelectedIndex="{Binding VerifyIndex}">
                 <ComboBoxItem>Quick (size + time)</ComboBoxItem>
                 <ComboBoxItem>Thorough (xxHash64)</ComboBoxItem>
             </ComboBox>
         </Grid>
 
-        <WrapPanel Margin="0,8,0,0" VerticalAlignment="Center">
-            <CheckBox Style="{StaticResource OptionsCheckBox}" Content="Unlimited speed" IsChecked="{Binding UnlimitedSpeed}"/>
-            <TextBlock Style="{StaticResource OptionsLabel}" Text="Max"/>
-            <TextBox Style="{StaticResource OptionsField}" Width="72"
-                     Text="{Binding MaxMBpsText, UpdateSourceTrigger=PropertyChanged}"
-                     IsEnabled="{Binding UnlimitedSpeed, Converter={StaticResource InverseBool}}"
-                     ToolTip="{Binding SpeedToolTip}"/>
-            <TextBlock Style="{StaticResource OptionsLabel}" Text="{Binding SpeedUnitLabel}" Margin="0,0,16,0"/>
-            <CheckBox Style="{StaticResource OptionsCheckBox}"
-                      Content="Dry Run" IsChecked="{Binding DryRun}"
-                      ToolTip="Enumerate only — nothing is written."/>
-            <CheckBox Style="{StaticResource OptionsCheckBox}"
-                      Content="Small Files" IsChecked="{Binding PackAsZip}"
-                      ToolTip="Packs many small files into one stored (uncompressed) transport zip so USB / lots of tiny files write sequentially. Already-compressed files (video, photos, audio, zip/7z/rar, ISO) are copied as-is and not wrapped. Mercury unpacks a normal folder tree at dest and deletes the zip. If every file is already compressed, packing is skipped. Leave off to copy file-by-file."/>
-            <CheckBox Style="{StaticResource OptionsCheckBox}"
-                      Content="Skip Compressed" IsChecked="{Binding SkipCompressedWhenPacking}"
-                      IsEnabled="{Binding PackAsZip}"
-                      ToolTip="Default on with Small Files. Video, photos, audio, zip/7z/rar, ISO, and similar copy as files — not wrapped in the transport zip. If the whole job is already compressed, packing is skipped entirely."/>
-        </WrapPanel>
-        <WrapPanel Margin="0,8,0,0" VerticalAlignment="Center">
-            <CheckBox Style="{StaticResource OptionsCheckBox}"
-                      Content="Ignore Storage Limit" IsChecked="{Binding IgnoreFreeSpaceCheck}"
-                      ToolTip="Still reports Need vs available, but does not abort if the destination is thin-provisioned or can grow."/>
-            <Button Content="RoboFlags" Style="{StaticResource CompactButton}"
-                    Command="{Binding ToggleRoboFlagsCommand}"
-                    Margin="0,0,16,0" VerticalAlignment="Center"
-                    FontSize="{DynamicResource BodyFontSize}"
-                    ToolTip="Robocopy-equivalent copy checkboxes for the native Mercury copier (not robocopy.exe)."/>
-            <TextBlock Style="{StaticResource OptionsLabel}" Text="Retries"/>
-            <TextBox Style="{StaticResource OptionsField}" Width="56"
-                     Text="{Binding RetryCount}"/>
-            <TextBlock Style="{StaticResource OptionsLabel}" Text="Wait (sec)"/>
-            <TextBox Style="{StaticResource OptionsField}" Width="56" Margin="0"
-                     Text="{Binding RetryWait}"/>
-        </WrapPanel>
+        <Grid Margin="0,4,0,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="38"/>
+                <RowDefinition Height="38"/>
+            </Grid.RowDefinitions>
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <CheckBox Style="{StaticResource OptionsCheckBox}" Content="Unlimited speed" IsChecked="{Binding UnlimitedSpeed}"/>
+                <TextBlock Style="{StaticResource OptionsLabel}" Text="Max"/>
+                <TextBox Style="{StaticResource OptionsNarrowField}"
+                         Text="{Binding MaxMBpsText, UpdateSourceTrigger=PropertyChanged}"
+                         IsEnabled="{Binding UnlimitedSpeed, Converter={StaticResource InverseBool}}"
+                         ToolTip="{Binding SpeedToolTip}"/>
+                <TextBlock Style="{StaticResource OptionsLabel}" Text="{Binding SpeedUnitLabel}" Margin="0,0,16,0"/>
+                <CheckBox Style="{StaticResource OptionsCheckBox}"
+                          Content="Dry Run" IsChecked="{Binding DryRun}"
+                          ToolTip="Enumerate only — nothing is written."/>
+                <CheckBox Style="{StaticResource OptionsCheckBox}"
+                          Content="Small Files" IsChecked="{Binding PackAsZip}"
+                          ToolTip="Packs many small files into one stored (uncompressed) transport zip so USB / lots of tiny files write sequentially. Already-compressed files (video, photos, audio, zip/7z/rar, ISO) are copied as-is and not wrapped. Mercury unpacks a normal folder tree at dest and deletes the zip. If every file is already compressed, packing is skipped. Leave off to copy file-by-file."/>
+                <CheckBox Style="{StaticResource OptionsCheckBox}"
+                          Content="Skip Compressed" IsChecked="{Binding SkipCompressedWhenPacking}"
+                          IsEnabled="{Binding PackAsZip}"
+                          ToolTip="Default on with Small Files. Video, photos, audio, zip/7z/rar, ISO, and similar copy as files — not wrapped in the transport zip. If the whole job is already compressed, packing is skipped entirely."/>
+            </StackPanel>
+            <StackPanel Grid.Row="1" Orientation="Horizontal" VerticalAlignment="Center">
+                <CheckBox Style="{StaticResource OptionsCheckBox}"
+                          Content="Ignore Storage Limit" IsChecked="{Binding IgnoreFreeSpaceCheck}"
+                          ToolTip="Still reports Need vs available, but does not abort if the destination is thin-provisioned or can grow."/>
+                <Button Content="RoboFlags" Style="{StaticResource OptionsBoxButton}"
+                        Command="{Binding ToggleRoboFlagsCommand}"
+                        Margin="0,0,16,0"
+                        ToolTip="Robocopy-equivalent copy checkboxes for the native Mercury copier (not robocopy.exe)."/>
+                <TextBlock Style="{StaticResource OptionsLabel}" Text="Retries"/>
+                <TextBox Style="{StaticResource OptionsNarrowField}"
+                         Text="{Binding RetryCount}"/>
+                <TextBlock Style="{StaticResource OptionsLabel}" Text="Wait (sec)"/>
+                <TextBox Style="{StaticResource OptionsNarrowField}" Margin="0"
+                         Text="{Binding RetryWait}"/>
+            </StackPanel>
+        </Grid>
 
         <Border Visibility="{Binding RoboFlagsExpanded, Converter={StaticResource BoolToVis}}"
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"

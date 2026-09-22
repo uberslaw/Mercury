@@ -153,4 +153,166 @@ public static class CopyShape
         mapping.SingleFile
             ? Path.Combine(mapping.DestRoot, mapping.SingleFileName ?? "")
             : mapping.DestRoot;
+
+    /// <summary>
+    /// Resolve every source root against one destination. Two+ folders always land in dest\FolderName
+    /// (even if include is off) so trees do not smash. Duplicate folder names get " (2)", " (3)".
+    /// </summary>
+    public static IReadOnlyList<CopyMapping> ResolveAll(
+        IReadOnlyList<string> sourcePaths,
+        string destPath,
+        bool includeSourceFolderName = true)
+    {
+        if (sourcePaths is null || sourcePaths.Count == 0)
+        {
+            throw new ArgumentException("At least one source is required.", nameof(sourcePaths));
+        }
+
+        var wrap = includeSourceFolderName || sourcePaths.Count > 1;
+        var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var list = new List<CopyMapping>(sourcePaths.Count);
+        var prefix = sourcePaths.Count > 1;
+        foreach (var source in sourcePaths)
+        {
+            var mapping = Resolve(source, destPath, wrap);
+            var destRoot = mapping.DestRoot;
+            if (prefix && mapping.Kind == SourceKind.DriveRoot)
+            {
+                var letter = DriveLabel(mapping.SourceRoot);
+                destRoot = Path.Combine(PathNormalizer.DirectoryPath(destPath), letter);
+            }
+
+            destRoot = UniqueDestRoot(destRoot, used);
+            var uniquePrefix = prefix ? UniquePrefixName(destRoot, destPath, mapping) : "";
+            list.Add(new CopyMapping
+            {
+                Kind = mapping.Kind,
+                SourceRoot = mapping.SourceRoot,
+                DestRoot = destRoot,
+                SingleFile = mapping.SingleFile,
+                SingleFileName = mapping.SingleFileName,
+                UniqueRelativePrefix = uniquePrefix,
+                TransportZipPath = mapping.TransportZipPath
+            });
+        }
+
+        return list;
+    }
+
+    public static string PreviewLandingSummary(
+        IReadOnlyList<string> sourcePaths,
+        string destPath,
+        bool includeSourceFolderName = true)
+    {
+        if (sourcePaths.Count == 0 || string.IsNullOrWhiteSpace(destPath))
+        {
+            return "";
+        }
+
+        if (sourcePaths.Count == 1)
+        {
+            var one = PreviewLandingPath(sourcePaths[0], destPath, includeSourceFolderName);
+            return string.IsNullOrEmpty(one) ? "" : "Will land in: " + one;
+        }
+
+        var wrap = includeSourceFolderName || sourcePaths.Count > 1;
+        var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var parts = new List<string>();
+        foreach (var source in sourcePaths)
+        {
+            var preview = PreviewLandingPath(source, destPath, wrap);
+            if (string.IsNullOrEmpty(preview))
+            {
+                continue;
+            }
+
+            try
+            {
+                if (PathNormalizer.IsDriveRoot(source))
+                {
+                    preview = Path.Combine(PathNormalizer.DirectoryPath(destPath), DriveLabel(source));
+                }
+            }
+            catch
+            {
+                // keep preview
+            }
+
+            preview = UniqueDestRoot(preview, used);
+            parts.Add(preview);
+        }
+
+        if (parts.Count == 0)
+        {
+            return "";
+        }
+
+        var note = includeSourceFolderName
+            ? ""
+            : " (multiple folders keep their names so they do not smash)";
+        return "Will land in: " + string.Join("; ", parts) + note;
+    }
+
+    public static FileRecord WithUniqueRelative(FileRecord record, CopyMapping mapping)
+    {
+        if (string.IsNullOrEmpty(mapping.UniqueRelativePrefix))
+        {
+            return record;
+        }
+
+        record.RelativePath = Path.Combine(mapping.UniqueRelativePrefix, record.RelativePath);
+        return record;
+    }
+
+    private static string UniqueDestRoot(string destRoot, HashSet<string> used)
+    {
+        if (used.Add(destRoot))
+        {
+            return destRoot;
+        }
+
+        var n = 2;
+        while (true)
+        {
+            var candidate = destRoot + " (" + n + ")";
+            if (used.Add(candidate))
+            {
+                return candidate;
+            }
+
+            n++;
+        }
+    }
+
+    private static string UniquePrefixName(string destRoot, string destPath, CopyMapping mapping)
+    {
+        if (mapping.SingleFile)
+        {
+            return mapping.SingleFileName ?? Path.GetFileName(destRoot);
+        }
+
+        try
+        {
+            var dest = PathNormalizer.DirectoryPath(destPath);
+            var rel = Path.GetRelativePath(dest, destRoot);
+            if (!string.IsNullOrWhiteSpace(rel) && rel != "." && !rel.StartsWith(".."))
+            {
+                return rel;
+            }
+        }
+        catch
+        {
+            // fall through
+        }
+
+        var name = Path.GetFileName(destRoot.TrimEnd('\\', '/'));
+        return string.IsNullOrEmpty(name) ? destRoot : name;
+    }
+
+    private static string DriveLabel(string sourceRoot)
+    {
+        var root = Path.GetPathRoot(sourceRoot) ?? "drive";
+        var letter = root.TrimEnd('\\', '/', ':');
+        return string.IsNullOrWhiteSpace(letter) ? "drive" : letter;
+    }
 }

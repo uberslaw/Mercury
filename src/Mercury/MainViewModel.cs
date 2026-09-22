@@ -149,6 +149,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             IdleThrottleText = BandwidthUnit.FormatMegabytes(settings.IdleThrottleMegabytesPerSecond.Value, _showSpeedInMegabits);
         }
 
+        Replace(NeverPackExtensions, settings.NeverPackExtensions ?? PackPolicy.DefaultNeverPackExtensions());
+        Replace(PackExtensions, settings.PackExtensions);
+
         DataPathLabel = paths.IsPortable
             ? (paths.UsedLegacyPortable
                 ? $"Data (beside exe, jobs found): {paths.DataRoot}"
@@ -175,8 +178,18 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         ResumeLastCommand = new RelayCommand(ResumeLast, () => !IsRunning && CanResumeLast);
         BrowseSourceCommand = new RelayCommand(BrowseSource, () => PathsEditable);
         BrowseDestCommand = new RelayCommand(BrowseDest, () => PathsEditable);
-        BrowseQueueSourceCommand = new RelayCommand(BrowseQueueSource);
-        BrowseQueueDestCommand = new RelayCommand(BrowseQueueDest);
+        OpenPackExtensionsCommand = new RelayCommand(OpenPackExtensions);
+        AddSourceCommand = new RelayCommand(AddSourceFromDraft, () => PathsEditable);
+        RemoveSourceCommand = new RelayCommand(p => RemoveSource(p as SourceFolderItem), () => PathsEditable);
+        ClearSourcesCommand = new RelayCommand(ClearSources, () => PathsEditable && SourceFolders.Count > 0);
+        AddQueueSourceCommand = new RelayCommand(AddQueueSourceFromDraft);
+        RemoveQueueSourceCommand = new RelayCommand(p => RemoveQueueSource(p as SourceFolderItem));
+        ClearQueueSourcesCommand = new RelayCommand(ClearQueueSources, () => QueueSourceFolders.Count > 0);
+        AddNeverPackCommand = new RelayCommand(AddNeverPack);
+        RemoveNeverPackCommand = new RelayCommand(RemoveNeverPack);
+        ResetNeverPackCommand = new RelayCommand(ResetNeverPack);
+        AddPackExtensionCommand = new RelayCommand(AddPackExtension);
+        RemovePackExtensionCommand = new RelayCommand(RemovePackExtension);
         PauseAllCommand = new RelayCommand(PauseAll, () => IsRunning && !IsGlobalPaused);
         ResumeAllCommand = new RelayCommand(ResumeAll, () => IsRunning && IsGlobalPaused);
         SaveJobCommand = new RelayCommand(SaveCurrentJob, () => !string.IsNullOrWhiteSpace(SourcePath) && (DestIsCatcher ? SelectedCatcherTemplate is not null : !string.IsNullOrWhiteSpace(DestPath)));

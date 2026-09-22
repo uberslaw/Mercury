@@ -75,7 +75,7 @@ public sealed class ProgressStats
             ? "Retrying deferred files"
             : e.StageName;
         var stageValue = e.StageIndex > 0 && e.StageCount > 0 && !string.IsNullOrWhiteSpace(stageName)
-            ? $"{e.StageIndex} of {e.StageCount} — {stageName}"
+            ? $"{e.StageIndex} of {e.StageCount} — {stageName}:"
             : ProgressHeader.DashOr(stageName);
         var stage = includeStage
             ? new StatPair("Stage", stageValue)

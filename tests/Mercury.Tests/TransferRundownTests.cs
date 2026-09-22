@@ -58,7 +58,7 @@ public class TransferRundownTests
             StageStartedUtc = now.AddSeconds(-8)
         }, now);
 
-        Assert.Equal("Stage: 2 of 6 — Enumerating source", stats.Stage.Display);
+        Assert.Equal("Stage: 2 of 6 — Enumerating source:", stats.Stage.Display);
         Assert.False(stats.Job.HasValue);
         Assert.Equal("Elapsed", stats.Elapsed.Key);
         Assert.Contains("this stage", stats.ThisStage.Key, StringComparison.OrdinalIgnoreCase);
@@ -225,7 +225,7 @@ public class TransferRundownTests
             StageStartedUtc = DateTimeOffset.UtcNow.AddSeconds(-20)
         });
 
-        Assert.Equal("Stage: 6 of 6 — Writing rundown", stats.Stage.Display);
+        Assert.Equal("Stage: 6 of 6 — Writing rundown:", stats.Stage.Display);
         Assert.Equal("80 files/s", stats.Speed.Value);
         Assert.DoesNotContain("—", stats.Eta.Value, StringComparison.Ordinal);
         Assert.InRange(new JobProgress
@@ -263,6 +263,8 @@ public class TransferRundownTests
         Assert.Contains("Job: 2 of 5", progress.Body, StringComparison.Ordinal);
         Assert.Contains("Job n of m is which queue item", progress.Body, StringComparison.Ordinal);
         Assert.Contains("Elapsed and ETA sit in the top-right", progress.Body, StringComparison.Ordinal);
+        Assert.Contains("Keys are bold", progress.Body, StringComparison.Ordinal);
+        Assert.Contains("job 2 of 2 at <1% cannot show Overall 100%", progress.Body, StringComparison.Ordinal);
         Assert.Contains("Start, Pause, Pause after this file, and Stop sit under that file name", progress.Body, StringComparison.Ordinal);
         Assert.Contains("Start reads Resume when paused or when Source/Dest match a stopped job", progress.Body, StringComparison.Ordinal);
         Assert.Contains("Rundown running in background", HelpDocument.Sections.Single(s => s.Id == "console").Body, StringComparison.Ordinal);

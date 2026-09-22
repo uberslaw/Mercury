@@ -290,56 +290,51 @@
                                 <local:JobOptionsPanel/>
                             </GroupBox>
                             <GroupBox Grid.Column="1" Header="Global" Margin="0" VerticalAlignment="Top"
-                                      MinWidth="280">
+                                      Width="340" HorizontalAlignment="Right">
                                 <StackPanel>
-                                    <CheckBox Style="{StaticResource OptionsCheckBox}" Margin="0,0,0,10"
+                                    <CheckBox Style="{StaticResource OptionsCheckBox}" Margin="0,0,0,8"
                                               Content="MB/s or Mbps"
                                               IsChecked="{Binding ShowSpeedInMegabits}"
                                               ToolTip="When on, Min / Max / Throttle boxes and Progress Speed use megabits per second (1 MB/s = 8 Mbps). Stored caps stay MB/s."/>
-                                    <Grid>
+                                    <Grid HorizontalAlignment="Stretch">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
                                         <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto"/>
-                                            <RowDefinition Height="Auto"/>
-                                            <RowDefinition Height="Auto"/>
-                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="38"/>
+                                            <RowDefinition Height="38"/>
+                                            <RowDefinition Height="38"/>
+                                            <RowDefinition Height="38"/>
                                         </Grid.RowDefinitions>
                                         <TextBlock Style="{StaticResource OptionsLabel}" Text="Min"
-                                                   VerticalAlignment="Center" Margin="0,0,8,8"/>
-                                        <TextBox Grid.Column="1" Style="{StaticResource OptionsField}" Width="72"
-                                                 Margin="0,0,8,8"
+                                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                        <TextBox Grid.Column="1" Style="{StaticResource OptionsNarrowField}" Margin="0,0,8,0"
                                                  Text="{Binding GlobalMinText, UpdateSourceTrigger=PropertyChanged}"
                                                  ToolTip="Do not throttle the aggregate below this when work is available. Applies immediately."/>
-                                        <TextBlock Grid.Column="2" Style="{StaticResource OptionsLabel}"
-                                                   Text="{Binding SpeedUnitLabel}" Margin="0,0,0,8"
-                                                   VerticalAlignment="Center"/>
-                                        <CheckBox Grid.Row="1" Style="{StaticResource OptionsCheckBox}" Margin="0,0,0,8"
+                                        <TextBlock Grid.Column="2" Style="{StaticResource OptionsLabel}" Margin="0"
+                                                   Text="{Binding SpeedUnitLabel}"/>
+                                        <CheckBox Grid.Row="1" Style="{StaticResource OptionsCheckBox}" Margin="0"
                                                   Content="Unlimited" IsChecked="{Binding GlobalMaxUnlimited}"
                                                   ToolTip="No global max. Per-job Max still applies."/>
                                         <TextBlock Grid.Row="2" Style="{StaticResource OptionsLabel}" Text="Max"
-                                                   VerticalAlignment="Center" Margin="0,0,8,8"/>
-                                        <TextBox Grid.Row="2" Grid.Column="1" Style="{StaticResource OptionsField}" Width="72"
-                                                 Margin="0,0,8,8"
+                                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                        <TextBox Grid.Row="2" Grid.Column="1" Style="{StaticResource OptionsNarrowField}" Margin="0,0,8,0"
                                                  Text="{Binding GlobalMaxText, UpdateSourceTrigger=PropertyChanged}"
                                                  IsEnabled="{Binding GlobalMaxUnlimited, Converter={StaticResource InverseBool}}"
                                                  ToolTip="Applies immediately to running jobs."/>
-                                        <TextBlock Grid.Row="2" Grid.Column="2" Style="{StaticResource OptionsLabel}"
-                                                   Text="{Binding SpeedUnitLabel}" Margin="0,0,0,8"
-                                                   VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Row="2" Grid.Column="2" Style="{StaticResource OptionsLabel}" Margin="0"
+                                                   Text="{Binding SpeedUnitLabel}"/>
                                         <CheckBox Grid.Row="3" Style="{StaticResource OptionsCheckBox}" Margin="0,0,8,0"
                                                   Content="Throttle Active PC" IsChecked="{Binding IdleThrottleEnabled}"
                                                   ToolTip="When other programs are using the PC (CPU above about 18%, excluding Mercury’s copy when possible), cap every job to this speed. Idle uses Unlimited / Max. Applies immediately — no restart."/>
-                                        <TextBox Grid.Row="3" Grid.Column="1" Style="{StaticResource OptionsField}" Width="72"
-                                                 Margin="0,0,8,0"
+                                        <TextBox Grid.Row="3" Grid.Column="1" Style="{StaticResource OptionsNarrowField}" Margin="0,0,8,0"
                                                  Text="{Binding IdleThrottleText, UpdateSourceTrigger=PropertyChanged}"
                                                  IsEnabled="{Binding IdleThrottleEnabled}"
                                                  ToolTip="Speed while the PC is busy. Leave Throttle Active PC off to use only Unlimited / Max."/>
-                                        <TextBlock Grid.Row="3" Grid.Column="2" Style="{StaticResource OptionsLabel}"
-                                                   Text="{Binding SpeedUnitLabel}" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Row="3" Grid.Column="2" Style="{StaticResource OptionsLabel}" Margin="0"
+                                                   Text="{Binding SpeedUnitLabel}"/>
                                     </Grid>
                                 </StackPanel>
                             </GroupBox>

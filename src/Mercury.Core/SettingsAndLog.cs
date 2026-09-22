@@ -17,7 +17,9 @@ public static class AppSettingsStore
             if (File.Exists(paths.SettingsFile))
             {
                 var json = File.ReadAllText(paths.SettingsFile);
-                return JsonSerializer.Deserialize<BandwidthSettings>(json, Json) ?? new BandwidthSettings();
+                var loaded = JsonSerializer.Deserialize<BandwidthSettings>(json, Json) ?? new BandwidthSettings();
+                SeedPackLists(loaded);
+                return loaded;
             }
         }
         catch
@@ -25,13 +27,25 @@ public static class AppSettingsStore
             // defaults
         }
 
-        return new BandwidthSettings();
+        var fresh = new BandwidthSettings();
+        SeedPackLists(fresh);
+        return fresh;
     }
 
     public static void Save(AppPaths paths, BandwidthSettings settings)
     {
         Directory.CreateDirectory(paths.DataRoot);
+        SeedPackLists(settings);
+        settings.PackExtensions = PackPolicy.NormalizeList(settings.PackExtensions);
+        settings.NeverPackExtensions = PackPolicy.NormalizeList(settings.NeverPackExtensions);
         File.WriteAllText(paths.SettingsFile, JsonSerializer.Serialize(settings, Json));
+    }
+
+    private static void SeedPackLists(BandwidthSettings settings)
+    {
+        settings.PackExtensions = PackPolicy.NormalizeList(settings.PackExtensions);
+        settings.NeverPackExtensions ??= PackPolicy.DefaultNeverPackExtensions();
+        settings.NeverPackExtensions = PackPolicy.NormalizeList(settings.NeverPackExtensions);
     }
 
     public static string? LoadLastJobId(AppPaths paths)

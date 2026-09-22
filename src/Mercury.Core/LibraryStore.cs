@@ -19,6 +19,7 @@ public sealed class SavedJob
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
     public string Name { get; set; } = "";
     public string SourcePath { get; set; } = "";
+    public List<string> SourcePaths { get; set; } = [];
     public string DestinationPath { get; set; } = "";
     public JobOptions Options { get; set; } = new();
 }

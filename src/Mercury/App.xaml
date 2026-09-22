@@ -53,6 +53,8 @@
         <sys:Double x:Key="LabelFontSize">15</sys:Double>
         <sys:Double x:Key="OptionsFontSize">15</sys:Double>
         <sys:Double x:Key="ControlMinHeight">30</sys:Double>
+        <sys:Double x:Key="OptionsNarrowWidth">72</sys:Double>
+        <sys:Double x:Key="OptionsWideWidth">248</sys:Double>
         <Thickness x:Key="ControlPadding">8,5,8,5</Thickness>
         <FontFamily x:Key="ValueFontFamily">Segoe UI</FontFamily>
         <sys:Double x:Key="ValueFontSize">15</sys:Double>
@@ -186,6 +188,7 @@
             <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="{DynamicResource ControlPadding}"/>
+            <Setter Property="Height" Value="{DynamicResource ControlMinHeight}"/>
             <Setter Property="MinHeight" Value="{DynamicResource ControlMinHeight}"/>
             <Setter Property="CaretBrush" Value="{DynamicResource TextBrush}"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
@@ -211,6 +214,31 @@
             <Setter Property="FontFamily" Value="{DynamicResource BodyFontFamily}"/>
             <Setter Property="FontSize" Value="{DynamicResource BodyFontSize}"/>
         </Style>
+        <Style TargetType="ComboBox">
+            <Setter Property="Background" Value="{DynamicResource InputBackgroundBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="{DynamicResource ControlPadding}"/>
+            <Setter Property="Height" Value="{DynamicResource ControlMinHeight}"/>
+            <Setter Property="MinHeight" Value="{DynamicResource ControlMinHeight}"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="FontFamily" Value="{DynamicResource BodyFontFamily}"/>
+            <Setter Property="FontSize" Value="{DynamicResource BodyFontSize}"/>
+        </Style>
+        <Style TargetType="DatePicker">
+            <Setter Property="FontFamily" Value="{DynamicResource BodyFontFamily}"/>
+            <Setter Property="FontSize" Value="{DynamicResource BodyFontSize}"/>
+            <Setter Property="Height" Value="{DynamicResource ControlMinHeight}"/>
+            <Setter Property="MinHeight" Value="{DynamicResource ControlMinHeight}"/>
+            <Setter Property="Padding" Value="{DynamicResource ControlPadding}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style TargetType="DatePickerTextBox">
+            <Setter Property="Padding" Value="6,0"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
         <Style x:Key="OptionsLabel" TargetType="TextBlock">
             <Setter Property="VerticalAlignment" Value="Center"/>
             <Setter Property="FontFamily" Value="{DynamicResource BodyFontFamily}"/>
@@ -228,23 +256,41 @@
         </Style>
         <Style x:Key="OptionsField" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
             <Setter Property="FontSize" Value="{DynamicResource BodyFontSize}"/>
+            <Setter Property="Height" Value="{DynamicResource ControlMinHeight}"/>
             <Setter Property="MinHeight" Value="{DynamicResource ControlMinHeight}"/>
+            <Setter Property="Padding" Value="{DynamicResource ControlPadding}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+        </Style>
+        <Style x:Key="OptionsNarrowField" TargetType="TextBox" BasedOn="{StaticResource OptionsField}">
+            <Setter Property="Width" Value="{DynamicResource OptionsNarrowWidth}"/>
+            <Setter Property="TextAlignment" Value="Right"/>
+        </Style>
+        <Style x:Key="OptionsCombo" TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+            <Setter Property="Height" Value="{DynamicResource ControlMinHeight}"/>
+            <Setter Property="MinHeight" Value="{DynamicResource ControlMinHeight}"/>
+            <Setter Property="Padding" Value="{DynamicResource ControlPadding}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+        </Style>
+        <Style x:Key="OptionsWideCombo" TargetType="ComboBox" BasedOn="{StaticResource OptionsCombo}">
+            <Setter Property="Width" Value="{DynamicResource OptionsWideWidth}"/>
+            <Setter Property="HorizontalAlignment" Value="Left"/>
+        </Style>
+        <Style x:Key="OptionsDatePicker" TargetType="DatePicker" BasedOn="{StaticResource {x:Type DatePicker}}">
+            <Setter Property="Height" Value="{DynamicResource ControlMinHeight}"/>
+            <Setter Property="MinHeight" Value="{DynamicResource ControlMinHeight}"/>
+            <Setter Property="Width" Value="{DynamicResource OptionsWideWidth}"/>
+            <Setter Property="Padding" Value="{DynamicResource ControlPadding}"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
             <Setter Property="Margin" Value="0,0,8,0"/>
         </Style>
-        <Style TargetType="ComboBox">
-            <Setter Property="Background" Value="{DynamicResource InputBackgroundBrush}"/>
-            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+        <Style x:Key="OptionsBoxButton" TargetType="Button" BasedOn="{StaticResource CompactButton}">
+            <Setter Property="Height" Value="{DynamicResource ControlMinHeight}"/>
+            <Setter Property="MinHeight" Value="{DynamicResource ControlMinHeight}"/>
             <Setter Property="Padding" Value="{DynamicResource ControlPadding}"/>
-            <Setter Property="MinHeight" Value="{DynamicResource ControlMinHeight}"/>
-            <Setter Property="FontFamily" Value="{DynamicResource BodyFontFamily}"/>
-            <Setter Property="FontSize" Value="{DynamicResource BodyFontSize}"/>
-        </Style>
-        <Style TargetType="DatePicker">
-            <Setter Property="FontFamily" Value="{DynamicResource BodyFontFamily}"/>
-            <Setter Property="FontSize" Value="{DynamicResource BodyFontSize}"/>
-            <Setter Property="MinHeight" Value="{DynamicResource ControlMinHeight}"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
         <Style TargetType="TabControl">

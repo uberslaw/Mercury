@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO.Compression;
 using System.IO.Hashing;
 
 namespace Mercury;
@@ -32,8 +33,29 @@ public sealed class CopyEngine : ICopyEngine
         }
 
         var destForShape = catcher is null ? job.DestinationPath : journal.Directory;
-        var mapping = CopyShape.Resolve(job.SourcePath, destForShape, job.Options.IncludeSourceFolderName);
-        job.SourceKind = mapping.Kind;
+        var mappings = JobSources.Resolve(job, destForShape, job.Options.IncludeSourceFolderName).ToList();
+        if (mappings.Count == 0)
+        {
+            throw new DirectoryNotFoundException("No source folders on this job.");
+        }
+
+        if (catcher is not null && mappings.Count > 1)
+        {
+            var combinedZip = Path.Combine(journal.Directory, "mercury-send.zip");
+            mappings = mappings.Select(m => new CopyMapping
+            {
+                Kind = m.Kind,
+                SourceRoot = m.SourceRoot,
+                DestRoot = m.DestRoot,
+                SingleFile = m.SingleFile,
+                SingleFileName = m.SingleFileName,
+                UniqueRelativePrefix = m.UniqueRelativePrefix,
+                TransportZipPath = combinedZip
+            }).ToList();
+        }
+
+        var mapping = PackDestination(job, mappings, journal.Directory);
+        job.SourceKind = mappings.Count == 1 ? mappings[0].Kind : SourceKind.Folder;
         job.VolumeSerial ??= VolumeInfo.GetSerial(job.SourcePath);
 
         if (job.StartedUtc is null)
@@ -46,7 +68,7 @@ public sealed class CopyEngine : ICopyEngine
             job.Options.PackAsZip = true;
         }
 
-        var pack = catcher is not null ? !mapping.SingleFile : ZipPack.Applies(job, mapping);
+        var pack = catcher is not null ? mappings.All(m => !m.SingleFile) : mappings.Any(m => ZipPack.Applies(job, m));
         var totals = journal.Totals();
         var hasJournal = totals.Files > 0;
         var stages = CopyPipeline.For(job, hasJournal, pack);
@@ -62,7 +84,7 @@ public sealed class CopyEngine : ICopyEngine
                 catcher is null ? "Preparing destination…" : "Preparing Catcher send…");
             journal.SaveJob(job);
             JobHeartbeat.Write(journal, job.Id, 0, null);
-            await PreflightAsync(job, mapping, log, name, cancellationToken).ConfigureAwait(false);
+            await PreflightAsync(job, mappings, mapping, log, name, cancellationToken).ConfigureAwait(false);
 
             if (!hasJournal)
             {
@@ -71,7 +93,10 @@ public sealed class CopyEngine : ICopyEngine
                 var exclude = new List<string>();
                 if (pack)
                 {
-                    exclude.AddRange(ZipPack.ExcludePaths(mapping));
+                    foreach (var map in mappings)
+                    {
+                        exclude.AddRange(ZipPack.ExcludePaths(map));
+                    }
                 }
 
                 var found = 0;
@@ -80,7 +105,8 @@ public sealed class CopyEngine : ICopyEngine
                 var inventory = new PayloadInventory();
                 var peek = new MagicPeekBudget();
                 var folders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                foreach (var record in SourceWalker.Walk(mapping, exclude, job.Options))
+                var uniquePrefix = mappings.Count > 1;
+                foreach (var record in SourceWalker.WalkAll(mappings, exclude, job.Options, uniquePrefix))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     var kind = FileClassifier.Classify(record.SourcePath, record.Size, peek);
@@ -155,11 +181,14 @@ public sealed class CopyEngine : ICopyEngine
                     var exclude = new List<string>();
                     if (pack)
                     {
-                        exclude.AddRange(ZipPack.ExcludePaths(mapping));
+                        foreach (var map in mappings)
+                        {
+                            exclude.AddRange(ZipPack.ExcludePaths(map));
+                        }
                     }
 
                     var scan = JournalReconcile.Scan(
-                        mapping,
+                        mappings,
                         journal,
                         job.Options,
                         exclude,
@@ -168,7 +197,8 @@ public sealed class CopyEngine : ICopyEngine
                             file,
                             filesTotal: Math.Max(seen, totals.Files),
                             bytesTotal: totals.Bytes),
-                        cancellationToken);
+                        cancellationToken,
+                        uniquePrefix: mappings.Count > 1);
                     log.Info(job.Id, name,
                         $"Source check: {scan.Added} new, {scan.Changed} changed, {scan.Removed} gone, {scan.Unchanged} unchanged.");
                     totals = journal.Totals();
@@ -196,17 +226,34 @@ public sealed class CopyEngine : ICopyEngine
 
             io ??= UnbufferedIoSession.Create(job.Options, new PayloadInventory(), budget);
 
+            var listed = journal.GetFiles();
+            var plan = TransferPlanner.Build(job, listed, mappings);
             if (pack && catcher is null)
             {
-                var listed = journal.GetFiles();
-                if (!NeedsTransportZip(job, listed))
+                if (!plan.HasPacking && !NeedsTransportZip(job, listed))
                 {
                     pack = false;
                     log.Info(job.Id, name,
                         $"All {listed.Count} file(s) are already compressed (video, photos, audio, archives, disk images) — copying as-is, no transport zip.");
                 }
+            }
 
-                reporter.ReplaceStages(CopyPipeline.For(job, hasJournalFiles: true, pack));
+            foreach (var pocket in plan.PackGroups.SelectMany(g => g.Pockets).Where(p => p.Disposition == PackDisposition.Sample).ToList())
+            {
+                var sampleSize = PackSample.ClampSampleBytes(TransferPlanner.SampleBytes, pocket.TotalBytes);
+                log.Info(job.Id, name,
+                    $"Sampling pocket {pocket.Id} ({ByteFormatter.ToString(Math.Min(sampleSize, pocket.TotalBytes))}) to see if packing helps.");
+                var sample = PackSample.Evaluate(pocket.Files, sampleSize);
+                log.Info(job.Id, name, sample.FormatLine());
+                TransferPlanner.ApplySample(plan, pocket, sample);
+            }
+
+            pack = catcher is not null ? mappings.All(m => !m.SingleFile) : plan.HasPacking || ZipPack.AppliesAny(job, mappings);
+            var overlap = pack && catcher is null && plan.Stream.Count > 0 && plan.HasPacking;
+            reporter.ReplaceStages(CopyPipeline.For(job, hasJournalFiles: true, pack, overlap));
+            if (!string.IsNullOrWhiteSpace(plan.Summary))
+            {
+                log.Info(job.Id, name, plan.Summary);
             }
 
             if (job.Options.DryRun)
@@ -222,144 +269,86 @@ public sealed class CopyEngine : ICopyEngine
 
             if (catcher is null)
             {
-                Directory.CreateDirectory(mapping.DestRoot);
+                foreach (var map in mappings)
+                {
+                    var destDir = map.SingleFile
+                        ? Path.GetDirectoryName(CopyShape.LandingPath(map))
+                        : map.DestRoot;
+                    if (!string.IsNullOrEmpty(destDir))
+                    {
+                        Directory.CreateDirectory(destDir);
+                    }
+                }
             }
 
             var speed = new SpeedTracker();
-            if (pack)
+            if (pack && overlap)
+            {
+                reporter.Enter(CopyStageKind.Transferring, JobStatus.Copying, "Copying and packing…");
+                journal.SaveJob(job);
+                await RunOverlappedAsync(
+                        job, mappings, plan, journal, budget, pause, log, name, reporter, cloud, speed, cancellationToken, io)
+                    .ConfigureAwait(false);
+            }
+            else if (pack)
             {
                 reporter.Enter(CopyStageKind.Transferring, JobStatus.Copying, "Packing…");
                 journal.SaveJob(job);
-                await PackWithRetriesAsync(job, mapping, journal, budget, pause, log, name, reporter, cloud, speed, cancellationToken, io)
-                    .ConfigureAwait(false);
-                var zipPath = ZipPack.ZipPath(mapping);
-                if (catcher is null && File.Exists(zipPath))
+                foreach (var group in PackTargets(job, mapping, plan, catcher is not null))
                 {
-                    reporter.Enter(CopyStageKind.Unpacking, JobStatus.Copying, "Unpacking…");
-                    journal.SaveJob(job);
-                    await UnpackWithRetriesAsync(
-                            job, mapping, journal, budget, pause, log, name, reporter, cloud, speed, cancellationToken, io)
+                    await PackWithRetriesAsync(
+                            job, group.Mapping, journal, budget, pause, log, name, reporter, cloud, speed, cancellationToken, io,
+                            onlyThese: catcher is not null ? null : group.Files,
+                            copyLoose: catcher is null && plan.Stream.Count > 0 && !overlap,
+                            compression: group.Compression)
                         .ConfigureAwait(false);
                 }
-                else if (catcher is null)
+
+                if (catcher is null)
                 {
-                    log.Info(job.Id, name, "No transport zip to unpack — already-compressed files were copied as-is.");
+                    var anyZip = PackTargets(job, mapping, plan, false)
+                        .Any(g => File.Exists(ZipPack.ZipPath(g.Mapping)));
+                    if (anyZip)
+                    {
+                        reporter.Enter(CopyStageKind.Unpacking, JobStatus.Copying, "Unpacking…");
+                        journal.SaveJob(job);
+                        foreach (var group in PackTargets(job, mapping, plan, false))
+                        {
+                            if (!File.Exists(ZipPack.ZipPath(group.Mapping)))
+                            {
+                                continue;
+                            }
+
+                            await UnpackWithRetriesAsync(
+                                    job, group.Mapping, journal, budget, pause, log, name, reporter, cloud, speed, cancellationToken, io)
+                                .ConfigureAwait(false);
+                        }
+                    }
+                    else
+                    {
+                        log.Info(job.Id, name, "No transport zip to unpack — already-compressed files were copied as-is.");
+                    }
                 }
             }
             else if (catcher is null)
             {
                 reporter.Enter(CopyStageKind.Transferring, JobStatus.Copying, "Copying…");
                 journal.SaveJob(job);
-                var deferred = new DeferredRetrySession(job, journal, log, name);
                 var pending = journal.GetFiles()
                     .Where(f => f.Status is FileCopyStatus.Pending or FileCopyStatus.Failed or FileCopyStatus.Deferred)
                     .ToList();
-                var fileCount = Math.Max(pending.Count, totals.Files);
-                var totalBytes = totals.Bytes;
-                foreach (var file in pending.ToList())
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    await pause.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
-                    await WaitForHoursAsync(job, pause, log, name, reporter, cloud, cancellationToken).ConfigureAwait(false);
-
-                    reporter.Update($"Copying {file.RelativePath}", file.RelativePath, speed);
-
-                    try
-                    {
-                        if (ShouldSkip(file, job.Options))
-                        {
-                            TryJournal(journal, () => journal.MarkSkipped(file.RelativePath, "Destination is newer or equal"), log, job.Id, name);
-                            log.Info(job.Id, name, $"Skip {file.RelativePath} (dest newer or equal)");
-                            speed.Add(file.Size);
-                            continue;
-                        }
-
-                        pause.BeginFile(file.RelativePath, file.Size);
-                        var copied = await CopyWithRetriesAsync(job, file, journal, budget, pause, log, name, speed, cancellationToken, io)
-                            .ConfigureAwait(false);
-                        pause.EndFile();
-                        if (copied.ok)
-                        {
-                            if (!TryJournal(journal, () => journal.MarkCopied(file.RelativePath, copied.hash), log, job.Id, name))
-                            {
-                                deferred.Defer(file, "Journal error after copy — deferred for retry");
-                            }
-                            else
-                            {
-                                deferred.Remove(file.RelativePath);
-                                log.Info(job.Id, name, $"Copied {file.RelativePath} ({ByteFormatter.ToString(file.Size)})");
-                            }
-                        }
-                        else
-                        {
-                            var error = copied.error ?? "Copy failed after retries";
-                            if (copied.transient || ProgressHeader.IsExceptionDump(error))
-                            {
-                                deferred.Defer(file, error);
-                            }
-                            else
-                            {
-                                if (!TryJournal(journal, () =>
-                                    {
-                                        journal.MarkFailed(file.RelativePath, error, job.Options.RetryCount);
-                                        journal.AddIssue(new TransferIssue
-                                        {
-                                            RelativePath = file.RelativePath,
-                                            Kind = IssueKind.CopyError,
-                                            Message = error
-                                        });
-                                    }, log, job.Id, name))
-                                {
-                                    deferred.Defer(file, error);
-                                }
-                                else
-                                {
-                                    log.Error(job.Id, name, $"Failed {file.RelativePath}: {error}");
-                                }
-                            }
-                        }
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        throw;
-                    }
-                    catch (Exception ex)
-                    {
-                        pause.EndFile();
-                        var error = ProgressHeader.DescribeFileError(ex);
-                        log.Error(job.Id, name, $"File error {file.RelativePath}: {error}");
-                        deferred.Defer(file, error);
-                    }
-
-                    try
-                    {
-                        await PauseAfterFileIfRequestedAsync(job, journal, pause, log, name, file.RelativePath, reporter, cancellationToken)
-                            .ConfigureAwait(false);
-                        await RetryDeferredCopyAsync(
-                                job, journal, deferred, budget, pause, log, name, reporter, speed, fileCount, totalBytes,
-                                afterFile: true, endOfPass: false, cancellationToken, io)
-                            .ConfigureAwait(false);
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        throw;
-                    }
-                    catch (Exception ex)
-                    {
-                        log.Error(job.Id, name, "Continuing after file-level error: " + ProgressHeader.DescribeFileError(ex));
-                    }
-                }
-
-                await RetryDeferredCopyAsync(
-                        job, journal, deferred, budget, pause, log, name, reporter, speed, fileCount, totalBytes,
-                        afterFile: false, endOfPass: true, cancellationToken, io)
+                await CopyPendingListAsync(
+                        job, journal, budget, pause, log, name, reporter, cloud, speed, pending, totals, cancellationToken, io,
+                        markUnpacked: false)
                     .ConfigureAwait(false);
-                deferred.FinalizeFailures();
             }
 
             if (catcher is null)
             {
-                FileMetadata.FinishDestination(job, mapping, journal, log, name);
+                foreach (var map in mappings)
+                {
+                    FileMetadata.FinishDestination(job, map, journal, log, name);
+                }
             }
 
             if (catcher is not null)
@@ -512,15 +501,19 @@ public sealed class CopyEngine : ICopyEngine
 
     private static async Task PreflightAsync(
         Job job,
+        IReadOnlyList<CopyMapping> mappings,
         CopyMapping mapping,
         IJobLog log,
         string name,
         CancellationToken cancellationToken)
     {
-        var timeout = PathProbe.TimeoutFor(job.SourcePath);
-        if (!await PathProbe.ExistsAsync(job.SourcePath, timeout, cancellationToken).ConfigureAwait(false))
+        foreach (var source in JobSources.Roots(job))
         {
-            throw new DirectoryNotFoundException($"Source not found: {job.SourcePath}");
+            var timeout = PathProbe.TimeoutFor(source);
+            if (!await PathProbe.ExistsAsync(source, timeout, cancellationToken).ConfigureAwait(false))
+            {
+                throw new DirectoryNotFoundException($"Source not found: {source}");
+            }
         }
 
         var probeRoot = mapping.DestRoot;
@@ -607,12 +600,7 @@ public sealed class CopyEngine : ICopyEngine
             return true;
         }
 
-        if (!job.Options.PackAsZip || !job.Options.SkipCompressedWhenPacking)
-        {
-            return false;
-        }
-
-        return CompressedMedia.IsAlreadyCompressed(file, peek);
+        return PackPolicy.ShouldSkipPacking(file, job.Options, peek);
     }
 
     private static bool NeedsTransportZip(Job job, IReadOnlyList<FileRecord> files)
@@ -624,6 +612,245 @@ public sealed class CopyEngine : ICopyEngine
 
         var peek = MagicPeekBudget.ForPackSkip();
         return files.Any(f => f.Status != FileCopyStatus.Skipped && !CopyBesideZip(job, f, peek));
+    }
+
+    private static CopyMapping PackDestination(Job job, IReadOnlyList<CopyMapping> mappings, string journalDir)
+    {
+        if (job.Catcher is not null && mappings.Count > 1)
+        {
+            return new CopyMapping
+            {
+                Kind = SourceKind.Folder,
+                SourceRoot = mappings[0].SourceRoot,
+                DestRoot = journalDir,
+                TransportZipPath = Path.Combine(journalDir, "mercury-send.zip")
+            };
+        }
+
+        return mappings[0];
+    }
+
+    private static IReadOnlyList<PackGroup> PackTargets(Job job, CopyMapping packMapping, TransferPlan plan, bool catcher)
+    {
+        if (catcher)
+        {
+            return [new PackGroup { Mapping = packMapping }];
+        }
+
+        if (plan.PackGroups.Count > 0)
+        {
+            return plan.PackGroups;
+        }
+
+        return [new PackGroup { Mapping = packMapping }];
+    }
+
+    private static async Task RunOverlappedAsync(
+        Job job,
+        IReadOnlyList<CopyMapping> mappings,
+        TransferPlan plan,
+        JobJournal journal,
+        BandwidthBudget budget,
+        PauseGate pause,
+        IJobLog log,
+        string name,
+        JobProgressReporter reporter,
+        bool cloud,
+        SpeedTracker speed,
+        CancellationToken cancellationToken,
+        UnbufferedIoSession? io)
+    {
+        var totals = journal.Totals();
+        var stream = plan.Stream
+            .Where(f => f.Status is FileCopyStatus.Pending or FileCopyStatus.Failed or FileCopyStatus.Deferred)
+            .ToList();
+        var packTask = PackGroupsAsync(
+            job, plan, journal, budget, pause, log, name, reporter, cloud, speed, cancellationToken, io);
+        try
+        {
+            await CopyPendingListAsync(
+                    job, journal, budget, pause, log, name, reporter, cloud, speed, stream, totals, cancellationToken, io,
+                    markUnpacked: true)
+                .ConfigureAwait(false);
+            await packTask.ConfigureAwait(false);
+        }
+        catch
+        {
+            try
+            {
+                await packTask.ConfigureAwait(false);
+            }
+            catch
+            {
+                // primary exception below
+            }
+
+            throw;
+        }
+
+        reporter.Enter(CopyStageKind.Unpacking, JobStatus.Copying, "Unpacking…");
+        journal.SaveJob(job);
+        foreach (var group in plan.PackGroups)
+        {
+            if (!File.Exists(ZipPack.ZipPath(group.Mapping)))
+            {
+                continue;
+            }
+
+            await UnpackWithRetriesAsync(
+                    job, group.Mapping, journal, budget, pause, log, name, reporter, cloud, speed, cancellationToken, io)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private static async Task PackGroupsAsync(
+        Job job,
+        TransferPlan plan,
+        JobJournal journal,
+        BandwidthBudget budget,
+        PauseGate pause,
+        IJobLog log,
+        string name,
+        JobProgressReporter reporter,
+        bool cloud,
+        SpeedTracker speed,
+        CancellationToken cancellationToken,
+        UnbufferedIoSession? io)
+    {
+        foreach (var group in plan.PackGroups)
+        {
+            await PackWithRetriesAsync(
+                    job, group.Mapping, journal, budget, pause, log, name, reporter, cloud, speed, cancellationToken, io,
+                    onlyThese: group.Files,
+                    copyLoose: false,
+                    compression: group.Compression)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private static async Task CopyPendingListAsync(
+        Job job,
+        JobJournal journal,
+        BandwidthBudget budget,
+        PauseGate pause,
+        IJobLog log,
+        string name,
+        JobProgressReporter reporter,
+        bool cloud,
+        SpeedTracker speed,
+        IReadOnlyList<FileRecord> pending,
+        FileTotals totals,
+        CancellationToken cancellationToken,
+        UnbufferedIoSession? io,
+        bool markUnpacked)
+    {
+        var deferred = new DeferredRetrySession(job, journal, log, name);
+        var fileCount = Math.Max(pending.Count, totals.Files);
+        var totalBytes = totals.Bytes;
+        foreach (var file in pending.ToList())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await pause.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
+            await WaitForHoursAsync(job, pause, log, name, reporter, cloud, cancellationToken).ConfigureAwait(false);
+            reporter.Update($"Copying {file.RelativePath}", file.RelativePath, speed);
+            try
+            {
+                if (ShouldSkip(file, job.Options))
+                {
+                    TryJournal(journal, () => journal.MarkSkipped(file.RelativePath, "Destination is newer or equal"), log, job.Id, name);
+                    log.Info(job.Id, name, $"Skip {file.RelativePath} (dest newer or equal)");
+                    speed.Add(file.Size);
+                    continue;
+                }
+
+                pause.BeginFile(file.RelativePath, file.Size);
+                var copied = await CopyWithRetriesAsync(job, file, journal, budget, pause, log, name, speed, cancellationToken, io)
+                    .ConfigureAwait(false);
+                pause.EndFile();
+                if (copied.ok)
+                {
+                    if (!TryJournal(journal, () =>
+                        {
+                            journal.MarkCopied(file.RelativePath, copied.hash);
+                            if (markUnpacked)
+                            {
+                                journal.MarkUnpacked(file.RelativePath);
+                            }
+                        }, log, job.Id, name))
+                    {
+                        deferred.Defer(file, "Journal error after copy — deferred for retry");
+                    }
+                    else
+                    {
+                        deferred.Remove(file.RelativePath);
+                        log.Info(job.Id, name, $"Copied {file.RelativePath} ({ByteFormatter.ToString(file.Size)})");
+                    }
+                }
+                else
+                {
+                    var error = copied.error ?? "Copy failed after retries";
+                    if (copied.transient || ProgressHeader.IsExceptionDump(error))
+                    {
+                        deferred.Defer(file, error);
+                    }
+                    else
+                    {
+                        if (!TryJournal(journal, () =>
+                            {
+                                journal.MarkFailed(file.RelativePath, error, job.Options.RetryCount);
+                                journal.AddIssue(new TransferIssue
+                                {
+                                    RelativePath = file.RelativePath,
+                                    Kind = IssueKind.CopyError,
+                                    Message = error
+                                });
+                            }, log, job.Id, name))
+                        {
+                            deferred.Defer(file, error);
+                        }
+                        else
+                        {
+                            log.Error(job.Id, name, $"Failed {file.RelativePath}: {error}");
+                        }
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                pause.EndFile();
+                var error = ProgressHeader.DescribeFileError(ex);
+                log.Error(job.Id, name, $"File error {file.RelativePath}: {error}");
+                deferred.Defer(file, error);
+            }
+
+            try
+            {
+                await PauseAfterFileIfRequestedAsync(job, journal, pause, log, name, file.RelativePath, reporter, cancellationToken)
+                    .ConfigureAwait(false);
+                await RetryDeferredCopyAsync(
+                        job, journal, deferred, budget, pause, log, name, reporter, speed, fileCount, totalBytes,
+                        afterFile: true, endOfPass: false, cancellationToken, io)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                log.Error(job.Id, name, "Continuing after file-level error: " + ProgressHeader.DescribeFileError(ex));
+            }
+        }
+
+        await RetryDeferredCopyAsync(
+                job, journal, deferred, budget, pause, log, name, reporter, speed, fileCount, totalBytes,
+                afterFile: false, endOfPass: true, cancellationToken, io)
+            .ConfigureAwait(false);
+        deferred.FinalizeFailures();
     }
 
     private static async Task PauseAfterFileIfRequestedAsync(
@@ -818,10 +1045,19 @@ public sealed class CopyEngine : ICopyEngine
         bool cloud,
         SpeedTracker speed,
         CancellationToken cancellationToken,
-        UnbufferedIoSession? io = null)
+        UnbufferedIoSession? io = null,
+        IReadOnlyList<FileRecord>? onlyThese = null,
+        bool copyLoose = true,
+        CompressionLevel compression = CompressionLevel.NoCompression)
     {
         var zipPath = ZipPack.ZipPath(mapping);
         var files = journal.GetFiles().Where(f => f.Status != FileCopyStatus.Skipped).ToList();
+        if (onlyThese is not null)
+        {
+            var keys = new HashSet<string>(onlyThese.Select(f => f.RelativePath), StringComparer.OrdinalIgnoreCase);
+            files = files.Where(f => keys.Contains(f.RelativePath)).ToList();
+        }
+
         var pending = files.Where(f => f.Status is FileCopyStatus.Pending or FileCopyStatus.Failed).ToList();
         if (pending.Count == 0 && !File.Exists(zipPath))
         {
@@ -841,6 +1077,15 @@ public sealed class CopyEngine : ICopyEngine
         var loose = catcherPack
             ? []
             : pending.Where(f => CopyBesideZip(job, f, peek)).ToList();
+        if (!copyLoose)
+        {
+            if (onlyThese is not null)
+            {
+                packable = pending;
+            }
+
+            loose = [];
+        }
 
         if (pending.Count == 0)
         {
@@ -947,7 +1192,8 @@ public sealed class CopyEngine : ICopyEngine
                         {
                             try
                             {
-                                await ZipPack.PackOneEntryAsync(zip, file, job, budget, pause, speed, buffer, hashes, cancellationToken)
+                                await ZipPack.PackOneEntryAsync(
+                                        zip, file, job, budget, pause, speed, buffer, hashes, cancellationToken, compression, mapping.DestRoot)
                                     .ConfigureAwait(false);
                                 deferred.Remove(file.RelativePath);
                                 log.Info(job.Id, name, $"Deferred retry succeeded {file.RelativePath}");
@@ -958,7 +1204,9 @@ public sealed class CopyEngine : ICopyEngine
                                 log.Error(job.Id, name, $"Deferred retry still failing {file.RelativePath}: {ex.Message}");
                             }
                         }
-                    }).ConfigureAwait(false);
+                    },
+                    compression: compression,
+                    destRoot: mapping.DestRoot).ConfigureAwait(false);
 
                 foreach (var (rel, hash) in hashes)
                 {
@@ -1515,12 +1763,30 @@ public sealed class CopyEngine : ICopyEngine
 public sealed class SpeedTracker
 {
     private readonly Stopwatch _clock = Stopwatch.StartNew();
+    private readonly object _lock = new();
     private long _bytes;
     private long _windowBytes;
     private long _windowStart = Stopwatch.GetTimestamp();
+    private double _bytesPerSecond;
 
     public long Bytes => Interlocked.Read(ref _bytes);
-    public double BytesPerSecond { get; private set; }
+    public double BytesPerSecond
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _bytesPerSecond;
+            }
+        }
+        private set
+        {
+            lock (_lock)
+            {
+                _bytesPerSecond = value;
+            }
+        }
+    }
 
     public double EffectiveBytesPerSecond
     {
@@ -1539,18 +1805,21 @@ public sealed class SpeedTracker
     public void Add(long count)
     {
         Interlocked.Add(ref _bytes, count);
-        Interlocked.Add(ref _windowBytes, count);
-        var now = Stopwatch.GetTimestamp();
-        var elapsed = (now - _windowStart) / (double)Stopwatch.Frequency;
-        if (elapsed >= 0.5)
+        lock (_lock)
         {
-            BytesPerSecond = _windowBytes / elapsed;
-            _windowBytes = 0;
-            _windowStart = now;
-        }
-        else if (_clock.Elapsed.TotalSeconds > 0)
-        {
-            BytesPerSecond = Bytes / _clock.Elapsed.TotalSeconds;
+            _windowBytes += count;
+            var now = Stopwatch.GetTimestamp();
+            var elapsed = (now - _windowStart) / (double)Stopwatch.Frequency;
+            if (elapsed >= 0.5)
+            {
+                _bytesPerSecond = _windowBytes / elapsed;
+                _windowBytes = 0;
+                _windowStart = now;
+            }
+            else if (_clock.Elapsed.TotalSeconds > 0)
+            {
+                _bytesPerSecond = Bytes / _clock.Elapsed.TotalSeconds;
+            }
         }
     }
 }

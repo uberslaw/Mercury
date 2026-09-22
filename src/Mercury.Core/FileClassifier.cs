@@ -107,6 +107,34 @@ public static class FileClassifier
         kind is PayloadKind.Video or PayloadKind.Audio or PayloadKind.Image
             or PayloadKind.Archive or PayloadKind.DiskImage;
 
+    public static bool IsCompressedExtension(string? extension)
+    {
+        if (string.IsNullOrWhiteSpace(extension))
+        {
+            return false;
+        }
+
+        var ext = extension.Trim();
+        if (ext.Length > 0 && ext[0] != '.')
+        {
+            ext = "." + ext;
+        }
+
+        return Video.Contains(ext) || Audio.Contains(ext) || Image.Contains(ext)
+               || Archive.Contains(ext) || DiskImage.Contains(ext);
+    }
+
+    public static IReadOnlyList<string> AllCompressedExtensions()
+    {
+        var set = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        set.UnionWith(Video);
+        set.UnionWith(Audio);
+        set.UnionWith(Image);
+        set.UnionWith(Archive);
+        set.UnionWith(DiskImage);
+        return set.ToArray();
+    }
+
     public static bool IsAlreadyCompressed(FileRecord file, MagicPeekBudget? peek = null)
     {
         if (file.PayloadKind != PayloadKind.Other && IsAlreadyCompressed(file.PayloadKind))

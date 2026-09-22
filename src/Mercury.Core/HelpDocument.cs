@@ -102,7 +102,8 @@ public static class HelpDocument
             Body =
                 "The pink header is Progress. Current and Overall bars stay on one row for running, paused, stopped, and finished (Overall hides only when there is a single job). Each bar shows its percent in the middle. " +
                 "Below 1%, the label uses one decimal (0.1%) or <1% so a started job never shows 0%. " +
-                "The stats table is Stage / File / This stage / Files / Bytes / Speed — inactive cells show — (or last known values), not a different rundown-only layout. Elapsed and ETA sit in the top-right of this header (Elapsed above ETA), at the Progress size, using the table’s Label / Value fonts. Exception text never replaces the table; errors go to Console and History. " +
+                "The stats table is Stage / File / This stage / Files / Bytes / Speed — inactive cells show — (or last known values), not a different rundown-only layout. Keys are bold; colons and values line up in columns. Elapsed and ETA sit in the top-right of this header (Elapsed above ETA), at the Progress size, using the table’s Label / Value fonts. Exception text never replaces the table; errors go to Console and History. " +
+                "Overall is copied bytes versus known totals across every queued job. A finished job counts its copied size as both done and total, so job 2 of 2 at <1% cannot show Overall 100%. " +
                 "MB/s or Mbps (Global) switches Speed between MB/s and Mbps (1 MB/s = 8 Mbps). " +
                 "Job n of m is which queue item (example: 3 of 3). Stage is that job’s pipeline step: enumerate, copy, verify, writing rundown. " +
                 "With no running or resumable job the header stays collapsed — no 0/0 files or empty rundown. A part-way last job still shows its last percent and counts so you can Resume last. " +

@@ -23,7 +23,7 @@ public static class CopyPipeline
         string.Equals(stageName, RundownLabel, StringComparison.Ordinal)
         || string.Equals(message, RundownMessage, StringComparison.Ordinal);
 
-    public static IReadOnlyList<CopyStage> For(Job job, bool hasJournalFiles, bool pack)
+    public static IReadOnlyList<CopyStage> For(Job job, bool hasJournalFiles, bool pack, bool overlap = false)
     {
         var catcher = job.Catcher is not null;
         var stages = new List<CopyStage>
@@ -57,7 +57,7 @@ public static class CopyPipeline
             }
             else
             {
-                stages.Add(new(CopyStageKind.Transferring, pack ? "Packing" : "Copying"));
+                stages.Add(new(CopyStageKind.Transferring, pack ? (overlap ? "Copying and packing" : "Packing") : "Copying"));
                 if (pack)
                 {
                     stages.Add(new(CopyStageKind.Unpacking, "Unpacking"));

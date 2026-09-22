@@ -304,11 +304,13 @@ public sealed class JobScheduler : IDisposable
 
         EnsureName(job);
 
-        var remapped = VolumeInfo.RemapIfMissing(job.SourcePath, job.VolumeSerial);
-        if (!string.IsNullOrEmpty(remapped))
+        JobSources.RemapVolumes(job);
+        if (job.SourcePaths is not { Count: > 0 } && !string.IsNullOrWhiteSpace(job.SourcePath))
         {
-            job.SourcePath = remapped;
+            job.SourcePaths = [job.SourcePath];
         }
+
+        PackPolicy.ApplySettings(job.Options, AppSettingsStore.Load(_paths));
 
         var jobDir = _paths.JobDirectory(job.Id);
         JobJournal journal;
@@ -771,8 +773,7 @@ public sealed class JobScheduler : IDisposable
         {
             if (_progress.TryGetValue(job.Id, out var p))
             {
-                bytes += p.BytesCopied;
-                total += p.BytesTotal;
+                OverallProgress.AddBytes(job, p, ref bytes, ref total);
                 files += p.FilesCopied;
                 filesTotal += p.FilesTotal;
                 speed += p.BytesPerSecond;
@@ -787,7 +788,7 @@ public sealed class JobScheduler : IDisposable
             }
             else
             {
-                bytes += job.BytesCopied;
+                OverallProgress.AddBytes(job, null, ref bytes, ref total);
                 files += job.DestFiles;
                 filesTotal += job.SourceFiles;
                 issues += job.IssueCount;
@@ -946,7 +947,11 @@ public sealed class JobScheduler : IDisposable
             return;
         }
 
-        job.Name = Path.GetFileName(job.SourcePath.TrimEnd('\\', '/'));
+        job.Name = JobSources.DefaultName(job);
+        if (string.IsNullOrWhiteSpace(job.Name))
+        {
+            job.Name = Path.GetFileName(job.SourcePath.TrimEnd('\\', '/'));
+        }
         if (string.IsNullOrWhiteSpace(job.Name))
         {
             job.Name = job.Id[..8];
@@ -1071,7 +1076,7 @@ public sealed class JobScheduler : IDisposable
             CopyMapping? mapping = null;
             try
             {
-                mapping = CopyShape.Resolve(job.SourcePath, job.DestinationPath, job.Options.IncludeSourceFolderName);
+                mapping = JobSources.Resolve(job, job.DestinationPath, job.Options.IncludeSourceFolderName).FirstOrDefault();
             }
             catch
             {

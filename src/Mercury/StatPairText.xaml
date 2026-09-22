@@ -5,27 +5,28 @@
              Foreground="{DynamicResource TextBrush}">
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto" MinWidth="52"/>
+            <ColumnDefinition Width="Auto" SharedSizeGroup="ProgressStatKey"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
         <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Label">
             <TextBlock FontFamily="{DynamicResource ProgressFontFamily}"
                        FontSize="{DynamicResource ProgressFontSize}"
+                       TextAlignment="Right"
                        TextWrapping="NoWrap"
                        TextTrimming="CharacterEllipsis">
                 <Run Text="{Binding Key, Mode=OneWay}"
-                     FontWeight="SemiBold"
+                     FontWeight="Bold"
                      FontFamily="{DynamicResource LabelFontFamily}"
                      FontSize="{DynamicResource LabelFontSize}"
                      Foreground="{DynamicResource MutedBrush}"/>
-                <Run Text=": "
-                     FontWeight="SemiBold"
+                <Run Text=":"
+                     FontWeight="Bold"
                      FontFamily="{DynamicResource LabelFontFamily}"
                      FontSize="{DynamicResource LabelFontSize}"
                      Foreground="{DynamicResource MutedBrush}"/>
             </TextBlock>
         </Border>
-        <Border Grid.Column="1" Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Value">
+        <Border Grid.Column="1" Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Value" Margin="8,0,0,0">
             <TextBlock FontFamily="{DynamicResource ProgressFontFamily}"
                        FontSize="{DynamicResource ProgressFontSize}"
                        TextWrapping="NoWrap"

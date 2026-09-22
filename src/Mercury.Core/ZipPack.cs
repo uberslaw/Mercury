@@ -10,8 +10,15 @@ public static class ZipPack
     public static bool Applies(Job job, CopyMapping mapping) =>
         job.Options?.PackAsZip == true && !mapping.SingleFile;
 
+    public static bool AppliesAny(Job job, IReadOnlyList<CopyMapping> mappings) =>
+        mappings.Any(m => Applies(job, m));
+
     public static string ZipPath(CopyMapping mapping)
     {
+        if (!string.IsNullOrWhiteSpace(mapping.TransportZipPath))
+        {
+            return mapping.TransportZipPath;
+        }
         if (mapping.Kind == SourceKind.DriveRoot)
         {
             var root = Path.GetPathRoot(mapping.SourceRoot) ?? "drive";
@@ -31,6 +38,24 @@ public static class ZipPack
 
     public static string EntryName(string relativePath) =>
         relativePath.Replace('\\', '/').Trim('/');
+
+    public static string EntryName(FileRecord file, string destRoot)
+    {
+        try
+        {
+            var rel = Path.GetRelativePath(destRoot, file.DestPath);
+            if (!string.IsNullOrWhiteSpace(rel) && rel != "." && !rel.StartsWith(".."))
+            {
+                return EntryName(rel);
+            }
+        }
+        catch
+        {
+            // fall back
+        }
+
+        return EntryName(file.RelativePath);
+    }
 
     public static IEnumerable<string> ExcludePaths(CopyMapping mapping)
     {
@@ -100,8 +125,11 @@ public static class ZipPack
         CancellationToken cancellationToken,
         Func<FileRecord, Exception, bool>? onTransientSkip = null,
         Func<string, Task>? onAfterFile = null,
-        Func<ZipArchive, byte[], Task>? onRetryDeferred = null)
+        Func<ZipArchive, byte[], Task>? onRetryDeferred = null,
+        CompressionLevel compression = CompressionLevel.NoCompression,
+        string? destRoot = null)
     {
+        destRoot ??= ExtractRootFromZip(zipPath);
         var parent = Path.GetDirectoryName(zipPath);
         if (!string.IsNullOrEmpty(parent))
         {
@@ -137,7 +165,7 @@ public static class ZipPack
                     try
                     {
                         await PackOneEntryAsync(
-                            zip, file, job, budget, pause, speed, buffer, hashes, cancellationToken)
+                            zip, file, job, budget, pause, speed, buffer, hashes, cancellationToken, compression, destRoot)
                             .ConfigureAwait(false);
                         packedOk = true;
                     }
@@ -205,7 +233,9 @@ public static class ZipPack
         SpeedTracker speed,
         byte[] buffer,
         Dictionary<string, string?> hashes,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        CompressionLevel compression = CompressionLevel.NoCompression,
+        string? destRoot = null)
     {
         await using var src = new FileStream(
             file.SourcePath,
@@ -215,7 +245,10 @@ public static class ZipPack
             HashUtil.BufferSize,
             FileMetadata.SequentialIo(job.Options));
 
-        var entry = zip.CreateEntry(EntryName(file.RelativePath), CompressionLevel.NoCompression);
+        var entryName = string.IsNullOrEmpty(destRoot)
+            ? EntryName(file.RelativePath)
+            : EntryName(file, destRoot);
+        var entry = zip.CreateEntry(entryName, compression);
         try
         {
             entry.LastWriteTime = new DateTimeOffset(DateTime.SpecifyKind(file.LastWriteUtc, DateTimeKind.Utc));
@@ -270,6 +303,7 @@ public static class ZipPack
             HashUtil.BufferSize,
             FileOptions.Asynchronous);
         using var zip = new ZipArchive(zipStream, ZipArchiveMode.Update, leaveOpen: false);
+        var destRoot = ExtractRootFromZip(zipPath);
         var buffer = new byte[HashUtil.BufferSize];
         var existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in zip.Entries)
@@ -281,8 +315,8 @@ public static class ZipPack
         {
             cancellationToken.ThrowIfCancellationRequested();
             await pause.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
-            var key = EntryName(file.RelativePath);
-            if (existing.Contains(key))
+            var key = EntryName(file, destRoot);
+            if (existing.Contains(key) || existing.Contains(EntryName(file.RelativePath)))
             {
                 continue;
             }
@@ -290,7 +324,7 @@ public static class ZipPack
             pause.BeginFile(file.RelativePath, file.Size);
             try
             {
-                await PackOneEntryAsync(zip, file, job, budget, pause, speed, buffer, hashes, cancellationToken)
+                await PackOneEntryAsync(zip, file, job, budget, pause, speed, buffer, hashes, cancellationToken, CompressionLevel.NoCompression, destRoot)
                     .ConfigureAwait(false);
                 existing.Add(key);
                 log.Info(job.Id, name, $"Packed deferred {file.RelativePath}");
@@ -445,8 +479,20 @@ public static class ZipPack
             var key = EntryName(relative);
             if (!entries.TryGetValue(key, out var entry))
             {
-                pause?.EndFile();
-                throw new FileNotFoundException($"Packed zip is missing entry {relative}.", zipPath);
+                try
+                {
+                    key = EntryName(Path.GetRelativePath(destRootFull, destPath));
+                }
+                catch
+                {
+                    key = EntryName(relative);
+                }
+
+                if (!entries.TryGetValue(key, out entry))
+                {
+                    pause?.EndFile();
+                    throw new FileNotFoundException($"Packed zip is missing entry {relative}.", zipPath);
+                }
             }
 
             if (ShouldSkipExtract(destPath, size, lastWriteUtc, overwrite, job?.Options))

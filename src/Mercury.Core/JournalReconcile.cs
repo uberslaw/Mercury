@@ -14,7 +14,17 @@ public static class JournalReconcile
         JobOptions options,
         IEnumerable<string>? extraExcludeRoots,
         Action<int, string>? onProgress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken) =>
+        Scan([mapping], journal, options, extraExcludeRoots, onProgress, cancellationToken, uniquePrefix: false);
+
+    public static Result Scan(
+        IReadOnlyList<CopyMapping> mappings,
+        JobJournal journal,
+        JobOptions options,
+        IEnumerable<string>? extraExcludeRoots,
+        Action<int, string>? onProgress,
+        CancellationToken cancellationToken,
+        bool uniquePrefix)
     {
         var existing = journal.GetFiles().ToDictionary(f => f.RelativePath, StringComparer.OrdinalIgnoreCase);
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -24,7 +34,7 @@ public static class JournalReconcile
         var found = 0;
         var tolerance = FileMetadata.ComparisonTolerance(options);
 
-        foreach (var record in SourceWalker.Walk(mapping, extraExcludeRoots, options))
+        foreach (var record in SourceWalker.WalkAll(mappings, extraExcludeRoots, options, uniquePrefix))
         {
             cancellationToken.ThrowIfCancellationRequested();
             seen.Add(record.RelativePath);

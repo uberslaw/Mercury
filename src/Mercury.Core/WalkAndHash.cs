@@ -100,6 +100,49 @@ public static class SourceWalker
         }
     }
 
+    public static IEnumerable<FileRecord> WalkAll(
+        IReadOnlyList<CopyMapping> mappings,
+        IEnumerable<string>? extraExcludeRoots = null,
+        JobOptions? options = null,
+        bool uniquePrefix = false)
+    {
+        foreach (var mapping in mappings)
+        {
+            foreach (var record in Walk(mapping, extraExcludeRoots, options))
+            {
+                if (uniquePrefix)
+                {
+                    CopyShape.WithUniqueRelative(record, mapping);
+                }
+
+                yield return record;
+            }
+        }
+    }
+
+    public static IEnumerable<DirectoryRecord> WalkDirectoriesAll(
+        IReadOnlyList<CopyMapping> mappings,
+        JobOptions? options = null,
+        bool uniquePrefix = false)
+    {
+        foreach (var mapping in mappings)
+        {
+            foreach (var record in WalkDirectories(mapping, options))
+            {
+                if (uniquePrefix && !string.IsNullOrEmpty(mapping.UniqueRelativePrefix))
+                {
+                    yield return record with
+                    {
+                        RelativePath = Path.Combine(mapping.UniqueRelativePrefix, record.RelativePath)
+                    };
+                    continue;
+                }
+
+                yield return record;
+            }
+        }
+    }
+
     public static IEnumerable<DirectoryRecord> WalkDirectories(CopyMapping mapping, JobOptions? options = null)
     {
         if (mapping.SingleFile || !Directory.Exists(mapping.SourceRoot))

@@ -425,3 +425,26 @@ public class IdleThrottleSettingsTests
         }
     }
 }
+
+public class OverallProgressTests
+{
+    [Fact]
+    public void FinishedJobBytesCountTowardBothCopiedAndTotal()
+    {
+        long copied = 0, total = 0;
+        OverallProgress.AddBytes(
+            new Job { Status = JobStatus.Completed, BytesCopied = 800_000 },
+            null,
+            ref copied,
+            ref total);
+        OverallProgress.AddBytes(
+            new Job { Status = JobStatus.Copying },
+            new JobProgress { BytesCopied = 264, BytesTotal = 811_000 },
+            ref copied,
+            ref total);
+
+        var percent = OverallProgress.Percent(copied, total);
+        Assert.InRange(percent, 49, 51);
+        Assert.True(percent < 100);
+    }
+}
