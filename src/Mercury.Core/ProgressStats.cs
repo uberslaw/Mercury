@@ -47,7 +47,7 @@ public sealed class ProgressStats
         {
         StatPair[] all =
             [
-                Job, Stage, File, Elapsed, ThisStage, Files, OverallFiles, Bytes, Speed, Eta, PauseAfter, Types
+                Job, Stage, File, ThisStage, Files, OverallFiles, Bytes, Speed, PauseAfter, Types
             ];
             return all.Where(p => p.HasValue).ToArray();
         }

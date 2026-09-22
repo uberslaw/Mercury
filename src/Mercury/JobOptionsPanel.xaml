@@ -30,42 +30,32 @@
 
         <Grid Margin="0,4,0,0">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" MinWidth="88"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <CheckBox Style="{StaticResource OptionsCheckBox}"
-                      Content="Start after" IsChecked="{Binding ScheduleEnabled}"
+            <CheckBox Style="{StaticResource OptionsCheckBox}" Margin="0,0,12,8"
+                      Content="Start After" IsChecked="{Binding ScheduleEnabled}"
                       ToolTip="Calendar start. Window hours still apply if enabled."/>
             <DatePicker Grid.Column="1"
                         SelectedDate="{Binding ScheduledDate}" IsEnabled="{Binding ScheduleEnabled}"
                         Width="140" Margin="0,0,8,8" VerticalAlignment="Center"
                         FontSize="{DynamicResource BodyFontSize}"/>
-            <TextBox Grid.Column="2" Style="{StaticResource OptionsField}" Width="64"
+            <TextBox Grid.Column="2" Style="{StaticResource OptionsField}" Width="64" Margin="0,0,16,8"
                      Text="{Binding ScheduledTime, UpdateSourceTrigger=PropertyChanged}"
                      IsEnabled="{Binding ScheduleEnabled}" ToolTip="Time (HH:mm)"/>
-            <CheckBox Grid.Column="3" Style="{StaticResource OptionsCheckBox}"
-                      Content="Window" IsChecked="{Binding HoursEnabled}"
-                      ToolTip="Pause copying outside this daily window (status: Paused — outside hours)."/>
-            <TextBox Grid.Column="4" Style="{StaticResource OptionsField}" Width="64" Margin="0,0,6,0"
-                     Text="{Binding HoursStart}" ToolTip="Window start (HH:mm)"/>
-            <TextBlock Grid.Column="5" Style="{StaticResource OptionsLabel}" Text="–" Margin="0,0,6,0"/>
-            <TextBox Grid.Column="6" Style="{StaticResource OptionsField}" Width="64" Margin="0"
-                     Text="{Binding HoursEnd}" ToolTip="Window end (HH:mm)"/>
-
-            <TextBlock Grid.Row="1" Style="{StaticResource OptionsLabel}" Text="Overwrite" Margin="0,8,8,8"/>
-            <ComboBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,8,16,8"
+            <TextBlock Grid.Column="4" Style="{StaticResource OptionsLabel}" Text="Overwrite"
+                       VerticalAlignment="Center" Margin="0,0,8,8"/>
+            <ComboBox Grid.Column="5" VerticalAlignment="Center" Margin="0,0,0,8"
+                      HorizontalAlignment="Left"
                       FontSize="{DynamicResource BodyFontSize}"
                       local:ComboBoxFit.ToContent="True"
                       SelectedIndex="{Binding OverwriteIndex}">
@@ -73,8 +63,19 @@
                 <ComboBoxItem>Always overwrite</ComboBoxItem>
                 <ComboBoxItem>Never if dest exists</ComboBoxItem>
             </ComboBox>
-            <TextBlock Grid.Row="1" Grid.Column="3" Style="{StaticResource OptionsLabel}" Text="Verify" Margin="0,8,8,8"/>
-            <ComboBox Grid.Row="1" Grid.Column="4" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="0,8,0,8"
+
+            <CheckBox Grid.Row="1" Style="{StaticResource OptionsCheckBox}" Margin="0,0,12,8"
+                      Content="Window" IsChecked="{Binding HoursEnabled}"
+                      ToolTip="Pause copying outside this daily window (status: Paused — outside hours)."/>
+            <TextBox Grid.Row="1" Grid.Column="1" Style="{StaticResource OptionsField}" Width="64" Margin="0,0,8,8"
+                     Text="{Binding HoursStart}" ToolTip="Window start (HH:mm)"/>
+            <TextBlock Grid.Row="1" Grid.Column="2" Style="{StaticResource OptionsLabel}" Text="–" Margin="0,0,8,8"/>
+            <TextBox Grid.Row="1" Grid.Column="3" Style="{StaticResource OptionsField}" Width="64" Margin="0,0,16,8"
+                     Text="{Binding HoursEnd}" ToolTip="Window end (HH:mm)"/>
+            <TextBlock Grid.Row="1" Grid.Column="4" Style="{StaticResource OptionsLabel}" Text="Verify"
+                       VerticalAlignment="Center" Margin="0,0,8,8"/>
+            <ComboBox Grid.Row="1" Grid.Column="5" VerticalAlignment="Center" Margin="0,0,0,8"
+                      HorizontalAlignment="Left"
                       FontSize="{DynamicResource BodyFontSize}"
                       local:ComboBoxFit.ToContent="True"
                       SelectedIndex="{Binding VerifyIndex}">
@@ -98,7 +99,7 @@
                       Content="Small Files" IsChecked="{Binding PackAsZip}"
                       ToolTip="Packs many small files into one stored (uncompressed) transport zip so USB / lots of tiny files write sequentially. Already-compressed files (video, photos, audio, zip/7z/rar, ISO) are copied as-is and not wrapped. Mercury unpacks a normal folder tree at dest and deletes the zip. If every file is already compressed, packing is skipped. Leave off to copy file-by-file."/>
             <CheckBox Style="{StaticResource OptionsCheckBox}"
-                      Content="Skip compressed" IsChecked="{Binding SkipCompressedWhenPacking}"
+                      Content="Skip Compressed" IsChecked="{Binding SkipCompressedWhenPacking}"
                       IsEnabled="{Binding PackAsZip}"
                       ToolTip="Default on with Small Files. Video, photos, audio, zip/7z/rar, ISO, and similar copy as files — not wrapped in the transport zip. If the whole job is already compressed, packing is skipped entirely."/>
         </WrapPanel>

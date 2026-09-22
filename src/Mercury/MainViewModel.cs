@@ -725,6 +725,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public string HeaderRundownLine => "";
     public string HeaderElapsedText => JobStats.Elapsed.HasValue ? JobStats.Elapsed.Value : "";
     public bool ShowHeaderElapsed => ShowProgressDetail && !string.IsNullOrWhiteSpace(HeaderElapsedText);
+    public string HeaderEtaText => JobStats.Eta.HasValue ? JobStats.Eta.Value : "";
+    public bool ShowHeaderEta => ShowProgressDetail && JobStats.Eta.HasValue;
     public bool ShowHeaderStatus =>
         ShowProgressDetail
         && !string.IsNullOrWhiteSpace(StatusText)
@@ -745,7 +747,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         internal set => SetField(ref _folderTreeEmpty, value);
     }
 
-    public string StartButtonLabel => IsPaused ? "Resume" : "Start";
+    public string StartButtonLabel => ShouldLabelResume ? "Resume" : "Start";
 
     public string PauseAfterThisFileLabel =>
         PauseAfterFileArmed ? "Remove Pause after" : "Pause after this file";
@@ -1224,6 +1226,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private bool CanStartOrResume() =>
         HasPaths && (!IsRunning || IsPaused);
 
+    private bool ShouldLabelResume =>
+        IsPaused || (!IsRunning && HasPaths && FindMatchingResumableForUi() is not null);
+
     private void StartNow()
     {
         if (IsPaused)
@@ -1291,12 +1296,33 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         EnqueueJob(job, "Starting…", startNow: true);
     }
 
-    private Job? FindMatchingResumable(Job form)
+    private Job? FindMatchingResumable(Job form) =>
+        FindMatchingResumable(
+            form.SourcePath,
+            form.Catcher is not null,
+            form.Catcher?.TemplateId,
+            form.DestinationPath);
+
+    private Job? FindMatchingResumableForUi()
+    {
+        if (!HasPaths)
+        {
+            return null;
+        }
+
+        return FindMatchingResumable(
+            PathNormalizer.Normalize(SourcePath),
+            DestIsCatcher,
+            SelectedCatcherTemplate?.Id,
+            DestIsCatcher ? "" : PathNormalizer.Normalize(DestPath));
+    }
+
+    private Job? FindMatchingResumable(string source, bool isCatcher, string? catcherTemplateId, string dest)
     {
         Job? best = null;
         foreach (var queued in _scheduler.Queue)
         {
-            if (!IsResumable(queued.Status) || queued.OnHold || !SameRoute(queued, form))
+            if (!IsResumable(queued.Status) || queued.OnHold || !SameRoute(queued, source, isCatcher, catcherTemplateId, dest))
             {
                 continue;
             }
@@ -1319,7 +1345,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
 
         var last = _lastJob ?? _scheduler.TryLoadLastJob();
-        if (last is not null && IsResumable(last.Status) && SameRoute(last, form))
+        if (last is not null && IsResumable(last.Status) && SameRoute(last, source, isCatcher, catcherTemplateId, dest))
         {
             return last;
         }
@@ -1327,19 +1353,19 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         return null;
     }
 
-    private bool SameRoute(Job queued, Job form)
+    private static bool SameRoute(Job queued, string source, bool isCatcher, string? catcherTemplateId, string dest)
     {
-        if (!string.Equals(queued.SourcePath, form.SourcePath, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(queued.SourcePath, source, StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
 
-        if (queued.Catcher is not null || form.Catcher is not null)
+        if (queued.Catcher is not null || isCatcher)
         {
-            return string.Equals(queued.Catcher?.TemplateId, form.Catcher?.TemplateId, StringComparison.Ordinal);
+            return isCatcher && string.Equals(queued.Catcher?.TemplateId, catcherTemplateId, StringComparison.Ordinal);
         }
 
-        return string.Equals(queued.DestinationPath, form.DestinationPath, StringComparison.OrdinalIgnoreCase);
+        return string.Equals(queued.DestinationPath, dest, StringComparison.OrdinalIgnoreCase);
     }
 
     private void AddToQueue()
@@ -1490,7 +1516,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         JobStats = ComposeStats(snap);
         OverallStats = ComposeStats(snap, includeStage: false);
         Rundown = TransferRundown.From(last);
-        StatusText = "Resume last to continue this job.";
+        StatusText = "Resume to continue this job.";
         NotifyHeader();
     }
 
@@ -2694,6 +2720,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowHeaderRundown)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderElapsedText)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowHeaderElapsed)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderEtaText)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowHeaderEta)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowHeaderStatus)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowProgressDetail)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JobPercent)));
@@ -2980,6 +3008,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         _lastJob = _scheduler.TryLoadLastJob();
         CanResumeLast = _lastJob is { Status: not JobStatus.Completed };
         (ResumeLastCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StartButtonLabel)));
     }
 
     private void RefreshFolderTree(bool force = false)
@@ -3049,6 +3078,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private void RaiseRunCommands()
     {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StartButtonLabel)));
         (StartCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (AddToQueueCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (QueueAddToQueueCommand as RelayCommand)?.RaiseCanExecuteChanged();

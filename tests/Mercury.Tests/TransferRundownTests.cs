@@ -161,6 +161,10 @@ public class TransferRundownTests
 
         Assert.Contains("Mbps", stats.Speed.Value, StringComparison.Ordinal);
         Assert.Equal(ProgressHeader.LayoutKeys, stats.LayoutKeys);
+        Assert.DoesNotContain(stats.TableCells, p => p.Key == "Elapsed");
+        Assert.DoesNotContain(stats.TableCells, p => p.Key == "ETA");
+        Assert.True(stats.Elapsed.HasValue);
+        Assert.True(stats.Eta.HasValue);
     }
 
     [Fact]
@@ -258,14 +262,16 @@ public class TransferRundownTests
         Assert.Contains("Files: 12/400", progress.Body, StringComparison.Ordinal);
         Assert.Contains("Job: 2 of 5", progress.Body, StringComparison.Ordinal);
         Assert.Contains("Job n of m is which queue item", progress.Body, StringComparison.Ordinal);
-        Assert.Contains("Stage is that job", progress.Body, StringComparison.Ordinal);
+        Assert.Contains("Elapsed and ETA sit in the top-right", progress.Body, StringComparison.Ordinal);
         Assert.Contains("Start, Pause, Pause after this file, and Stop sit under that file name", progress.Body, StringComparison.Ordinal);
+        Assert.Contains("Start reads Resume when paused or when Source/Dest match a stopped job", progress.Body, StringComparison.Ordinal);
         Assert.Contains("Rundown running in background", HelpDocument.Sections.Single(s => s.Id == "console").Body, StringComparison.Ordinal);
         Assert.Contains("local date and 24-hour time", HelpDocument.Sections.Single(s => s.Id == "console").Body, StringComparison.Ordinal);
         Assert.DoesNotContain("Files; ", progress.Body, StringComparison.Ordinal);
 
         var options = HelpDocument.Sections.Single(s => s.Id == "options");
-        Assert.Contains("Throttle active PC", options.Body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Throttle Active PC", options.Body, StringComparison.Ordinal);
+        Assert.Contains("MB/s or Mbps", options.Body, StringComparison.Ordinal);
 
         var queue = HelpDocument.Sections.Single(s => s.Id == "queue");
         Assert.Contains("On hold", queue.Body, StringComparison.OrdinalIgnoreCase);

@@ -57,7 +57,7 @@ public static class JobOptionBadges
 
         if (job.ScheduledStart is { } start)
         {
-            badges.Add($"Start after {start.LocalDateTime:ddd d MMM HH:mm}");
+            badges.Add($"Start After {start.LocalDateTime:ddd d MMM HH:mm}");
         }
 
         badges.AddRange(o.Overwrite switch

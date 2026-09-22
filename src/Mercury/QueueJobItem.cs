@@ -87,7 +87,7 @@ public sealed class QueueJobItem : INotifyPropertyChanged
             var dry = o.DryRun ? "Dry Run" : o.PackAsZip ? "Small Files" : "Copy";
             var expand = o.IgnoreFreeSpaceCheck ? "Ignore Storage Limit" : "Storage limit on";
             var start = Job.ScheduledStart is { } s
-                ? $"Start after {s.LocalDateTime:ddd d MMM HH:mm}"
+                ? $"Start After {s.LocalDateTime:ddd d MMM HH:mm}"
                 : "Start when previous job finishes";
             var flags = new List<string>();
             if (!o.CopyTimestamps)

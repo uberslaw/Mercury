@@ -246,7 +246,7 @@ public static class ProgressHeader
     /// so a started job never shows 0% (911 MB / 826 GB would otherwise round down).
     /// </summary>
     public static readonly string[] LayoutKeys =
-        ["Stage", "File", "Elapsed", "This stage", "Files", "Bytes", "Speed", "ETA"];
+        ["Stage", "File", "This stage", "Files", "Bytes", "Speed"];
 
     public static bool IsExceptionDump(string? text)
     {

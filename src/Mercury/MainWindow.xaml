@@ -32,17 +32,43 @@
             <Border Background="{DynamicResource HeaderBrush}" Padding="10,6" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
                 <StackPanel>
                     <Grid Margin="0,0,0,2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
                         <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Body">
-                            <TextBlock Text="Progress" FontWeight="SemiBold"
+                            <TextBlock Text="Progress" FontWeight="SemiBold" VerticalAlignment="Top"
                                        Foreground="{DynamicResource OnHeaderBrush}"
                                        FontFamily="{DynamicResource BodyFontFamily}" FontSize="{DynamicResource BodyFontSize}"/>
                         </Border>
-                        <Border HorizontalAlignment="Right" Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Progress">
-                            <TextBlock Text="{Binding HeaderElapsedText}" HorizontalAlignment="Right"
-                                       Foreground="{DynamicResource OnHeaderBrush}"
-                                       FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}"
-                                       Visibility="{Binding ShowHeaderElapsed, Converter={StaticResource BoolToVis}}"/>
-                        </Border>
+                        <StackPanel Grid.Column="1" HorizontalAlignment="Right">
+                            <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Label,Value,Progress"
+                                    Visibility="{Binding ShowHeaderElapsed, Converter={StaticResource BoolToVis}}">
+                                <TextBlock HorizontalAlignment="Right"
+                                           Foreground="{DynamicResource OnHeaderBrush}">
+                                    <Run Text="Elapsed: "
+                                         FontWeight="SemiBold"
+                                         FontFamily="{DynamicResource LabelFontFamily}"
+                                         FontSize="{DynamicResource ProgressFontSize}"/>
+                                    <Run Text="{Binding HeaderElapsedText, Mode=OneWay}"
+                                         FontFamily="{DynamicResource ValueFontFamily}"
+                                         FontSize="{DynamicResource ProgressFontSize}"/>
+                                </TextBlock>
+                            </Border>
+                            <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Label,Value,Progress"
+                                    Visibility="{Binding ShowHeaderEta, Converter={StaticResource BoolToVis}}">
+                                <TextBlock HorizontalAlignment="Right"
+                                           Foreground="{DynamicResource OnHeaderBrush}">
+                                    <Run Text="ETA: "
+                                         FontWeight="SemiBold"
+                                         FontFamily="{DynamicResource LabelFontFamily}"
+                                         FontSize="{DynamicResource ProgressFontSize}"/>
+                                    <Run Text="{Binding HeaderEtaText, Mode=OneWay}"
+                                         FontFamily="{DynamicResource ValueFontFamily}"
+                                         FontSize="{DynamicResource ProgressFontSize}"/>
+                                </TextBlock>
+                            </Border>
+                        </StackPanel>
                     </Grid>
                     <StackPanel Visibility="{Binding ShowProgressDetail, Converter={StaticResource BoolToVis}}">
                         <Grid>
@@ -132,7 +158,7 @@
                         <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="AccentBrush,AccentForegroundBrush">
                             <Button Content="{Binding StartButtonLabel}" Style="{StaticResource AccentButton}"
                                     Command="{Binding StartCommand}"
-                                    ToolTip="Start copies now. When paused, Resume continues the same job."/>
+                                    ToolTip="Start copies now. Reads Resume when paused or when Source/Dest match a stopped job — continues that job, does not mint a duplicate."/>
                         </Border>
                         <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="ButtonBrush,ButtonForegroundBrush,HeaderBarTrackBrush,OnHeaderBrush">
                             <Button Content="Pause" Style="{StaticResource HeaderButton}" Command="{Binding PauseCommand}"
@@ -264,50 +290,57 @@
                                 <local:JobOptionsPanel/>
                             </GroupBox>
                             <GroupBox Grid.Column="1" Header="Global" Margin="0" VerticalAlignment="Top"
-                                      MinWidth="220">
+                                      MinWidth="280">
                                 <StackPanel>
                                     <CheckBox Style="{StaticResource OptionsCheckBox}" Margin="0,0,0,10"
-                                              Content="Show speeds in Mbps"
+                                              Content="MB/s or Mbps"
                                               IsChecked="{Binding ShowSpeedInMegabits}"
                                               ToolTip="When on, Min / Max / Throttle boxes and Progress Speed use megabits per second (1 MB/s = 8 Mbps). Stored caps stay MB/s."/>
-                                    <Grid Margin="0,0,0,8">
+                                    <Grid>
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" MinWidth="72"/>
+                                            <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock Style="{StaticResource OptionsLabel}" Text="Min"/>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+                                        <TextBlock Style="{StaticResource OptionsLabel}" Text="Min"
+                                                   VerticalAlignment="Center" Margin="0,0,8,8"/>
                                         <TextBox Grid.Column="1" Style="{StaticResource OptionsField}" Width="72"
+                                                 Margin="0,0,8,8"
                                                  Text="{Binding GlobalMinText, UpdateSourceTrigger=PropertyChanged}"
                                                  ToolTip="Do not throttle the aggregate below this when work is available. Applies immediately."/>
-                                        <TextBlock Grid.Column="2" Style="{StaticResource OptionsLabel}" Text="{Binding SpeedUnitLabel}"/>
-                                    </Grid>
-                                    <CheckBox Style="{StaticResource OptionsCheckBox}" Margin="0,0,0,8"
-                                              Content="Unlimited" IsChecked="{Binding GlobalMaxUnlimited}"
-                                              ToolTip="No global max. Per-job Max still applies."/>
-                                    <Grid Margin="0,0,0,8">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" MinWidth="72"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Style="{StaticResource OptionsLabel}" Text="Max"/>
-                                        <TextBox Grid.Column="1" Style="{StaticResource OptionsField}" Width="72"
+                                        <TextBlock Grid.Column="2" Style="{StaticResource OptionsLabel}"
+                                                   Text="{Binding SpeedUnitLabel}" Margin="0,0,0,8"
+                                                   VerticalAlignment="Center"/>
+                                        <CheckBox Grid.Row="1" Style="{StaticResource OptionsCheckBox}" Margin="0,0,0,8"
+                                                  Content="Unlimited" IsChecked="{Binding GlobalMaxUnlimited}"
+                                                  ToolTip="No global max. Per-job Max still applies."/>
+                                        <TextBlock Grid.Row="2" Style="{StaticResource OptionsLabel}" Text="Max"
+                                                   VerticalAlignment="Center" Margin="0,0,8,8"/>
+                                        <TextBox Grid.Row="2" Grid.Column="1" Style="{StaticResource OptionsField}" Width="72"
+                                                 Margin="0,0,8,8"
                                                  Text="{Binding GlobalMaxText, UpdateSourceTrigger=PropertyChanged}"
                                                  IsEnabled="{Binding GlobalMaxUnlimited, Converter={StaticResource InverseBool}}"
                                                  ToolTip="Applies immediately to running jobs."/>
-                                        <TextBlock Grid.Column="2" Style="{StaticResource OptionsLabel}" Text="{Binding SpeedUnitLabel}"/>
-                                    </Grid>
-                                    <StackPanel Orientation="Horizontal">
-                                        <CheckBox Style="{StaticResource OptionsCheckBox}" Margin="0,0,8,0"
-                                                  Content="Throttle active PC" IsChecked="{Binding IdleThrottleEnabled}"
+                                        <TextBlock Grid.Row="2" Grid.Column="2" Style="{StaticResource OptionsLabel}"
+                                                   Text="{Binding SpeedUnitLabel}" Margin="0,0,0,8"
+                                                   VerticalAlignment="Center"/>
+                                        <CheckBox Grid.Row="3" Style="{StaticResource OptionsCheckBox}" Margin="0,0,8,0"
+                                                  Content="Throttle Active PC" IsChecked="{Binding IdleThrottleEnabled}"
                                                   ToolTip="When other programs are using the PC (CPU above about 18%, excluding Mercury’s copy when possible), cap every job to this speed. Idle uses Unlimited / Max. Applies immediately — no restart."/>
-                                        <TextBox Style="{StaticResource OptionsField}" Width="72"
+                                        <TextBox Grid.Row="3" Grid.Column="1" Style="{StaticResource OptionsField}" Width="72"
+                                                 Margin="0,0,8,0"
                                                  Text="{Binding IdleThrottleText, UpdateSourceTrigger=PropertyChanged}"
                                                  IsEnabled="{Binding IdleThrottleEnabled}"
-                                                 ToolTip="Speed while the PC is busy. Leave Throttle active PC off to use only Unlimited / Max."/>
-                                        <TextBlock Style="{StaticResource OptionsLabel}" Text="{Binding SpeedUnitLabel}"/>
-                                    </StackPanel>
+                                                 ToolTip="Speed while the PC is busy. Leave Throttle Active PC off to use only Unlimited / Max."/>
+                                        <TextBlock Grid.Row="3" Grid.Column="2" Style="{StaticResource OptionsLabel}"
+                                                   Text="{Binding SpeedUnitLabel}" VerticalAlignment="Center"/>
+                                    </Grid>
                                 </StackPanel>
                             </GroupBox>
                         </Grid>
@@ -436,7 +469,7 @@
                             <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                                 <Button Content="Job Options" Style="{StaticResource ToolbarButton}"
                                         Command="{Binding OpenQueueDraftOptionsCommand}"
-                                        ToolTip="Speed, Window, retries, overwrite, verify, Dry Run, Small Files, wrap, RoboFlags, Start after, Catcher template — stored on the job you Add."/>
+                                        ToolTip="Speed, Window, retries, overwrite, verify, Dry Run, Small Files, wrap, RoboFlags, Start After, Catcher template — stored on the job you Add."/>
                                 <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="ButtonBrush,ButtonForegroundBrush">
                                     <Button Content="Add to queue" Style="{StaticResource ToolbarButton}"
                                             Command="{Binding QueueAddToQueueCommand}"/>
