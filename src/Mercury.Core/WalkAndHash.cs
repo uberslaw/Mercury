@@ -57,6 +57,8 @@ public static class SourceWalker
         "$WinREAgent"
     };
 
+    internal static bool IsSkippedDirectoryName(string name) => SkipDirectoryNames.Contains(name);
+
     public static IEnumerable<FileRecord> Walk(
         CopyMapping mapping,
         IEnumerable<string>? extraExcludeRoots = null,

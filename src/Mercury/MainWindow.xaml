@@ -464,6 +464,9 @@
             <TabItem Header="Tree">
                 <local:FolderTreePanel Margin="10"/>
             </TabItem>
+            <TabItem x:Name="CompareTab" Header="Compare">
+                <local:ComparePanel DataContext="{Binding Compare}"/>
+            </TabItem>
             <TabItem x:Name="ConsoleTab" Header="Console">
                 <DockPanel Margin="12">
                     <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">

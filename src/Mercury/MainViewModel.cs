@@ -120,6 +120,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private DateTime _folderTreeRefreshUtc;
     private string? _folderTreeJobId;
     private string? _resultLogJobId;
+    private string? _declinedResumeJobId;
     private readonly HashSet<string> _startingJobIds = new(StringComparer.Ordinal);
     private readonly HashSet<string> _expandedFolders = new(StringComparer.OrdinalIgnoreCase);
 
@@ -256,6 +257,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
         _scheduler.Kick();
         Theme = new ThemeViewModel();
+        Compare = new CompareViewModel(_paths)
+        {
+            QueueCatchUpRequested = (source, dest) => QueueCompareCatchUp(source, dest)
+        };
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -326,6 +331,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public ICommand DeleteCatcherCommand { get; }
 
     public ThemeViewModel Theme { get; }
+    public CompareViewModel Compare { get; }
     public JobOptionsForm QueueDraft { get; }
 
     public Action? CloseWindowRequested { get; set; }
@@ -1220,13 +1226,35 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             MessageBoxImage.Question);
         if (answer != MessageBoxResult.Yes)
         {
-            ResultBanner = "Unscheduled stop left a journal. Use Resume last when you want to continue.";
-            ResultBrush = (Brush)Application.Current.FindResource("WarnBrush");
-            RefreshResume();
+            DeclineDirtyResume(job.Id);
             return;
         }
 
+        _declinedResumeJobId = null;
         ResumeStoredJob(job);
+    }
+
+    /// <summary>
+    /// User said No to resume-last at launch. Undo the last-job Progress snapshot
+    /// (percent, files, incomplete banner, Open log, Job n of m) so the header is idle.
+    /// Queue still lists the job; Resume last can continue it later.
+    /// </summary>
+    internal void DeclineDirtyResume(string? jobId = null)
+    {
+        _declinedResumeJobId = jobId
+            ?? _scheduler.FindDirtyHeartbeat()?.JobId
+            ?? _lastJob?.Id;
+        if (!string.IsNullOrEmpty(_declinedResumeJobId))
+        {
+            _scheduler.ClearDirtyHeartbeat(_declinedResumeJobId);
+        }
+
+        ClearPreviousRunPresentation();
+        StatusText = "Pick a source and destination, then Start.";
+        RefreshResume();
+        RaiseRunCommands();
+        NotifyHeader();
+        RefreshFolderTree(force: true);
     }
 
     public bool ConfirmClose(Window owner)
@@ -1311,6 +1339,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             _catcherProbeTimer.Stop();
         }
         _scheduler.Dispose();
+        Compare.Dispose();
         QueueDraft.AddToQueueRequested -= AddToQueueFromQueue;
         QueueDraft.Applied -= RaiseQueueDraftBadges;
         QueueDraft.PropertyChanged -= OnQueueDraftPropertyChanged;
@@ -1420,7 +1449,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         Job? best = null;
         foreach (var queued in _scheduler.Queue)
         {
-            if (!IsResumable(queued.Status) || queued.OnHold || !SameRoute(queued, sources, isCatcher, catcherTemplateId, dest))
+            if (!IsResumable(queued.Status)
+                || queued.OnHold
+                || IsDeclinedResumeJob(queued.Id)
+                || !SameRoute(queued, sources, isCatcher, catcherTemplateId, dest))
             {
                 continue;
             }
@@ -1443,7 +1475,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
 
         var last = _lastJob ?? _scheduler.TryLoadLastJob();
-        if (last is not null && IsResumable(last.Status) && SameRoute(last, sources, isCatcher, catcherTemplateId, dest))
+        if (last is not null
+            && !IsDeclinedResumeJob(last.Id)
+            && IsResumable(last.Status)
+            && SameRoute(last, sources, isCatcher, catcherTemplateId, dest))
         {
             return last;
         }
@@ -1529,6 +1564,62 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 : $"Queued “{job.Name}”.");
     }
 
+    internal Job QueueCompareCatchUp(string source, string dest)
+    {
+        source = PathNormalizer.Normalize(source);
+        dest = PathNormalizer.Normalize(dest);
+        EnsureQueueDraftSeeded();
+        QueueDestKindIndex = 0;
+        QueueDraft.IncludeSourceFolderName = false;
+        QueueDraft.OverwriteIndex = 0;
+        QueueDraft.PurgeExtraDestFiles = false;
+        LoadQueueSourceFolders([source]);
+        QueueDestPath = dest;
+        QueueDraft.SetLandingPaths(source, dest);
+
+        if (PathsEditable)
+        {
+            DestKindIndex = 0;
+            IncludeSourceFolderName = false;
+            OverwriteIndex = 0;
+            if (PurgeExtraDestFiles)
+            {
+                _applyingJobOptions = true;
+                try
+                {
+                    PurgeExtraDestFiles = false;
+                }
+                finally
+                {
+                    _applyingJobOptions = false;
+                }
+            }
+
+            LoadSourceFolders([source]);
+            DestPath = dest;
+        }
+
+        var options = PathsEditable ? BuildOptions() : QueueDraft.ToOptions();
+        options.IncludeSourceFolderName = false;
+        options.Overwrite = OverwritePolicy.SkipIfNewerOrEqual;
+        options.PurgeExtraDestFiles = false;
+
+        var job = new Job
+        {
+            SourcePath = source,
+            SourcePaths = [source],
+            DestinationPath = dest,
+            SourceKind = CopyShape.DetectKind(source),
+            Options = options,
+            VolumeSerial = VolumeInfo.GetSerial(source)
+        };
+        EnqueueJob(
+            job,
+            $"Queued catch-up “{job.Name}” {source} → {dest}. Enumeration will skip files that already match dest.",
+            startNow: false);
+        return job;
+    }
+
     private void ResumeLast()
     {
         var last = _scheduler.TryLoadLastJob();
@@ -1590,6 +1681,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             }
         }
 
+        if (IsDeclinedResumeJob(last.Id))
+        {
+            _declinedResumeJobId = null;
+        }
+
         last.Status = JobStatus.Pending;
         last.ScheduledStart = null;
         last.ScanSourceOnResume = scan.Value;
@@ -1604,6 +1700,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private static bool IsResumable(JobStatus status) =>
         status is not JobStatus.Completed;
+
+    private bool IsDeclinedResumeJob(string? jobId) =>
+        !string.IsNullOrEmpty(_declinedResumeJobId)
+        && string.Equals(_declinedResumeJobId, jobId, StringComparison.Ordinal);
 
     private void ApplyResumableSnapshot(Job last)
     {
@@ -1620,6 +1720,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         OverallStats = ComposeStats(snap, includeStage: false);
         Rundown = TransferRundown.From(last);
         StatusText = "Resume to continue this job.";
+        if (!string.IsNullOrWhiteSpace(last.ResultMessage)
+            && last.Status is JobStatus.Incomplete or JobStatus.Failed or JobStatus.Cancelled)
+        {
+            ResultBanner = ProgressHeader.HeaderResult(last);
+            RememberResultLog(last.Id);
+            StatusText = ResultBanner;
+        }
+
         NotifyHeader();
     }
 
@@ -3371,6 +3479,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             return;
         }
 
+        if (IsDeclinedResumeJob(item.Job.Id))
+        {
+            _declinedResumeJobId = null;
+        }
+
         _startingJobIds.Add(item.Job.Id);
         item.BeginResume();
         StatusText = item.ResumeLabel == "Start" ? "Starting…" : "Resuming…";
@@ -3605,7 +3718,22 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
 
         _folderTreeRefreshUtc = now;
-        var jobId = _runningJobId ?? _lastProgress?.JobId ?? _lastJob?.Id;
+        var jobId = _runningJobId ?? _lastProgress?.JobId;
+        if (string.IsNullOrEmpty(jobId)
+            && _lastJob is { } headerJob
+            && !IsDeclinedResumeJob(headerJob.Id))
+        {
+            jobId = headerJob.Id;
+        }
+
+        if (IsDeclinedResumeJob(jobId)
+            || (string.IsNullOrEmpty(jobId) && !string.IsNullOrEmpty(_declinedResumeJobId)))
+        {
+            FolderTree.Clear();
+            FolderTreeEmpty = true;
+            return;
+        }
+
         if (!string.Equals(jobId, _folderTreeJobId, StringComparison.OrdinalIgnoreCase))
         {
             _expandedFolders.Clear();

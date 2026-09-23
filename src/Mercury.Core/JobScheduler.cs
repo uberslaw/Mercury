@@ -747,6 +747,29 @@ public sealed class JobScheduler : IDisposable
 
     public JobHeartbeatState? FindDirtyHeartbeat() => JobHeartbeat.FindDirty(_paths);
 
+    /// <summary>Clear the launch-resume dirty flag. Journal stays for Resume last.</summary>
+    public void ClearDirtyHeartbeat(string jobId)
+    {
+        if (string.IsNullOrWhiteSpace(jobId))
+        {
+            return;
+        }
+
+        var dir = _paths.JobDirectory(jobId);
+        try
+        {
+            if (JobJournal.Exists(dir))
+            {
+                using var journal = JobJournal.Open(dir);
+                JobHeartbeat.Clear(journal);
+            }
+        }
+        catch
+        {
+            // next launch may prompt again if the sidecar could not be cleared
+        }
+    }
+
     private sealed record Running(Job Job, JobJournal Journal, PauseGate Pause, CancellationTokenSource Cts)
     {
         public bool KeepHeartbeatOnCancel { get; set; }

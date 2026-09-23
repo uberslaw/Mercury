@@ -239,6 +239,33 @@
                         </ListBox>
                     </Border>
                 </TabItem>
+                <TabItem Header="Compare">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10">
+                        <StackPanel>
+                            <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="MutedBrush">
+                                <TextBlock Text="Compare two folders — independent of Transfer" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,8"/>
+                            </Border>
+                            <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="InputBackgroundBrush" Margin="0,0,0,8">
+                                <TextBox Text="D:\Photos" IsReadOnly="True"/>
+                            </Border>
+                            <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Button">
+                            <WrapPanel Margin="0,0,0,8">
+                                <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="ButtonBrush,ButtonForegroundBrush">
+                                    <Button Content="Compare" Style="{StaticResource ToolbarButton}"/>
+                                </Border>
+                                <Button Content="Export TXT" Style="{StaticResource CompactButton}"/>
+                            </WrapPanel>
+                            </Border>
+                            <CheckBox Style="{StaticResource OptionsCheckBox}" Content="Advanced scan" IsChecked="True"/>
+                            <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="PanelAltBrush" Margin="0,8,0,0">
+                                <ListBox FontFamily="Segoe UI" FontSize="13" Height="56"
+                                         Background="{DynamicResource PanelAltBrush}">
+                                    <ListBoxItem>only left · file  extra.jpg</ListBoxItem>
+                                </ListBox>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
                 <TabItem Header="Console">
                     <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="ConsoleBackgroundBrush,Console" Margin="10">
                         <ListBox Background="{DynamicResource ConsoleBackgroundBrush}">

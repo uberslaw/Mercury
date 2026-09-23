@@ -12,6 +12,10 @@ public sealed class RecentLocations
     public string? LastSourceDir { get; set; }
     /// <summary>Last folder opened by Browse Destination (independent of source).</summary>
     public string? LastDestDir { get; set; }
+    public List<string> CompareLeft { get; set; } = [];
+    public List<string> CompareRight { get; set; } = [];
+    public string? LastCompareLeftDir { get; set; }
+    public string? LastCompareRightDir { get; set; }
 }
 
 public sealed class SavedJob
@@ -98,6 +102,9 @@ public static class LibraryStore
         var last = isSource ? recents.LastSourceDir : recents.LastDestDir;
         return ExistingDirectoryOf(last) ?? ExistingDirectoryOf(currentPath);
     }
+
+    public static string? BrowseStartDir(string? lastDir, string? currentPath) =>
+        ExistingDirectoryOf(lastDir) ?? ExistingDirectoryOf(currentPath);
 
     public static string? ExistingDirectoryOf(string? path)
     {

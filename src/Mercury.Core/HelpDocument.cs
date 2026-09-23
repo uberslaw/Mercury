@@ -20,7 +20,7 @@ public static class HelpDocument
                 "Jobs can pause, resume, and verify that destination files match. There is no installer.\n\n" +
                 "Data defaults to %APPDATA%\\Mercury so journals survive swapping the exe. Open the Settings tab for every file Mercury writes. " +
                 "Use portable mode (beside the exe) only if you want a USB toolkit copy.\n\n" +
-                "This Help tab is searchable. Sections: Transfer, Job options, RoboFlags, Progress, Tree, Queue, Console, History, Network, Catcher setup, Theme, Settings."
+                "This Help tab is searchable. Sections: Transfer, Job options, RoboFlags, Progress, Tree, Compare, Queue, Console, History, Network, Catcher setup, Theme, Settings."
         },
         new()
         {
@@ -115,6 +115,7 @@ public static class HelpDocument
                 "MB/s or Mbps (Global) switches Speed between MB/s and Mbps (1 MB/s = 8 Mbps). " +
                 "Job n of m is which queue item (example: 3 of 3). Stage is that job’s pipeline step: enumerate, copy, verify, writing rundown. " +
                 "With no running or resumable job the header stays collapsed — no 0/0 files or empty rundown. A part-way last job still shows its last percent and counts so you can Resume last. " +
+                "If launch asks to resume an unscheduled stop and you choose No, that snapshot is cleared: Progress is idle (Not started), Current is empty, and Start is not Resume unless you later Resume last or a queue row. The finished/incomplete job can stay in the Queue. " +
                 "When two or more jobs are in the queue, the stats table includes Overall files (example: Files: 12/400). " +
                 "Job: 2 of 5 is the running job’s place in the listed queue (omitted when there is a single job). " +
                 "Stats sit under the bars in a table (key: value), including the current File name. Status text lives in this header — the Transfer tab no longer repeats them. " +
@@ -134,6 +135,18 @@ public static class HelpDocument
                 "Expand a folder for the same columns on child folders. Leaf folders show Subdirs as 0. Starts collapsed at the source’s immediate child folders. " +
                 "Done % is copied/unpacked/skipped bytes in that subtree versus the enumerated total there (file count if sizes are 0). " +
                 "ETA is remaining subtree bytes ÷ job speed, or — until speed exists. Idle with no job is empty."
+        },
+        new()
+        {
+            Id = "compare",
+            Title = "Compare tab",
+            Body =
+                "Compare two folders (Left / Right). Browse or paste including UNC. Compare does not pause, stop, or change a running copy — Transfer, Queue, and Progress stay as they are.\n\n" +
+                "Default scan recursively counts folders and files: left/right totals, only-left, only-right, matching-name folders, and files with the same relative path. It does not hash or compare size/time. " +
+                "Advanced also compares size, last-write time (optional FAT 2s, same as RoboFlags), name casing, and files per folder. Tick Hash (xxHash64, the Thorough verify hasher) only if you need content compare — it is off by default because it is slow.\n\n" +
+                "Filters choose which difference kinds appear in the summary, highlight cards, list, and TXT export. Default filters are folder counts and file counts only. " +
+                "Highlight cards show the main diffs to act on (top only-left folders, largest size mismatches, newest time mismatches, hash failures). The list below is capped; Export TXT writes the full enabled lists (default name compare-YYYYMMDD-HHMM.txt under Compare reports in Settings, or a path you pick).\n\n" +
+                "Add missing to queue creates a catch-up copy Left→Right or Right→Left: Include source folder name off (contents of one root into the other), overwrite Skip if dest newer or equal. It is added to the Queue and does not start. Enumeration skips files that already match dest — Mercury does not build a custom skip list."
         },
         new()
         {
@@ -206,7 +219,7 @@ public static class HelpDocument
             Id = "settings",
             Title = "Settings tab",
             Body =
-                "Lists every path Mercury writes (data folder, error log, job logs, journals, settings.json, last-job.json, queue.json, history.db, themes.json, Catcher files). " +
+                "Lists every path Mercury writes (data folder, error log, job logs, journals, settings.json, last-job.json, queue.json, history.db, themes.json, Catcher files, compare reports). " +
                 "Open folder jumps to that location in Explorer.\n\n" +
                 "Pack / skip extensions: never-pack copies those types as files; pack list opts types into small-file pockets even if they look compressed. " +
                 "Defaults match Skip Compressed (video, photos, audio, archives, ISO). Reset defaults restores that set. Job options → Extensions… opens this section.\n\n" +

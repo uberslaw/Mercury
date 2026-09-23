@@ -84,6 +84,92 @@ public class PathAndTreeUiTests
     }
 
     [Fact]
+    public void CompareBrowseStaysEnabledWhileRunningCopy()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mercury-compare-run-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        MainViewModel? vm = null;
+        try
+        {
+            vm = new MainViewModel(new AppPaths(root));
+            vm.IsRunning = true;
+            vm.IsPaused = false;
+            Assert.False(vm.PathsEditable);
+            Assert.False(vm.BrowseSourceCommand.CanExecute(null));
+            Assert.True(vm.Compare.BrowseLeftCommand.CanExecute(null));
+            Assert.True(vm.Compare.BrowseRightCommand.CanExecute(null));
+            Assert.True(vm.Compare.PathsEditable);
+        }
+        finally
+        {
+            vm?.Dispose();
+            try
+            {
+                Directory.Delete(root, true);
+            }
+            catch
+            {
+                // leftover
+            }
+        }
+    }
+
+    [Fact]
+    public void CompareCreateJob_SetsSourceDestAndQueuesWithoutStart()
+    {
+        WpfSta.Run(() =>
+        {
+            WpfSta.EnsureApp();
+            var root = Path.Combine(Path.GetTempPath(), "mercury-compare-job-" + Guid.NewGuid().ToString("N"));
+            var left = Path.Combine(root, "left");
+            var right = Path.Combine(root, "right");
+            Directory.CreateDirectory(left);
+            Directory.CreateDirectory(right);
+            File.WriteAllText(Path.Combine(left, "only-left.txt"), "solo");
+            Directory.CreateDirectory(Path.Combine(right, "only-right-dir"));
+            MainViewModel? vm = null;
+            try
+            {
+                vm = new MainViewModel(new AppPaths(root));
+                var compared = DirectoryComparer.Compare(left, right);
+                vm.Compare.LoadResultForTests(compared);
+                Assert.True(vm.Compare.CreateJobCommand.CanExecute(null));
+                vm.Compare.CopyDirectionIndex = 0;
+                vm.Compare.CreateJobCommand.Execute(null);
+
+                Assert.Equal(left, vm.SourcePath, ignoreCase: true);
+                Assert.Equal(right, vm.DestPath, ignoreCase: true);
+                Assert.False(vm.IncludeSourceFolderName);
+                Assert.Equal(0, vm.OverwriteIndex);
+                Assert.Equal(left, vm.QueueSourcePath, ignoreCase: true);
+                Assert.Equal(right, vm.QueueDestPath, ignoreCase: true);
+                Assert.False(vm.QueueDraft.IncludeSourceFolderName);
+                var queued = Assert.Single(vm.QueueJobs);
+                Assert.Equal(left, queued.Job.SourcePath, ignoreCase: true);
+                Assert.Equal(right, queued.Job.DestinationPath, ignoreCase: true);
+                Assert.False(queued.Job.Options.IncludeSourceFolderName);
+                Assert.Equal(OverwritePolicy.SkipIfNewerOrEqual, queued.Job.Options.Overwrite);
+                Assert.Equal(JobStatus.Pending, queued.Job.Status);
+                Assert.False(vm.IsRunning);
+                Assert.False(queued.Job.OnHold);
+                Assert.Contains("only-left.txt", vm.Compare.ExportTextForTests(), StringComparison.Ordinal);
+            }
+            finally
+            {
+                vm?.Dispose();
+                try
+                {
+                    Directory.Delete(root, true);
+                }
+                catch
+                {
+                    // leftover
+                }
+            }
+        });
+    }
+
+    [Fact]
     public void QueueAddUsesDraftOptionsNotTransferAndWrapsByDefault()
     {
         WpfSta.Run(() =>
