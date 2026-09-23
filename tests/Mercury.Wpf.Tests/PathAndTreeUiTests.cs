@@ -398,6 +398,14 @@ public class PathAndTreeUiTests
         Assert.Equal(QueueStatusTone.Queued, new QueueJobItem(new Job { Status = JobStatus.Pending, OnHold = true }).StatusTone);
         Assert.Equal(QueueStatusTone.Queued, new QueueJobItem(new Job { Status = JobStatus.Cancelled }).StatusTone);
 
+        var pausing = new QueueJobItem(new Job { Name = "copy", Status = JobStatus.Copying })
+        {
+            PauseAfterArmed = true
+        };
+        pausing.RaiseComputed();
+        Assert.Equal(QueueStatusHighlight.PauseAfterLabel, pausing.TileStatus);
+        Assert.Equal(QueueStatusTone.PauseAfter, pausing.StatusTone);
+
         Assert.Equal(QueueStatusTone.Transfer, QueueStatusHighlight.ForLabel("Transferring"));
         Assert.Equal(QueueStatusTone.Transfer, QueueStatusHighlight.ForLabel("Copying"));
         Assert.Equal(QueueStatusTone.Transfer, QueueStatusHighlight.ForLabel("Running"));
@@ -405,11 +413,21 @@ public class PathAndTreeUiTests
         Assert.Equal(QueueStatusTone.Complete, QueueStatusHighlight.ForLabel("Done"));
         Assert.Equal(QueueStatusTone.Complete, QueueStatusHighlight.ForLabel("Finished"));
         Assert.Equal(QueueStatusTone.Error, QueueStatusHighlight.ForLabel("Failed"));
+        Assert.Equal(QueueStatusTone.PauseAfter, QueueStatusHighlight.ForLabel(QueueStatusHighlight.PauseAfterLabel));
+        Assert.Equal(QueueStatusTone.Queued, QueueStatusHighlight.ForLabel(QueueStatusHighlight.IdleLabel));
+        Assert.Equal(QueueStatusTone.Queued, QueueStatusHighlight.ForLabel("Idle"));
+        Assert.Equal("Paused", QueueStatusHighlight.ForRun(true, true, false, false, false, false, JobStatus.Copying));
+        Assert.Equal(QueueStatusHighlight.IdleLabel, QueueStatusHighlight.ForRun(false, false, false, false, false, false, null));
+        Assert.Equal("Verifying", QueueStatusHighlight.ForRun(false, false, false, true, true, false, JobStatus.Verifying));
+        Assert.Equal("Rundown", QueueStatusHighlight.ForRun(false, false, false, true, false, true, JobStatus.Incomplete));
+        Assert.Equal(QueueStatusHighlight.PauseAfterLabel, QueueStatusHighlight.ForRun(true, false, true, false, false, false, JobStatus.Copying));
+        Assert.Equal("Transferring", QueueStatusHighlight.ForRun(true, false, false, false, false, false, JobStatus.Copying));
         Assert.Equal(QueueStatusHighlight.TransferBrushKey, QueueStatusHighlight.BrushKey(QueueStatusTone.Transfer));
         Assert.Equal(QueueStatusHighlight.VerifyBrushKey, QueueStatusHighlight.BrushKey(QueueStatusTone.Verify));
         Assert.Equal(QueueStatusHighlight.CompleteBrushKey, QueueStatusHighlight.BrushKey(QueueStatusTone.Complete));
         Assert.Equal(QueueStatusHighlight.ErrorBrushKey, QueueStatusHighlight.BrushKey(QueueStatusTone.Error));
         Assert.Equal(QueueStatusHighlight.PausedBrushKey, QueueStatusHighlight.BrushKey(QueueStatusTone.Paused));
+        Assert.Equal(QueueStatusHighlight.PauseAfterBrushKey, QueueStatusHighlight.BrushKey(QueueStatusTone.PauseAfter));
         Assert.Equal(QueueStatusHighlight.QueuedBrushKey, QueueStatusHighlight.BrushKey(QueueStatusTone.Queued));
     }
 
@@ -478,6 +496,97 @@ public class PathAndTreeUiTests
                 var expected = Assert.IsType<SolidColorBrush>(
                     System.Windows.Application.Current.FindResource(QueueStatusHighlight.TransferBrushKey));
                 Assert.Equal(expected.Color, fill.Color);
+            }
+            finally
+            {
+                try
+                {
+                    window?.Close();
+                }
+                catch
+                {
+                    // test cleanup
+                }
+            }
+        });
+    }
+
+    [Fact]
+    public void HeaderStatusChip_IdlePausedAndPauseAfter_UseQueueMapper()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mercury-header-chip-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        MainViewModel? vm = null;
+        try
+        {
+            vm = new MainViewModel(new AppPaths(root));
+            Assert.Equal(QueueStatusHighlight.IdleLabel, vm.HeaderStatusLabel);
+            Assert.Equal(QueueStatusTone.Queued, vm.HeaderStatusTone);
+            Assert.Equal(QueueStatusHighlight.IdleLabel, vm.HeaderStatusChip.TileStatus);
+            Assert.Equal(QueueStatusTone.Queued, vm.HeaderStatusChip.StatusTone);
+
+            vm.IsRunning = true;
+            vm.IsPaused = true;
+            Assert.Equal("Paused", vm.HeaderStatusLabel);
+            Assert.Equal(QueueStatusTone.Paused, vm.HeaderStatusTone);
+        }
+        finally
+        {
+            vm?.Dispose();
+            try
+            {
+                Directory.Delete(root, true);
+            }
+            catch
+            {
+                // leftover
+            }
+        }
+    }
+
+    [Fact]
+    public void HeaderAndQueuePauseAfterChip_UsesAmberFill()
+    {
+        WpfSta.Run(() =>
+        {
+            WpfSta.EnsureApp();
+            Window? window = null;
+            try
+            {
+                var view = new StatusChipView(QueueStatusHighlight.PauseAfterLabel);
+                Assert.Equal(QueueStatusTone.PauseAfter, view.StatusTone);
+                var chip = new Border
+                {
+                    Style = (Style)System.Windows.Application.Current.FindResource("QueueStatusChip"),
+                    DataContext = view,
+                    Child = new TextBlock
+                    {
+                        Text = view.TileStatus,
+                        FontWeight = FontWeights.SemiBold
+                    }
+                };
+                window = new Window
+                {
+                    Width = 320,
+                    Height = 80,
+                    Content = chip
+                };
+                window.Show();
+                WpfSta.Flush();
+                chip.UpdateLayout();
+                WpfSta.Flush();
+
+                Assert.Equal(QueueStatusHighlight.PauseAfterLabel, ((TextBlock)chip.Child).Text);
+                var fill = Assert.IsType<SolidColorBrush>(chip.Background);
+                var expected = Assert.IsType<SolidColorBrush>(
+                    System.Windows.Application.Current.FindResource(QueueStatusHighlight.PauseAfterBrushKey));
+                Assert.Equal(expected.Color, fill.Color);
+                Assert.NotEqual(
+                    ((SolidColorBrush)System.Windows.Application.Current.FindResource(QueueStatusHighlight.PausedBrushKey)).Color,
+                    fill.Color);
+                Assert.NotEqual(
+                    ((SolidColorBrush)System.Windows.Application.Current.FindResource(QueueStatusHighlight.TransferBrushKey)).Color,
+                    fill.Color);
             }
             finally
             {

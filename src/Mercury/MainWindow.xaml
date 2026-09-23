@@ -37,9 +37,19 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Body">
-                            <TextBlock Text="Progress" FontWeight="SemiBold" VerticalAlignment="Top"
-                                       Foreground="{DynamicResource OnHeaderBrush}"
-                                       FontFamily="{DynamicResource BodyFontFamily}" FontSize="{DynamicResource BodyFontSize}"/>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="Progress" FontWeight="SemiBold" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource OnHeaderBrush}"
+                                           FontFamily="{DynamicResource BodyFontFamily}" FontSize="{DynamicResource BodyFontSize}"
+                                           Margin="0,0,10,0"/>
+                                <Border Style="{StaticResource QueueStatusChip}" Margin="0"
+                                        DataContext="{Binding HeaderStatusChip}"
+                                        Visibility="{Binding DataContext.ShowProgressDetail, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource InverseBoolToVis}}"
+                                        local:ThemeChrome.Keys="QueueStatusTransferBrush,QueueStatusVerifyBrush,QueueStatusCompleteBrush,QueueStatusErrorBrush,QueueStatusPausedBrush,QueueStatusPauseAfterBrush,QueueStatusQueuedBrush">
+                                    <TextBlock Text="{Binding TileStatus}" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextBrush}"/>
+                                </Border>
+                            </StackPanel>
                         </Border>
                         <StackPanel Grid.Column="1" HorizontalAlignment="Right" Grid.IsSharedSizeScope="True">
                             <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Label,Value,Progress"
@@ -78,9 +88,17 @@
                                         </Style.Triggers>
                                     </Style>
                                 </Border.Style>
-                                <TextBlock Text="Current" FontWeight="SemiBold" Margin="0,0,0,2"
-                                           Foreground="{DynamicResource OnHeaderBrush}"
-                                           FontFamily="{DynamicResource BodyFontFamily}" FontSize="{DynamicResource BodyFontSize}"/>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="Current" FontWeight="SemiBold" Margin="0,0,10,2" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource OnHeaderBrush}"
+                                               FontFamily="{DynamicResource BodyFontFamily}" FontSize="{DynamicResource BodyFontSize}"/>
+                                    <Border Style="{StaticResource QueueStatusChip}" Margin="0,0,0,2"
+                                            DataContext="{Binding DataContext.HeaderStatusChip, RelativeSource={RelativeSource AncestorType=Window}}"
+                                            local:ThemeChrome.Keys="QueueStatusTransferBrush,QueueStatusVerifyBrush,QueueStatusCompleteBrush,QueueStatusErrorBrush,QueueStatusPausedBrush,QueueStatusPauseAfterBrush,QueueStatusQueuedBrush">
+                                        <TextBlock Text="{Binding TileStatus}" FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource TextBrush}"/>
+                                    </Border>
+                                </StackPanel>
                             </Border>
                             <Border Grid.Column="2" Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Body"
                                     Visibility="{Binding ShowOverallProgress, Converter={StaticResource BoolToVis}}">
@@ -145,6 +163,12 @@
                         </Border>
                     </StackPanel>
                     <WrapPanel Margin="0,8,0,0">
+                        <Border Style="{StaticResource QueueStatusChip}" Margin="0,0,12,0" VerticalAlignment="Center"
+                                DataContext="{Binding HeaderStatusChip}"
+                                local:ThemeChrome.Keys="QueueStatusTransferBrush,QueueStatusVerifyBrush,QueueStatusCompleteBrush,QueueStatusErrorBrush,QueueStatusPausedBrush,QueueStatusPauseAfterBrush,QueueStatusQueuedBrush">
+                            <TextBlock Text="{Binding TileStatus}" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextBrush}"/>
+                        </Border>
                         <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="AccentBrush,AccentForegroundBrush">
                             <Button Content="{Binding StartButtonLabel}" Style="{StaticResource AccentButton}"
                                     Command="{Binding StartCommand}"
@@ -414,7 +438,7 @@
                                         </TextBlock>
                                         <TextBlock Text="{Binding Route}" Opacity="0.8" TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
                                         <Border Style="{StaticResource QueueStatusChip}"
-                                                local:ThemeChrome.Keys="QueueStatusTransferBrush,QueueStatusVerifyBrush,QueueStatusCompleteBrush,QueueStatusErrorBrush,QueueStatusPausedBrush,QueueStatusQueuedBrush">
+                                                local:ThemeChrome.Keys="QueueStatusTransferBrush,QueueStatusVerifyBrush,QueueStatusCompleteBrush,QueueStatusErrorBrush,QueueStatusPausedBrush,QueueStatusPauseAfterBrush,QueueStatusQueuedBrush">
                                             <TextBlock Text="{Binding TileStatus}" FontWeight="SemiBold"
                                                        Foreground="{DynamicResource TextBrush}"/>
                                         </Border>

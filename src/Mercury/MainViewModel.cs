@@ -795,6 +795,43 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public string StartButtonLabel => ShouldLabelResume ? "Resume" : "Start";
 
+    public string HeaderStatusLabel
+    {
+        get
+        {
+            var verifying = false;
+            var rundown = false;
+            JobStatus? live = null;
+            if (IsRunning && _lastProgress is { } progress)
+            {
+                live = progress.Status;
+                verifying = progress.IsVerifyStage || progress.Status == JobStatus.Verifying;
+                rundown = progress.IsRundownStage;
+            }
+            else if (HasBackgroundRundown)
+            {
+                var job = _scheduler.TryGetRundownJob();
+                var pulse = job is null ? null : _scheduler.GetProgress(job.Id);
+                live = pulse?.Status ?? job?.Status;
+                verifying = pulse?.IsVerifyStage == true || live == JobStatus.Verifying;
+                rundown = pulse?.IsRundownStage == true || !verifying;
+            }
+
+            return QueueStatusHighlight.ForRun(
+                IsRunning,
+                IsPaused,
+                PauseAfterFileArmed,
+                HasBackgroundRundown,
+                verifying,
+                rundown,
+                live);
+        }
+    }
+
+    public QueueStatusTone HeaderStatusTone => QueueStatusHighlight.ForLabel(HeaderStatusLabel);
+
+    public StatusChipView HeaderStatusChip => new(HeaderStatusLabel);
+
     public string PauseAfterThisFileLabel =>
         PauseAfterFileArmed ? "Remove Pause after" : "Pause after this file";
 
@@ -1057,6 +1094,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowProgressDetail)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowHeaderRundown)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PathsEditable)));
+                NotifyStatusChip();
             }
         }
     }
@@ -1070,6 +1108,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             {
                 RaiseRunCommands();
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowProgressDetail)));
+                NotifyStatusChip();
             }
         }
     }
@@ -1084,6 +1123,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 RaiseRunCommands();
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PathsEditable)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StartButtonLabel)));
+                NotifyStatusChip();
             }
         }
     }
@@ -1703,6 +1743,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PauseAfterFileArmed)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PauseAfterThisFileLabel)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PauseAfterThisFileToolTip)));
+        NotifyStatusChip();
         (PauseAfterThisFileCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 
@@ -3107,10 +3148,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 var progress = _scheduler.GetProgress(item.Job.Id);
                 if (progress is not null)
                 {
+                    item.PauseAfterArmed = _scheduler.IsPauseAfterFilePending(item.Job.Id);
                     item.ApplyProgress(progress);
                 }
                 else
                 {
+                    item.PauseAfterArmed = _scheduler.IsPauseAfterFilePending(item.Job.Id);
                     item.RaiseComputed();
                 }
             }
@@ -3127,7 +3170,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             {
                 Order = i + 1,
                 CanMoveUp = i > 0,
-                CanMoveDown = i < jobs.Count - 1
+                CanMoveDown = i < jobs.Count - 1,
+                PauseAfterArmed = _scheduler.IsPauseAfterFilePending(jobs[i].Id)
             };
             var progress = _scheduler.GetProgress(jobs[i].Id);
             if (progress is not null)
@@ -3165,6 +3209,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(OverallPercent)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JobPercentText)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(OverallPercentText)));
+        NotifyStatusChip();
+    }
+
+    private void NotifyStatusChip()
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderStatusLabel)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderStatusTone)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderStatusChip)));
     }
 
     private ProgressStats ComposeStats(JobProgress current, bool includeStage = true)

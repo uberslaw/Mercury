@@ -105,6 +105,7 @@ public sealed class ThemeService
         new("QueueStatusCompleteBrush", "Queue: complete", "#c5e8c8", "Queue status"),
         new("QueueStatusErrorBrush", "Queue: incomplete / error", "#f5b4b0", "Queue status"),
         new("QueueStatusPausedBrush", "Queue: paused", "#ffd0a8", "Queue status"),
+        new("QueueStatusPauseAfterBrush", "Queue: pausing after file", "#f4c96a", "Queue status"),
         new("QueueStatusQueuedBrush", "Queue: pending / hold", "#d9d4d0", "Queue status")
     ];
 
@@ -886,6 +887,7 @@ public sealed class ThemeService
         ["QueueStatusCompleteBrush"] = "#c5d8c8",
         ["QueueStatusErrorBrush"] = "#d4b0ae",
         ["QueueStatusPausedBrush"] = "#d4b896",
+        ["QueueStatusPauseAfterBrush"] = "#d4bc6a",
         ["QueueStatusQueuedBrush"] = "#9a9696"
     };
 

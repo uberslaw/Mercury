@@ -36,10 +36,17 @@ public sealed class QueueJobItem : INotifyPropertyChanged
 
     private bool _writingRundown;
     private bool _verifying;
+    private bool _pauseAfterArmed;
 
     public string StatusLabel => TileStatus;
 
     public QueueStatusTone StatusTone => QueueStatusHighlight.For(this);
+
+    public bool PauseAfterArmed
+    {
+        get => _pauseAfterArmed;
+        set => SetField(ref _pauseAfterArmed, value);
+    }
 
     public string TileStatus
     {
@@ -48,6 +55,12 @@ public sealed class QueueJobItem : INotifyPropertyChanged
             if (Job.OnHold)
             {
                 return "On hold";
+            }
+
+            if (_pauseAfterArmed
+                && Job.Status is JobStatus.Preparing or JobStatus.Enumerating or JobStatus.Copying)
+            {
+                return QueueStatusHighlight.PauseAfterLabel;
             }
 
             if (_writingRundown)

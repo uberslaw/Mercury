@@ -49,6 +49,7 @@
         <SolidColorBrush x:Key="QueueStatusCompleteBrush" Color="#c5e8c8" po:Freeze="False"/>
         <SolidColorBrush x:Key="QueueStatusErrorBrush" Color="#f5b4b0" po:Freeze="False"/>
         <SolidColorBrush x:Key="QueueStatusPausedBrush" Color="#ffd0a8" po:Freeze="False"/>
+        <SolidColorBrush x:Key="QueueStatusPauseAfterBrush" Color="#f4c96a" po:Freeze="False"/>
         <SolidColorBrush x:Key="QueueStatusQueuedBrush" Color="#d9d4d0" po:Freeze="False"/>
 
         <FontFamily x:Key="BodyFontFamily">Segoe UI</FontFamily>
@@ -131,6 +132,9 @@
                 </DataTrigger>
                 <DataTrigger Binding="{Binding StatusTone}" Value="Paused">
                     <Setter Property="Background" Value="{DynamicResource QueueStatusPausedBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StatusTone}" Value="PauseAfter">
+                    <Setter Property="Background" Value="{DynamicResource QueueStatusPauseAfterBrush}"/>
                 </DataTrigger>
             </Style.Triggers>
         </Style>
