@@ -6,6 +6,8 @@ namespace Mercury;
 public static class ZipPack
 {
     public const string TempSuffix = ".mercury.tmp";
+    /// <summary>Work folder under the source landing (never a sibling of that landing).</summary>
+    public const string TransportFolder = "compressed";
 
     public static bool Applies(Job job, CopyMapping mapping) =>
         job.Options?.PackAsZip == true && !mapping.SingleFile;
@@ -19,6 +21,8 @@ public static class ZipPack
         {
             return mapping.TransportZipPath;
         }
+
+        var landing = mapping.DestRoot.TrimEnd('\\', '/');
         if (mapping.Kind == SourceKind.DriveRoot)
         {
             var root = Path.GetPathRoot(mapping.SourceRoot) ?? "drive";
@@ -28,10 +32,16 @@ public static class ZipPack
                 letter = "drive";
             }
 
-            return Path.Combine(mapping.DestRoot, letter + "-drive.zip");
+            return Path.Combine(landing, TransportFolder, letter + "-drive-transport.zip");
         }
 
-        return mapping.DestRoot.TrimEnd('\\', '/') + ".zip";
+        var name = Path.GetFileName(landing);
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            name = "source";
+        }
+
+        return Path.Combine(landing, TransportFolder, name + "-transport.zip");
     }
 
     public static string TempPath(string zipPath) => zipPath + TempSuffix;
@@ -352,10 +362,25 @@ public static class ZipPack
             parent = ".";
         }
 
+        if (string.Equals(Path.GetFileName(parent.TrimEnd('\\', '/')), TransportFolder, StringComparison.OrdinalIgnoreCase))
+        {
+            var landing = Path.GetDirectoryName(parent);
+            if (!string.IsNullOrEmpty(landing))
+            {
+                return landing;
+            }
+        }
+
         var name = Path.GetFileNameWithoutExtension(zipPath);
         if (string.IsNullOrWhiteSpace(name))
         {
             name = "received";
+        }
+
+        const string transportSuffix = "-transport";
+        if (name.EndsWith(transportSuffix, StringComparison.OrdinalIgnoreCase))
+        {
+            name = name[..^transportSuffix.Length];
         }
 
         return Path.Combine(parent, name);
@@ -365,6 +390,24 @@ public static class ZipPack
     {
         TryDelete(TempPath(zipPath));
         TryDelete(zipPath);
+        try
+        {
+            var parent = Path.GetDirectoryName(zipPath);
+            if (string.IsNullOrEmpty(parent)
+                || !string.Equals(Path.GetFileName(parent.TrimEnd('\\', '/')), TransportFolder, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            if (Directory.Exists(parent) && !Directory.EnumerateFileSystemEntries(parent).Any())
+            {
+                Directory.Delete(parent);
+            }
+        }
+        catch
+        {
+            // leftover empty folder is harmless
+        }
     }
 
     /// <summary>

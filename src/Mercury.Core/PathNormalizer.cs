@@ -103,6 +103,33 @@ public static class PathNormalizer
         }
 
         var rel = relative.Replace('/', '\\').TrimStart('\\');
-        return Path.GetFullPath(Path.Combine(root, rel));
+        if (rel.Length >= 2 && rel[1] == ':')
+        {
+            rel = rel[2..].TrimStart('\\');
+        }
+
+        while (rel.StartsWith(@"..\", StringComparison.Ordinal))
+        {
+            rel = rel[3..];
+        }
+
+        var combined = Path.GetFullPath(Path.Combine(root, rel));
+        try
+        {
+            if (!IsUnder(combined, root)
+                && !string.Equals(
+                    Normalize(combined).TrimEnd('\\', '/'),
+                    Normalize(root).TrimEnd('\\', '/'),
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return Path.GetFullPath(Path.Combine(root, Path.GetFileName(rel)));
+            }
+        }
+        catch
+        {
+            return Path.GetFullPath(Path.Combine(root, Path.GetFileName(rel)));
+        }
+
+        return combined;
     }
 }

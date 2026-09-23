@@ -346,6 +346,39 @@ public class PathAndTreeUiTests
     }
 
     [Fact]
+    public void QueueTilePhaseLabelsAreTransferringVerifyingRundown()
+    {
+        var copying = new QueueJobItem(new Job { Name = "copy", Status = JobStatus.Copying });
+        Assert.Equal("Transferring", copying.TileStatus);
+
+        var verifying = new QueueJobItem(new Job { Name = "v", Status = JobStatus.Verifying });
+        verifying.ApplyProgress(new JobProgress
+        {
+            Status = JobStatus.Verifying,
+            StageName = "Verifying",
+            Message = "Verifying…",
+            RundownDone = 1,
+            RundownTotal = 10,
+            Eta = null
+        });
+        Assert.Equal("Verifying", verifying.TileStatus);
+        Assert.False(verifying.CanPause);
+        Assert.True(verifying.IsActive);
+
+        var rundown = new QueueJobItem(new Job { Name = "r", Status = JobStatus.Incomplete });
+        rundown.ApplyProgress(new JobProgress
+        {
+            Status = JobStatus.Incomplete,
+            StageName = CopyPipeline.RundownLabel,
+            Message = CopyPipeline.RundownMessage,
+            RundownDone = 2,
+            RundownTotal = 10
+        });
+        Assert.Equal("Rundown", rundown.TileStatus);
+        Assert.True(rundown.IsActive);
+    }
+
+    [Fact]
     public void JobOptionsForm_MbpsToggleStoresMegabytes()
     {
         var form = new JobOptionsForm

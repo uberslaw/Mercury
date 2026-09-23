@@ -271,11 +271,15 @@ public sealed class JobProgress
 
     public bool IsRundownStage => CopyPipeline.IsRundown(StageName, Message);
 
+    public bool IsVerifyStage => CopyPipeline.IsVerify(StageName, Message);
+
+    public bool IsBackgroundStage => CopyPipeline.IsBackground(StageName, Message);
+
     public double Percent
     {
         get
         {
-            if (IsRundownStage && RundownTotal > 0)
+            if ((IsRundownStage || IsVerifyStage) && RundownTotal > 0)
             {
                 return Math.Clamp(100.0 * RundownDone / RundownTotal, 0, 100);
             }
@@ -389,4 +393,13 @@ public interface ICopyEngine
         IJobLog log,
         IProgress<JobProgress>? progress,
         CancellationToken cancellationToken);
+
+    void Verify(
+        Job job,
+        JobJournal journal,
+        IJobLog log,
+        IProgress<JobProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+    }
 }

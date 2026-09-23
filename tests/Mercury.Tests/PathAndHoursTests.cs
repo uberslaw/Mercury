@@ -190,6 +190,29 @@ public class CopyShapeTests
             Directory.Delete(dest, true);
         }
     }
+
+    [Fact]
+    public void CombineDoesNotLetRootedRelativeDropTheLanding()
+    {
+        var dest = Path.Combine(Path.GetTempPath(), "mercury-combine-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dest);
+        try
+        {
+            var landing = Path.Combine(dest, "Anchor Span");
+            Directory.CreateDirectory(landing);
+            var path = PathNormalizer.Combine(landing, @"compressed\a.zip");
+            Assert.Equal(Path.Combine(landing, "compressed", "a.zip"), path, ignoreCase: true);
+            var escaped = PathNormalizer.Combine(landing, Path.Combine(dest, "compressed", "a.zip"));
+            Assert.True(
+                PathNormalizer.IsUnder(escaped, landing)
+                || escaped.StartsWith(landing, StringComparison.OrdinalIgnoreCase),
+                escaped);
+        }
+        finally
+        {
+            Directory.Delete(dest, true);
+        }
+    }
 }
 
 public class RunWindowTests

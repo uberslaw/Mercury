@@ -71,6 +71,10 @@ public sealed class CopyEngine : ICopyEngine
         var pack = catcher is not null ? mappings.All(m => !m.SingleFile) : mappings.Any(m => ZipPack.Applies(job, m));
         var totals = journal.Totals();
         var hasJournal = totals.Files > 0;
+        if (hasJournal)
+        {
+            CopyShape.BindJournalToLanding(journal, mappings);
+        }
         var stages = CopyPipeline.For(job, hasJournal, pack);
         var reporter = new JobProgressReporter(job, name, cloud, stages, progress, log, pause);
 
@@ -370,49 +374,7 @@ public sealed class CopyEngine : ICopyEngine
                     cancellationToken).ConfigureAwait(false);
             }
 
-            reporter.Enter(CopyStageKind.Verifying, JobStatus.Verifying, "Verifying…");
             journal.SaveJob(job);
-            log.Info(job.Id, name, $"Verify started ({job.Options.Verify}).");
-
-            var issues = catcher is not null && pack
-                ? ZipPack.Verify(job, journal, mapping, log, name)
-                : catcher is not null && !pack
-                    ? 0
-                    : Verifier.Verify(job, journal, mapping, log, name);
-            job.IssueCount = issues;
-            if (issues == 0)
-            {
-                job.Status = JobStatus.Completed;
-                if (catcher is not null)
-                {
-                    job.ResultMessage = pack
-                        ? $"Verified complete. Catcher unpacked the transfer at {CatcherCrypto.FormatBaseUrl(catcher.PublicHost, catcher.PublicPort)}."
-                        : $"Verified complete. Sent file to Catcher {CatcherCrypto.FormatBaseUrl(catcher.PublicHost, catcher.PublicPort)}.";
-                }
-                else if (pack)
-                {
-                    job.ResultMessage =
-                        $"Verified complete. Unpacked {totals.Files} files to {mapping.DestRoot}.";
-                }
-                else if (cloud)
-                {
-                    job.ResultMessage = "Verified complete (local destination). Cloud upload is the sync client’s job.";
-                }
-                else
-                {
-                    job.ResultMessage = "Verified complete.";
-                }
-
-                log.Info(job.Id, name, job.ResultMessage);
-            }
-            else
-            {
-                job.Status = JobStatus.Incomplete;
-                job.ResultMessage = $"Incomplete — {issues} issue(s). Open the log for details.";
-                log.Error(job.Id, name, job.ResultMessage);
-            }
-
-            reporter.Update(job.ResultMessage);
         }
         finally
         {
@@ -435,6 +397,143 @@ public sealed class CopyEngine : ICopyEngine
                 // expected
             }
         }
+    }
+
+    public void Verify(
+        Job job,
+        JobJournal journal,
+        IJobLog log,
+        IProgress<JobProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        job.Options ??= new JobOptions();
+        if (job.Options.DryRun
+            || job.Status is JobStatus.Failed or JobStatus.Cancelled)
+        {
+            return;
+        }
+
+        var name = string.IsNullOrWhiteSpace(job.Name) ? job.Id[..8] : job.Name;
+        var catcher = job.Catcher;
+        var cloud = catcher is null && CloudPath.LooksLikeCloudFolder(job.DestinationPath);
+        var destForShape = catcher is null ? job.DestinationPath : journal.Directory;
+        IReadOnlyList<CopyMapping> mappings;
+        try
+        {
+            mappings = JobSources.Resolve(job, destForShape, job.Options.IncludeSourceFolderName).ToList();
+        }
+        catch (Exception ex)
+        {
+            log.Error(job.Id, name, "Verify could not resolve landing paths: " + ex.Message);
+            job.Status = JobStatus.Incomplete;
+            job.ResultMessage = "Incomplete — could not resolve destination for verify.";
+            return;
+        }
+
+        if (mappings.Count == 0)
+        {
+            job.Status = JobStatus.Incomplete;
+            job.ResultMessage = "Incomplete — no source folders to verify.";
+            return;
+        }
+
+        CopyShape.BindJournalToLanding(journal, mappings);
+        var mapping = PackDestination(job, mappings, journal.Directory);
+        var pack = catcher is not null ? mappings.All(m => !m.SingleFile) : mappings.Any(m => ZipPack.Applies(job, m));
+        var totals = journal.Totals();
+        var stages = CopyPipeline.For(job, hasJournalFiles: true, pack);
+        var reporter = new JobProgressReporter(job, name, cloud, stages, progress, log);
+        reporter.Enter(CopyStageKind.Verifying, JobStatus.Verifying, "Verifying…");
+        journal.SaveJob(job);
+        log.Info(job.Id, name, "Verify running in background");
+        log.Info(job.Id, name, $"Verify started ({job.Options.Verify}).");
+
+        int issues;
+        try
+        {
+            issues = catcher is not null && pack
+                ? ZipPack.Verify(job, journal, mapping, log, name)
+                : catcher is not null && !pack
+                    ? 0
+                    : Verifier.Verify(
+                        job,
+                        journal,
+                        mapping,
+                        log,
+                        name,
+                        cancellationToken,
+                        pulse =>
+                        {
+                            reporter.Update(
+                                current: pulse.Phase,
+                                filesCopied: pulse.Done,
+                                filesTotal: pulse.Total,
+                                bytesCopied: totals.DoneBytes > 0 ? totals.DoneBytes : job.BytesCopied,
+                                bytesTotal: totals.DoneBytes > 0 ? totals.DoneBytes : job.BytesCopied);
+                            progress?.Report(new JobProgress
+                            {
+                                JobId = job.Id,
+                                JobName = name,
+                                Status = JobStatus.Verifying,
+                                Message = "Verifying…",
+                                CurrentFile = CopyShape.ProgressRelative(job, pulse.Phase),
+                                CloudDestination = cloud,
+                                BytesCopied = totals.DoneBytes > 0 ? totals.DoneBytes : job.BytesCopied,
+                                BytesTotal = totals.DoneBytes > 0 ? totals.DoneBytes : job.BytesCopied,
+                                FilesCopied = pulse.Done,
+                                FilesTotal = pulse.Total,
+                                StageIndex = CopyPipeline.IndexOf(stages, CopyStageKind.Verifying),
+                                StageCount = stages.Count,
+                                StageName = "Verifying",
+                                StartedUtc = job.StartedUtc,
+                                StageStartedUtc = DateTimeOffset.UtcNow,
+                                Eta = pulse.Eta,
+                                RundownDone = pulse.Done,
+                                RundownTotal = pulse.Total,
+                                RundownPerSecond = pulse.UnitsPerSecond
+                            });
+                        });
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+
+        job.IssueCount = issues;
+        if (issues == 0)
+        {
+            job.Status = JobStatus.Completed;
+            if (catcher is not null)
+            {
+                job.ResultMessage = pack
+                    ? $"Verified complete. Catcher unpacked the transfer at {CatcherCrypto.FormatBaseUrl(catcher.PublicHost, catcher.PublicPort)}."
+                    : $"Verified complete. Sent file to Catcher {CatcherCrypto.FormatBaseUrl(catcher.PublicHost, catcher.PublicPort)}.";
+            }
+            else if (pack)
+            {
+                job.ResultMessage =
+                    $"Verified complete. Unpacked {totals.Files} files to {mapping.DestRoot}.";
+            }
+            else if (cloud)
+            {
+                job.ResultMessage = "Verified complete (local destination). Cloud upload is the sync client’s job.";
+            }
+            else
+            {
+                job.ResultMessage = "Verified complete.";
+            }
+
+            log.Info(job.Id, name, job.ResultMessage);
+        }
+        else
+        {
+            job.Status = JobStatus.Incomplete;
+            job.ResultMessage = $"Incomplete — {issues} issue(s). Open the log for details.";
+            log.Error(job.Id, name, job.ResultMessage);
+        }
+
+        reporter.Update(job.ResultMessage);
+        journal.SaveJob(job);
     }
 
     private static async Task PushCatcherAsync(

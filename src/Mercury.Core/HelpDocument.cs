@@ -31,6 +31,7 @@ public static class HelpDocument
                 "Browse Source remembers the last Source folder; Browse Destination remembers the last Destination. Recents stay independent.\n\n" +
                 "You can pick several source folders in one Browse dialog (same parent), then Browse again from another location — each Add/Browse appends without wiping earlier picks. The selected-folders list under Source has Remove and Clear. Destination remains one folder. " +
                 "A selected folder copies as dest\\FolderName (Explorer-style) — Include source folder name is on by default. " +
+                "Packed transport zips live under that landing in a compressed work folder (dest\\Anchor Span\\compressed\\…zip), never as dest\\compressed beside Anchor Span. After unpack, dest matches the source tree under the landing and the zip is deleted. " +
                 "Two sources both named Photos land as dest\\Photos and dest\\Photos (2). Multiple folders keep their names even if Include is off, so trees do not smash. " +
                 "Pick the parent destination; Will land in under Destination shows every landing path before Start. " +
                 "Uncheck Include only for a single source when you want contents-only (robocopy-style). " +
@@ -76,7 +77,7 @@ public static class HelpDocument
                 "Leave Small Files off unless you want to force packing everything eligible.\n\n" +
                 "Ignore Storage Limit: still logs Need vs free space but does not abort on thin/growable volumes.\n\n" +
                 "RoboFlags (button on this tab) opens native copy checkboxes — see the RoboFlags help section. Timestamps default on so dest keeps source creation time.\n\n" +
-                "Include source folder name (default on): the selected top-level folder is created at dest. Uncheck for Contents only.\n\n" +
+                "Include source folder name (default on): the selected top-level folder is created at dest. Uncheck for Contents only. Packed zips and unpacked files both follow that landing.\n\n" +
                 "Start After: calendar start; Window hours still apply if enabled."
         },
         new()
@@ -119,8 +120,9 @@ public static class HelpDocument
                 "Stats sit under the bars in a table (key: value), including the current File name. Status text lives in this header — the Transfer tab no longer repeats them. " +
                 "Start, Pause, Pause after this file, and Stop sit under that file name at the bottom of this header. Start reads Resume when paused or when Source/Dest match a stopped job you can continue. " +
                 "During enumerate, Types shows a mix such as Video: 40 files, 2.1 TB. " +
-                "Writing rundown runs in the background after copy and verify so the next queued job can start transferring. " +
-                "The copier stays one job at a time; Start is enabled when that copy slot is free. Stop during rundown is immediate."
+                "Writing rundown and Verifying run in the background after copy so the next queued job can start transferring. " +
+                "The copier stays one job at a time; Start is enabled when that copy slot is free. Stop during rundown or verify is immediate. " +
+                "ETA appears on copy, verify, and rundown once there are enough samples; until then it shows —."
         },
         new()
         {
@@ -138,13 +140,14 @@ public static class HelpDocument
             Title = "Queue tab",
             Body =
                 "Jobs wait here until you Start them, or until the previous job finishes (queue drain). Add to queue never auto-starts. " +
-                "An empty queue shows one line: No jobs in the queue. Each job is a tile: order #, source → dest, status (Pending / Running / Paused / On hold / Stopped / Done), flag badges, and per-tile Start / Pause / Stop (plus Hold, Job Options, Remove, Up, Down). " +
+                "An empty queue shows one line: No jobs in the queue. Each job is a tile: order #, source → dest, status (Pending / Transferring / Verifying / Rundown / Paused / On hold / Stopped / Done), flag badges, and per-tile Start / Pause / Stop (plus Hold, Job Options, Remove, Up, Down). " +
                 "Job Options on a tile pops out the same fields as Transfer (speed, Window, retries, overwrite, verify, Dry Run, Small Files, Skip Compressed, Extensions…, Ignore Storage Limit, Start After, RoboFlags, Include source folder name, Catcher template). " +
                 "Those values are stored on the job you Add — they are not locked to the Transfer tab while a copy runs. " +
                 "Tiles show compact badges for non-default flags (Dry Run, Small Files, Ignore Storage Limit, Window, Hold, Catcher, Contents only when wrap is off). " +
                 "Source/Dest/Browse/Add on this tab stay enabled while a transfer is running — only Transfer-tab paths lock with the active job. " +
-                "One copy runs at a time, in listed order: after a job finishes, the first not-on-hold Pending job that is due starts next " +
-                "(a later job will not jump a not-due job ahead of it). Writing rundown for a finished job can continue in the background while the next copy starts. " +
+                "One copy runs at a time, in listed order: after a job finishes copying, the first not-on-hold Pending job that is due starts next " +
+                "(a later job will not jump a not-due job ahead of it). Verifying and writing rundown for a finished copy continue in the background while the next copy starts. " +
+                "Queue status says Transferring for the job moving bytes, Verifying or Rundown for post-copy work — not a generic Running. " +
                 "Hold marks a queued job On hold so it never auto-starts; it stays until you Unhold or Start/Resume that row. " +
                 "Pause all affects every active job. Resume all continues every paused job. Resume last continues the last job’s journal."
         },
@@ -156,7 +159,7 @@ public static class HelpDocument
                 "Live log of the current session. Each line starts with the local date and 24-hour time (not UTC, not 12-hour). Search filters lines; Follow stays on the newest line; Errors only hides info. " +
                 "Copy copies the view. Open logs folder opens the logs directory. " +
                 "A daily error log (mercury-YYYYMMDD.log) is also written under Settings so you can check failures later. " +
-                "When a finished job is writing its rundown off the copy slot, the console logs Rundown running in background."
+                "When a finished job is verifying or writing its rundown off the copy slot, the console logs Verify running in background then Rundown running in background."
         },
         new()
         {

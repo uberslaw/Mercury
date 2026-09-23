@@ -155,6 +155,177 @@ public static class CopyShape
             : mapping.DestRoot;
 
     /// <summary>
+    /// Path shown in Progress File: relative to the destination the user picked, so Include-on
+    /// jobs read as Anchor Span\compressed\file.zip rather than compressed\file.zip.
+    /// </summary>
+    public static string ProgressRelative(Job job, string? current)
+    {
+        if (string.IsNullOrWhiteSpace(current))
+        {
+            return current ?? "";
+        }
+
+        job.Options ??= new JobOptions();
+        string dest;
+        try
+        {
+            dest = PathNormalizer.DirectoryPath(job.DestinationPath);
+        }
+        catch
+        {
+            return current;
+        }
+
+        var landing = PreviewLandingPath(job.SourcePath, job.DestinationPath, job.Options.IncludeSourceFolderName);
+        if (string.IsNullOrEmpty(landing))
+        {
+            landing = dest;
+        }
+
+        try
+        {
+            if (Path.IsPathRooted(current))
+            {
+                var fromDest = Path.GetRelativePath(dest, current);
+                if (IsRelativeInside(fromDest))
+                {
+                    return fromDest;
+                }
+
+                var fromLanding = Path.GetRelativePath(landing, current);
+                if (IsRelativeInside(fromLanding))
+                {
+                    return Path.GetRelativePath(dest, PathNormalizer.Combine(landing, fromLanding));
+                }
+
+                current = Path.GetFileName(current);
+            }
+
+            var underLanding = PathNormalizer.Combine(landing, current);
+            var rel = Path.GetRelativePath(dest, underLanding);
+            if (IsRelativeInside(rel))
+            {
+                return rel;
+            }
+        }
+        catch
+        {
+            // keep the raw name
+        }
+
+        return current;
+    }
+
+    public static string DestPathFor(CopyMapping mapping, string relativePath)
+    {
+        var relative = StripUniquePrefix(relativePath, mapping.UniqueRelativePrefix);
+        if (mapping.SingleFile)
+        {
+            return Path.Combine(mapping.DestRoot, mapping.SingleFileName ?? Path.GetFileName(relative));
+        }
+
+        return PathNormalizer.Combine(mapping.DestRoot, relative);
+    }
+
+    public static CopyMapping FindMapping(FileRecord file, IReadOnlyList<CopyMapping> mappings)
+    {
+        if (mappings.Count == 0)
+        {
+            throw new ArgumentException("At least one mapping is required.", nameof(mappings));
+        }
+
+        CopyMapping? best = null;
+        var bestLen = -1;
+        foreach (var mapping in mappings)
+        {
+            try
+            {
+                var dest = Path.GetFullPath(file.DestPath);
+                var root = Path.GetFullPath(mapping.DestRoot).TrimEnd('\\');
+                var under = dest.StartsWith(root + "\\", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(dest.TrimEnd('\\'), root, StringComparison.OrdinalIgnoreCase);
+                if (!under
+                    && !string.IsNullOrEmpty(mapping.UniqueRelativePrefix)
+                    && (file.RelativePath.StartsWith(mapping.UniqueRelativePrefix + "\\", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(file.RelativePath, mapping.UniqueRelativePrefix, StringComparison.OrdinalIgnoreCase)))
+                {
+                    under = true;
+                }
+
+                if (!under
+                    && (file.SourcePath.StartsWith(mapping.SourceRoot.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(file.SourcePath, mapping.SourceRoot, StringComparison.OrdinalIgnoreCase)))
+                {
+                    under = true;
+                }
+
+                if (under && mapping.DestRoot.Length > bestLen)
+                {
+                    best = mapping;
+                    bestLen = mapping.DestRoot.Length;
+                }
+            }
+            catch
+            {
+                // try next
+            }
+        }
+
+        return best ?? mappings[0];
+    }
+
+    public static bool BindJournalToLanding(JobJournal journal, IReadOnlyList<CopyMapping> mappings)
+    {
+        if (mappings.Count == 0)
+        {
+            return false;
+        }
+
+        var changed = false;
+        foreach (var file in journal.GetFiles())
+        {
+            var mapping = FindMapping(file, mappings);
+            var dest = DestPathFor(mapping, file.RelativePath);
+            if (string.Equals(dest, file.DestPath, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            file.DestPath = dest;
+            journal.UpsertFile(file);
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    private static string StripUniquePrefix(string relativePath, string? prefix)
+    {
+        if (string.IsNullOrEmpty(prefix) || string.IsNullOrEmpty(relativePath))
+        {
+            return relativePath ?? "";
+        }
+
+        var head = prefix.TrimEnd('\\', '/') + Path.DirectorySeparatorChar;
+        if (relativePath.StartsWith(head, StringComparison.OrdinalIgnoreCase))
+        {
+            return relativePath[head.Length..];
+        }
+
+        if (string.Equals(relativePath, prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return "";
+        }
+
+        return relativePath;
+    }
+
+    private static bool IsRelativeInside(string? relative) =>
+        !string.IsNullOrWhiteSpace(relative)
+        && relative != "."
+        && !relative.StartsWith("..", StringComparison.Ordinal);
+
+    /// <summary>
     /// Resolve every source root against one destination. Two+ folders always land in dest\FolderName
     /// (even if include is off) so trees do not smash. Duplicate folder names get " (2)", " (3)".
     /// </summary>

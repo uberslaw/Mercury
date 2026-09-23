@@ -23,6 +23,13 @@ public static class CopyPipeline
         string.Equals(stageName, RundownLabel, StringComparison.Ordinal)
         || string.Equals(message, RundownMessage, StringComparison.Ordinal);
 
+    public static bool IsVerify(string? stageName, string? message = null) =>
+        string.Equals(stageName, "Verifying", StringComparison.Ordinal)
+        || (message is not null && message.StartsWith("Verifying", StringComparison.Ordinal));
+
+    public static bool IsBackground(string? stageName, string? message = null) =>
+        IsRundown(stageName, message) || IsVerify(stageName, message);
+
     public static IReadOnlyList<CopyStage> For(Job job, bool hasJournalFiles, bool pack, bool overlap = false)
     {
         var catcher = job.Catcher is not null;

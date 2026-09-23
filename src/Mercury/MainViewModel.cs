@@ -2906,10 +2906,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private void ApplyProgress(JobProgress e)
     {
-        if (!string.IsNullOrEmpty(e.JobId) && e.JobId != _progressJobId)
+        var copy = _scheduler.TryGetRunningJob();
+        var backgroundBehindCopy = e.IsBackgroundStage && copy is not null && copy.Id != e.JobId;
+        if (!string.IsNullOrEmpty(e.JobId) && e.JobId != _progressJobId && !backgroundBehindCopy)
         {
             var incomingLive = e.Status is JobStatus.Preparing or JobStatus.Enumerating or JobStatus.Copying
-                or JobStatus.Verifying or JobStatus.Paused or JobStatus.PausedOutsideHours;
+                or JobStatus.Paused or JobStatus.PausedOutsideHours;
             if (incomingLive)
             {
                 ResultBanner = "";
@@ -2919,19 +2921,15 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             _progressJobId = e.JobId;
         }
 
-        _lastProgress = e;
-        if (e.IsRundownStage && _scheduler.BlocksStart)
+        if (backgroundBehindCopy)
         {
-            var copy = _scheduler.TryGetRunningJob();
-            if (copy is not null && copy.Id != e.JobId)
-            {
-                var rundownRow = QueueJobs.FirstOrDefault(j => j.Job.Id == e.JobId);
-                rundownRow?.ApplyProgress(e);
-                RefreshRunState();
-                return;
-            }
+            var backgroundRow = QueueJobs.FirstOrDefault(j => j.Job.Id == e.JobId);
+            backgroundRow?.ApplyProgress(e);
+            RefreshRunState();
+            return;
         }
 
+        _lastProgress = e;
         JobStats = ComposeStats(e);
         var overall = _scheduler.GetOverallProgress();
         if (e.BytesTotal > 0 || e.FilesTotal > 0 || e.Percent > JobPercent)
@@ -2951,7 +2949,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             CloseWindowRequested?.Invoke();
             return;
         }
-        if (e.IsRundownStage)
+        if (e.IsBackgroundStage)
         {
             var running = _scheduler.TryGetRunningJob(e.JobId) ?? _scheduler.TryGetRundownJob(e.JobId)
                           ?? _scheduler.TryGetRunningJob() ?? _scheduler.TryGetRundownJob();
@@ -2993,7 +2991,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         NotifyHeader();
         RefreshRunState();
         NotifyPauseAfter();
-        RefreshFolderTree(force: !e.IsRundownStage && e.Status is JobStatus.Completed or JobStatus.Incomplete or JobStatus.Cancelled or JobStatus.Failed);
+        RefreshFolderTree(force: !e.IsBackgroundStage && e.Status is JobStatus.Completed or JobStatus.Incomplete or JobStatus.Cancelled or JobStatus.Failed);
     }
 
     private void EnsureCatcherProbe()

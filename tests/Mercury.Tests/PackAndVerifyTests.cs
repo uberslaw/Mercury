@@ -19,7 +19,7 @@ public class PackAndVerifyTests
             Assert.True(File.Exists(Path.Combine(destFolder, "a.txt")));
             Assert.True(File.Exists(Path.Combine(destFolder, "clip.mkv")));
             Assert.Equal("video-bytes", File.ReadAllText(Path.Combine(destFolder, "clip.mkv")));
-            var zipPath = Path.Combine(dest, Path.GetFileName(src) + ".zip");
+            var zipPath = ZipPack.ZipPath(CopyShape.Resolve(src, dest));
             Assert.False(File.Exists(zipPath));
         }
         finally
@@ -42,7 +42,7 @@ public class PackAndVerifyTests
             await RunAsync(job, paths);
 
             Assert.True(job.Status == JobStatus.Completed, $"status={job.Status} msg={job.ResultMessage}");
-            var zipPath = Path.Combine(dest, Path.GetFileName(src) + ".zip");
+            var zipPath = ZipPack.ZipPath(CopyShape.Resolve(src, dest));
             var destFolder = Path.Combine(dest, Path.GetFileName(src));
             Assert.False(File.Exists(zipPath), $"transport zip should be deleted: {zipPath}");
             Assert.False(File.Exists(zipPath + ".mercury.tmp"));
@@ -91,9 +91,9 @@ public class PackAndVerifyTests
             Directory.CreateDirectory(Path.Combine(src, "sub"));
             File.WriteAllText(Path.Combine(src, "sub", "b.bin"), "beta");
 
-            var zipPath = Path.Combine(dest, Path.GetFileName(src) + ".zip");
+            var zipPath = ZipPack.ZipPath(CopyShape.Resolve(src, dest));
             var destFolder = Path.Combine(dest, Path.GetFileName(src));
-            Directory.CreateDirectory(dest);
+            Directory.CreateDirectory(Path.GetDirectoryName(zipPath)!);
             System.IO.Compression.ZipFile.CreateFromDirectory(src, zipPath, CompressionLevel.NoCompression, includeBaseDirectory: false);
             File.SetLastWriteTimeUtc(zipPath, DateTime.UtcNow.AddMinutes(1));
             Directory.CreateDirectory(destFolder);
@@ -125,7 +125,7 @@ public class PackAndVerifyTests
             await RunAsync(job, paths);
             Assert.Equal(JobStatus.Completed, job.Status);
 
-            var zipPath = Path.Combine(dest, Path.GetFileName(src) + ".zip");
+            var zipPath = ZipPack.ZipPath(CopyShape.Resolve(src, dest));
             var destFile = Path.Combine(dest, Path.GetFileName(src), "gone.txt");
             Assert.False(File.Exists(zipPath));
             Assert.True(File.Exists(destFile));
@@ -276,7 +276,7 @@ public class PackAndVerifyTests
             var destFolder = Path.Combine(dest, Path.GetFileName(src));
             Assert.True(File.Exists(Path.Combine(destFolder, "a.zip")));
             Assert.True(File.Exists(Path.Combine(destFolder, "b.7z")));
-            var zipPath = Path.Combine(dest, Path.GetFileName(src) + ".zip");
+            var zipPath = ZipPack.ZipPath(CopyShape.Resolve(src, dest));
             Assert.False(File.Exists(zipPath));
             Assert.Contains("Copying", seen);
             Assert.DoesNotContain("Packing", seen);
@@ -301,7 +301,7 @@ public class PackAndVerifyTests
     }
 
     [Fact]
-    public void ZipPathForFolderIsBesideWouldBeDestFolder()
+    public void ZipPathLivesUnderSourceLandingCompressed()
     {
         var root = Path.Combine(Path.GetTempPath(), "mercury-zippath-" + Guid.NewGuid().ToString("N"));
         var src = Path.Combine(root, "Photos");
@@ -312,8 +312,13 @@ public class PackAndVerifyTests
         try
         {
             var mapping = CopyShape.Resolve(src, dest);
-            Assert.Equal(Path.Combine(dest, "Photos.zip"), ZipPack.ZipPath(mapping));
+            Assert.Equal(Path.Combine(dest, "Photos", ZipPack.TransportFolder, "Photos-transport.zip"), ZipPack.ZipPath(mapping));
             Assert.True(ZipPack.Applies(new Job { Options = new JobOptions { PackAsZip = true } }, mapping));
+            Assert.StartsWith(mapping.DestRoot, ZipPack.ZipPath(mapping), StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(
+                Path.Combine(dest, ZipPack.TransportFolder) + Path.DirectorySeparatorChar,
+                ZipPack.ZipPath(mapping),
+                StringComparison.OrdinalIgnoreCase);
 
             var fileMapping = CopyShape.Resolve(Path.Combine(src, "a.txt"), dest);
             Assert.False(ZipPack.Applies(new Job { Options = new JobOptions { PackAsZip = true } }, fileMapping));

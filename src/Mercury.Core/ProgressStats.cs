@@ -105,10 +105,10 @@ public sealed class ProgressStats
             ? new StatPair("Overall files", $"{overall.FilesCopied}/{overall.FilesTotal}")
             : StatPair.Empty;
 
-        var rundown = e.IsRundownStage;
+        var walk = e.IsRundownStage || e.IsVerifyStage;
         var rate = ByteFormatter.EffectiveRate(e.BytesPerSecond, e.BytesCopied, e.ElapsedAt(elapsedClock));
         var eta = e.Eta;
-        if (live && !rundown && eta is null && rate >= 1 && e.BytesTotal > e.BytesCopied)
+        if (live && !walk && eta is null && rate >= 1 && e.BytesTotal > e.BytesCopied)
         {
             eta = TimeSpan.FromSeconds((e.BytesTotal - e.BytesCopied) / rate);
         }
@@ -116,11 +116,11 @@ public sealed class ProgressStats
         var speedPair = new StatPair("Speed",
             paused ? ByteFormatter.Speed(0, megabits)
             : !live ? "—"
-            : rundown ? FormatRundownSpeed(e.RundownPerSecond)
+            : walk ? FormatRundownSpeed(e.RundownPerSecond)
             : ByteFormatter.Speed(rate, megabits));
         var etaPair = new StatPair("ETA",
             !live || paused ? "—"
-            : rundown && eta is null ? "…"
+            : walk && eta is null ? "—"
             : ByteFormatter.Eta(eta));
 
         var hasBytes = e.BytesTotal > 0 || e.BytesCopied > 0;

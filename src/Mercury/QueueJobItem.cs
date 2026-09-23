@@ -35,6 +35,7 @@ public sealed class QueueJobItem : INotifyPropertyChanged
     public string Route => $"{JobSources.Display(Job)}  →  {Job.DestinationPath}";
 
     private bool _writingRundown;
+    private bool _verifying;
 
     public string StatusLabel => TileStatus;
 
@@ -49,7 +50,12 @@ public sealed class QueueJobItem : INotifyPropertyChanged
 
             if (_writingRundown)
             {
-                return "Running";
+                return "Rundown";
+            }
+
+            if (_verifying || Job.Status == JobStatus.Verifying)
+            {
+                return "Verifying";
             }
 
             return Job.Status switch
@@ -60,7 +66,10 @@ public sealed class QueueJobItem : INotifyPropertyChanged
                 JobStatus.Completed => "Done",
                 JobStatus.Failed => "Failed",
                 JobStatus.Incomplete => "Incomplete",
-                JobStatus.Preparing or JobStatus.Enumerating or JobStatus.Copying or JobStatus.Verifying => "Running",
+                JobStatus.Preparing => "Preparing",
+                JobStatus.Enumerating => "Enumerating",
+                JobStatus.Copying => "Transferring",
+                JobStatus.Verifying => "Verifying",
                 _ => Job.Status.ToString()
             };
         }
@@ -155,12 +164,14 @@ public sealed class QueueJobItem : INotifyPropertyChanged
 
     public bool IsActive =>
         _writingRundown
+        || _verifying
         || Job.Status is JobStatus.Preparing or JobStatus.Enumerating or JobStatus.Copying or JobStatus.Verifying
             or JobStatus.Paused or JobStatus.PausedOutsideHours;
 
     public bool CanPause =>
         !_writingRundown
-        && Job.Status is JobStatus.Enumerating or JobStatus.Copying or JobStatus.Verifying;
+        && !_verifying
+        && Job.Status is JobStatus.Enumerating or JobStatus.Copying;
 
     public bool CanResume =>
         Job.Status == JobStatus.Pending
@@ -233,6 +244,7 @@ public sealed class QueueJobItem : INotifyPropertyChanged
     public void ApplyProgress(JobProgress progress)
     {
         _writingRundown = progress.IsRundownStage;
+        _verifying = progress.IsVerifyStage;
         Percent = progress.Percent;
         Stats = ProgressStats.From(progress);
         RaiseComputed();

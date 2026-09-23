@@ -217,7 +217,7 @@ public sealed class JobProgressReporter : IProgress<JobProgress>
                 JobId = _job.Id,
                 JobName = _name,
                 Status = _job.Status,
-                CurrentFile = _current,
+                CurrentFile = CopyShape.ProgressRelative(_job, _current),
                 CurrentFileBytesCopied = _pause?.CurrentFileCopied ?? 0,
                 CurrentFileBytesTotal = _pause?.CurrentFileSize ?? 0,
                 Message = _message,

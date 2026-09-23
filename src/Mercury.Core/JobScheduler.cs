@@ -395,7 +395,7 @@ public sealed class JobScheduler : IDisposable
             }
 
             cts.Dispose();
-            BeginRundown(job, journal, progress);
+            BeginPostCopy(job, journal, progress);
             rundownOwnsJournal = true;
             lock (_queueLock)
             {
@@ -773,18 +773,31 @@ public sealed class JobScheduler : IDisposable
         {
             if (_progress.TryGetValue(job.Id, out var p))
             {
-                OverallProgress.AddBytes(job, p, ref bytes, ref total);
-                files += p.FilesCopied;
-                filesTotal += p.FilesTotal;
-                speed += p.BytesPerSecond;
+                var postCopy = p.IsBackgroundStage || job.Status == JobStatus.Verifying;
+                if (postCopy)
+                {
+                    var copied = p.BytesCopied > 0 ? p.BytesCopied : job.BytesCopied;
+                    bytes += copied;
+                    total += copied;
+                    var doneFiles = job.SourceFiles > 0 ? job.SourceFiles : Math.Max(p.FilesTotal, p.FilesCopied);
+                    files += doneFiles;
+                    filesTotal += doneFiles;
+                }
+                else
+                {
+                    OverallProgress.AddBytes(job, p, ref bytes, ref total);
+                    files += p.FilesCopied;
+                    filesTotal += p.FilesTotal;
+                    speed += p.BytesPerSecond;
+                    live |= p.Status is JobStatus.Preparing or JobStatus.Copying or JobStatus.Enumerating
+                        or JobStatus.Paused or JobStatus.PausedOutsideHours;
+                }
+
                 issues += p.IssueCount;
                 if (p.StartedUtc is { } s && (started is null || s < started))
                 {
                     started = s;
                 }
-
-                live |= p.Status is JobStatus.Preparing or JobStatus.Copying or JobStatus.Enumerating
-                    or JobStatus.Verifying or JobStatus.Paused or JobStatus.PausedOutsideHours;
             }
             else
             {
@@ -961,6 +974,7 @@ public sealed class JobScheduler : IDisposable
     private void ReportFinal(Job job)
     {
         var last = GetProgress(job.Id);
+        var finished = job.Status is JobStatus.Completed or JobStatus.Incomplete or JobStatus.Cancelled or JobStatus.Failed;
         var p = new JobProgress
         {
             JobId = job.Id,
@@ -970,17 +984,17 @@ public sealed class JobScheduler : IDisposable
             IssueCount = job.IssueCount,
             StartedUtc = job.StartedUtc,
             EndedUtc = job.EndedUtc,
-            CurrentFile = last?.CurrentFile,
+            CurrentFile = finished ? null : last?.CurrentFile,
             BytesCopied = last?.BytesCopied > 0 ? last.BytesCopied : job.BytesCopied,
             BytesTotal = last?.BytesTotal ?? 0,
             FilesCopied = last?.FilesCopied > 0 ? last.FilesCopied : job.DestFiles,
             FilesTotal = last?.FilesTotal > 0 ? last.FilesTotal : job.SourceFiles,
-            StageIndex = last?.StageIndex ?? 0,
-            StageCount = last?.StageCount ?? 0,
-            StageName = last?.StageName,
-            StageStartedUtc = last?.StageStartedUtc,
+            StageIndex = finished ? 0 : last?.StageIndex ?? 0,
+            StageCount = finished ? 0 : last?.StageCount ?? 0,
+            StageName = finished ? null : last?.StageName,
+            StageStartedUtc = finished ? null : last?.StageStartedUtc,
             TypeSummary = last?.TypeSummary,
-            BytesPerSecond = last?.BytesPerSecond ?? 0
+            BytesPerSecond = finished ? 0 : last?.BytesPerSecond ?? 0
         };
         _progress[job.Id] = p;
         ProgressChanged?.Invoke(this, p);
@@ -999,7 +1013,7 @@ public sealed class JobScheduler : IDisposable
 
     private void FillProgress(Job job, JobJournal journal, JobProgress p)
     {
-        var rundown = p.IsRundownStage;
+        var rundown = p.IsBackgroundStage;
         var totals = SafeTotals(journal);
         var copied = Math.Max(p.BytesCopied, totals.DoneBytes);
         var total = Math.Max(p.BytesTotal, totals.Bytes);
@@ -1039,7 +1053,7 @@ public sealed class JobScheduler : IDisposable
         ProgressChanged?.Invoke(this, filled);
     }
 
-    private void BeginRundown(Job job, JobJournal journal, IProgress<JobProgress> progress)
+    private void BeginPostCopy(Job job, JobJournal journal, IProgress<JobProgress> progress)
     {
         var last = GetProgress(job.Id);
         var cts = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
@@ -1059,9 +1073,53 @@ public sealed class JobScheduler : IDisposable
             TypeSummary = last?.TypeSummary,
             Cloud = last?.CloudDestination ?? false
         };
-        work.Task = Task.Run(() => ExecuteRundown(work));
+        work.Task = Task.Run(() => ExecutePostCopy(work));
         _rundowns[job.Id] = work;
     }
+
+    private void ExecutePostCopy(RundownWork work)
+    {
+        var job = work.Job;
+        var name = string.IsNullOrWhiteSpace(job.Name) ? job.Id[..8] : job.Name;
+        var token = work.Cts.Token;
+        try
+        {
+            if (ShouldVerify(job))
+            {
+                job.Status = JobStatus.Verifying;
+                work.Journal.SaveJob(job);
+                lock (_queueLock)
+                {
+                    SaveQueue();
+                }
+
+                RaiseQueueChanged();
+                _engine.Verify(job, work.Journal, Log, work.Progress, token);
+                work.Journal.SaveJob(job);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            if (job.Status is not JobStatus.Completed and not JobStatus.Failed
+                and not JobStatus.Incomplete and not JobStatus.Cancelled)
+            {
+                job.Status = JobStatus.Cancelled;
+                job.ResultMessage = "Stopped during verify.";
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(job.Id, name, ex.ToString());
+            job.Status = JobStatus.Incomplete;
+            job.ResultMessage = "Verify could not finish. Copy progress is kept; details are in the Console log.";
+        }
+
+        ExecuteRundown(work);
+    }
+
+    private static bool ShouldVerify(Job job) =>
+        job.Options?.DryRun != true
+        && job.Status is not JobStatus.Failed and not JobStatus.Cancelled and not JobStatus.Completed;
 
     private void ExecuteRundown(RundownWork work)
     {

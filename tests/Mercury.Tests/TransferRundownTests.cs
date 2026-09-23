@@ -237,7 +237,7 @@ public class TransferRundownTests
     }
 
     [Fact]
-    public void RundownEtaShowsEllipsisUntilRateExists()
+    public void RundownEtaShowsDashUntilRateExists()
     {
         var stats = ProgressStats.From(new JobProgress
         {
@@ -251,7 +251,7 @@ public class TransferRundownTests
             StartedUtc = DateTimeOffset.UtcNow
         });
 
-        Assert.Equal("…", stats.Eta.Value);
+        Assert.Equal("—", stats.Eta.Value);
         Assert.Equal("…", stats.Speed.Value);
     }
 
@@ -277,6 +277,8 @@ public class TransferRundownTests
 
         var queue = HelpDocument.Sections.Single(s => s.Id == "queue");
         Assert.Contains("On hold", queue.Body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Transferring", queue.Body, StringComparison.Ordinal);
+        Assert.Contains("compressed", HelpDocument.Sections.Single(s => s.Id == "transfer").Body, StringComparison.OrdinalIgnoreCase);
 
         var theme = HelpDocument.Sections.Single(s => s.Id == "theme");
         Assert.Contains(".mercury-theme.json", theme.Body, StringComparison.Ordinal);
