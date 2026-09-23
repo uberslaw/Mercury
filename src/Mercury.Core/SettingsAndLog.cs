@@ -150,4 +150,31 @@ public sealed class FileJobLog : IJobLog, IDisposable
             _writers.Clear();
         }
     }
+
+    public static bool Exists(AppPaths paths, string jobId) =>
+        !string.IsNullOrWhiteSpace(jobId) && File.Exists(paths.JobLogFile(jobId));
+
+    public static IReadOnlyList<string> ReadAllLines(AppPaths paths, string jobId)
+    {
+        if (string.IsNullOrWhiteSpace(jobId))
+        {
+            return [];
+        }
+
+        var file = paths.JobLogFile(jobId);
+        if (!File.Exists(file))
+        {
+            return [];
+        }
+
+        using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream);
+        var lines = new List<string>();
+        while (reader.ReadLine() is { } line)
+        {
+            lines.Add(line);
+        }
+
+        return lines;
+    }
 }

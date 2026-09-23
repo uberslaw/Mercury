@@ -119,6 +119,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private bool _folderTreeEmpty = true;
     private DateTime _folderTreeRefreshUtc;
     private string? _folderTreeJobId;
+    private string? _resultLogJobId;
+    private readonly HashSet<string> _startingJobIds = new(StringComparer.Ordinal);
     private readonly HashSet<string> _expandedFolders = new(StringComparer.OrdinalIgnoreCase);
 
     public MainViewModel() : this(new AppPaths())
@@ -203,10 +205,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         LoadSavedJobCommand = new RelayCommand(p => LoadSavedJob(p as SavedJob));
         DeleteSavedJobCommand = new RelayCommand(p => DeleteSavedJob(p as SavedJob));
         OpenLogsCommand = new RelayCommand(OpenLogs);
+        OpenLogCommand = new RelayCommand(OpenJobLog, CanOpenJobLog);
         CopyConsoleCommand = new RelayCommand(CopyConsole);
         FollowLatestCommand = new RelayCommand(FollowLatest);
         PauseQueueJobCommand = new RelayCommand(p => PauseQueueJob(p as QueueJobItem));
-        ResumeQueueJobCommand = new RelayCommand(p => ResumeQueueJob(p as QueueJobItem));
+        ResumeQueueJobCommand = new RelayCommand(p => ResumeQueueJob(p as QueueJobItem), p => p is QueueJobItem q && q.CanResume);
         StopQueueJobCommand = new RelayCommand(p => StopQueueJob(p as QueueJobItem));
         RemoveQueueJobCommand = new RelayCommand(p => RemoveQueueJob(p as QueueJobItem));
         MoveQueueJobUpCommand = new RelayCommand(p => MoveQueueJob(p as QueueJobItem, -1));
@@ -304,6 +307,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public ICommand LoadSavedJobCommand { get; }
     public ICommand DeleteSavedJobCommand { get; }
     public ICommand OpenLogsCommand { get; }
+    public ICommand OpenLogCommand { get; }
     public ICommand CopyConsoleCommand { get; }
     public ICommand FollowLatestCommand { get; }
     public ICommand PauseQueueJobCommand { get; }
@@ -327,6 +331,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public Action? CloseWindowRequested { get; set; }
     public Action<JobOptionsForm>? OpenJobOptionsRequested { get; set; }
     public Action? OpenSettingsRequested { get; set; }
+    public Action? SelectConsoleRequested { get; set; }
 
     public string SourcePath
     {
@@ -701,6 +706,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             if (SetField(ref _resultBanner, value))
             {
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowProgressDetail)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowOpenLog)));
             }
         }
     }
@@ -786,6 +792,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         || JobStats.Files.HasValue
         || JobStats.Bytes.HasValue
         || JobStats.Stage.HasValue;
+
+    public bool ShowOpenLog =>
+        !string.IsNullOrWhiteSpace(ResultBanner) && !string.IsNullOrWhiteSpace(_resultLogJobId);
 
     public bool FolderTreeEmpty
     {
@@ -1066,6 +1075,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                     if (!string.IsNullOrWhiteSpace(value.Job.ResultMessage))
                     {
                         ResultBanner = value.Job.ResultMessage!;
+                        RememberResultLog(value.Job.Id);
                         ResultBrush = value.Job.Status switch
                         {
                             JobStatus.Completed => (Brush)Application.Current.FindResource("OkBrush"),
@@ -2896,6 +2906,70 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         });
     }
 
+    private void OpenJobLog(object? parameter)
+    {
+        var jobId = ResolveLogJobId(parameter);
+        if (string.IsNullOrWhiteSpace(jobId))
+        {
+            StatusText = "No job log to open.";
+            return;
+        }
+
+        var lines = FileJobLog.ReadAllLines(_paths, jobId);
+        ConsoleLines.Clear();
+        if (lines.Count == 0)
+        {
+            var path = _paths.JobLogFile(jobId);
+            ConsoleLines.Add(new ConsoleLine
+            {
+                Text = File.Exists(path)
+                    ? "Job log is empty."
+                    : "No log file yet for this job: " + path,
+                IsError = false
+            });
+        }
+        else
+        {
+            foreach (var line in lines)
+            {
+                ConsoleLines.Add(new ConsoleLine
+                {
+                    Text = line,
+                    IsError = line.Contains("[Error]", StringComparison.OrdinalIgnoreCase)
+                });
+            }
+        }
+
+        ConsoleSearch = "";
+        ErrorsOnly = false;
+        FollowConsole = true;
+        SelectConsoleRequested?.Invoke();
+    }
+
+    private bool CanOpenJobLog(object? parameter) =>
+        !string.IsNullOrWhiteSpace(ResolveLogJobId(parameter));
+
+    private string? ResolveLogJobId(object? parameter) =>
+        parameter switch
+        {
+            QueueJobItem item => item.Job.Id,
+            HistoryItem history => history.Job.Id,
+            Job job => job.Id,
+            string id when !string.IsNullOrWhiteSpace(id) => id,
+            _ => _resultLogJobId
+                ?? _progressJobId
+                ?? _lastJob?.Id
+                ?? SelectedQueueJob?.Job.Id
+                ?? SelectedHistoryItem?.Job.Id
+        };
+
+    private void RememberResultLog(string? jobId)
+    {
+        _resultLogJobId = string.IsNullOrWhiteSpace(jobId) ? _resultLogJobId : jobId;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowOpenLog)));
+        (OpenLogCommand as RelayCommand)?.RaiseCanExecuteChanged();
+    }
+
     private void CopyConsole()
     {
         var text = string.Join(Environment.NewLine, ConsoleLines.Select(l => l.Text));
@@ -3166,17 +3240,30 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         var jobs = _scheduler.Queue;
         for (var i = 0; i < jobs.Count; i++)
         {
-            var item = new QueueJobItem(jobs[i], ApplyQueueJobSpeed)
+            var item = new QueueJobItem(jobs[i], ApplyQueueJobSpeed, ResumeQueueJob)
             {
                 Order = i + 1,
                 CanMoveUp = i > 0,
                 CanMoveDown = i < jobs.Count - 1,
                 PauseAfterArmed = _scheduler.IsPauseAfterFilePending(jobs[i].Id)
             };
+            var starting = _startingJobIds.Contains(jobs[i].Id);
+            var live = jobs[i].Status is JobStatus.Preparing or JobStatus.Enumerating or JobStatus.Copying
+                or JobStatus.Verifying or JobStatus.Paused or JobStatus.PausedOutsideHours;
+            if (live)
+            {
+                _startingJobIds.Remove(jobs[i].Id);
+            }
+
             var progress = _scheduler.GetProgress(jobs[i].Id);
-            if (progress is not null)
+            if (progress is not null && !starting)
             {
                 item.ApplyProgress(progress);
+            }
+
+            if (starting && !live)
+            {
+                item.BeginResume();
             }
 
             QueueJobs.Add(item);
@@ -3274,13 +3361,20 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private void ResumeQueueJob(QueueJobItem? item)
     {
-        if (item is null || !item.CanResume)
+        if (item is null)
         {
             return;
         }
 
+        if (!item.CanResume && !item.IsStarting)
+        {
+            return;
+        }
+
+        _startingJobIds.Add(item.Job.Id);
+        item.BeginResume();
+        StatusText = item.ResumeLabel == "Start" ? "Starting…" : "Resuming…";
         _scheduler.ResumeOrRetry(item.Job.Id);
-        item.RaiseComputed();
         RefreshRunState();
     }
 
@@ -3365,7 +3459,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         HistoryItems.Clear();
         foreach (var entry in HistoryStore.Load(_paths))
         {
-            HistoryItems.Add(new HistoryItem(entry));
+            HistoryItems.Add(new HistoryItem(entry, FileJobLog.Exists(_paths, entry.JobId)));
         }
 
         SelectedHistoryItem = selectedId is null
@@ -3381,6 +3475,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         Rundown = TransferRundown.Empty;
         ResultBanner = "";
         ResultBrush = Brushes.Transparent;
+        _resultLogJobId = null;
         JobPercent = 0;
         OverallPercent = 0;
         JobStats = ProgressStats.Idle;
@@ -3477,6 +3572,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private void ApplyResult(Job job)
     {
         ResultBanner = ProgressHeader.HeaderResult(job);
+        RememberResultLog(job.Id);
         ResultBrush = job.Status switch
         {
             JobStatus.Completed => (Brush)Application.Current.FindResource("OkBrush"),
@@ -3581,6 +3677,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         (SaveJobCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (PauseQueueJobCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (ResumeQueueJobCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (OpenLogCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (StopQueueJobCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (RemoveQueueJobCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (MoveQueueJobUpCommand as RelayCommand)?.RaiseCanExecuteChanged();

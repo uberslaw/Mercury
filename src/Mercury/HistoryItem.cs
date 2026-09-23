@@ -2,7 +2,7 @@ namespace Mercury;
 
 public sealed class HistoryItem
 {
-    public HistoryItem(TransferHistoryEntry entry)
+    public HistoryItem(TransferHistoryEntry entry, bool logExists = false)
     {
         Entry = entry;
         Job = entry.ToJob();
@@ -35,6 +35,9 @@ public sealed class HistoryItem
             speed,
             match
         }.Where(s => !string.IsNullOrWhiteSpace(s)));
+        var mentionsLog = entry.ResultMessage is not null
+            && entry.ResultMessage.Contains("log", StringComparison.OrdinalIgnoreCase);
+        CanOpenLog = logExists || mentionsLog;
     }
 
     public TransferHistoryEntry Entry { get; }
@@ -46,4 +49,5 @@ public sealed class HistoryItem
     public string StatusLabel { get; }
     public string Summary { get; }
     public string RundownLine => Rundown.OneLine;
+    public bool CanOpenLog { get; }
 }

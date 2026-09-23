@@ -15,6 +15,7 @@ public sealed class JobScheduler : IDisposable
     private readonly CancellationTokenSource _lifetime = new();
     private int _pumping;
     private int _drain;
+    private int _kickAgain;
     private string? _forceStartId;
 
     public JobScheduler(AppPaths paths, ICopyEngine? engine = null, IRundownCapture? rundown = null)
@@ -166,6 +167,18 @@ public sealed class JobScheduler : IDisposable
             return;
         }
 
+        if (_rundowns.TryGetValue(jobId, out var rundown))
+        {
+            rundown.Cts.Cancel();
+        }
+
+        _progress.TryRemove(jobId, out _);
+
+        if (_running.IsEmpty && GlobalPause.IsPaused)
+        {
+            GlobalPause.Resume();
+        }
+
         lock (_queueLock)
         {
             var job = _queue.FirstOrDefault(j => j.Id == jobId);
@@ -190,7 +203,7 @@ public sealed class JobScheduler : IDisposable
         }
 
         RaiseQueueChanged();
-        Kick();
+        Kick(drain: true);
     }
 
     public void SetHold(string jobId, bool hold)
@@ -280,6 +293,7 @@ public sealed class JobScheduler : IDisposable
             Interlocked.Exchange(ref _drain, 1);
         }
 
+        Interlocked.Exchange(ref _kickAgain, 1);
         if (Interlocked.CompareExchange(ref _pumping, 1, 0) != 0)
         {
             return;
@@ -529,14 +543,35 @@ public sealed class JobScheduler : IDisposable
 
     public void ResumePaused(string jobId)
     {
-        if (_running.TryGetValue(jobId, out var running))
+        if (!_running.TryGetValue(jobId, out var running))
         {
-            running.Job.Status = JobStatus.Copying;
-            TransferRundown.MarkUnpaused(running.Job);
-            running.Journal.SaveJob(running.Job);
-            running.Pause.Resume();
-            Log.Info(jobId, running.Job.Name, "Resumed.");
+            return;
         }
+
+        if (GlobalPause.IsPaused)
+        {
+            foreach (var other in _running.Values)
+            {
+                if (other.Job.Id == jobId)
+                {
+                    continue;
+                }
+
+                other.Pause.Pause();
+                other.Job.Status = JobStatus.Paused;
+                TransferRundown.MarkPaused(other.Job);
+                other.Journal.SaveJob(other.Job);
+            }
+
+            GlobalPause.Resume();
+        }
+
+        running.Job.Status = JobStatus.Copying;
+        TransferRundown.MarkUnpaused(running.Job);
+        running.Journal.SaveJob(running.Job);
+        running.Pause.Resume();
+        Log.Info(jobId, running.Job.Name, "Resumed.");
+        ReportFinal(running.Job);
     }
 
     public void Stop(string jobId, bool clearHeartbeat = true)
@@ -834,6 +869,7 @@ public sealed class JobScheduler : IDisposable
         {
             while (!_lifetime.IsCancellationRequested)
             {
+                Interlocked.Exchange(ref _kickAgain, 0);
                 Job? next;
                 lock (_queueLock)
                 {
@@ -864,11 +900,26 @@ public sealed class JobScheduler : IDisposable
 
                     if (next is null)
                     {
+                        if (Volatile.Read(ref _kickAgain) == 1)
+                        {
+                            continue;
+                        }
+
                         break;
                     }
                 }
 
                 var resume = JobJournal.Exists(_paths.JobDirectory(next.Id));
+                if (_rundowns.ContainsKey(next.Id))
+                {
+                    if (_rundowns.TryGetValue(next.Id, out var leftover))
+                    {
+                        leftover.Cts.Cancel();
+                    }
+
+                    await WaitForRundownAsync(next.Id).ConfigureAwait(false);
+                }
+
                 try
                 {
                     await RunCopyCoreAsync(next, resume, _lifetime.Token).ConfigureAwait(false);
@@ -892,22 +943,29 @@ public sealed class JobScheduler : IDisposable
         finally
         {
             Interlocked.Exchange(ref _pumping, 0);
-            var again = false;
-            lock (_queueLock)
-            {
-                again = !_lifetime.IsCancellationRequested
-                        && _running.Count < MaxConcurrentJobs
-                        && !GlobalPause.IsPaused
-                        && JobDue.FindNext(
-                            _queue,
-                            DateTimeOffset.Now,
-                            _forceStartId,
-                            includeUnscheduled: allowUnscheduled || _forceStartId is not null) is not null;
-            }
-
-            if (again)
+            if (Interlocked.CompareExchange(ref _kickAgain, 0, 1) == 1)
             {
                 Kick(drain: allowUnscheduled);
+            }
+            else
+            {
+                var again = false;
+                lock (_queueLock)
+                {
+                    again = !_lifetime.IsCancellationRequested
+                            && _running.Count < MaxConcurrentJobs
+                            && !GlobalPause.IsPaused
+                            && JobDue.FindNext(
+                                _queue,
+                                DateTimeOffset.Now,
+                                _forceStartId,
+                                includeUnscheduled: allowUnscheduled || _forceStartId is not null) is not null;
+                }
+
+                if (again)
+                {
+                    Kick(drain: allowUnscheduled);
+                }
             }
         }
     }

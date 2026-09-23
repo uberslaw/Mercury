@@ -340,9 +340,135 @@ public class PathAndTreeUiTests
         });
         Assert.Equal("Pending", item.TileStatus);
         Assert.Equal("Start", item.ResumeLabel);
+        Assert.True(item.CanResume);
+        Assert.True(item.ResumeCommand.CanExecute(null));
         Assert.Equal("#1", item.OrderText);
         Assert.Contains("D:\\src", item.Route, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("E:\\dst", item.Route, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void QueueResume_Incomplete_ExecutesAndChipGoesPreparing()
+    {
+        var started = false;
+        var item = new QueueJobItem(
+            new Job { Name = "anchor", Status = JobStatus.Incomplete },
+            onResume: _ => started = true);
+        Assert.Equal("Resume", item.ResumeLabel);
+        Assert.True(item.CanResume);
+        Assert.True(item.ResumeCommand.CanExecute(null));
+        Assert.Contains("Resume this job", item.ResumeToolTip, StringComparison.Ordinal);
+
+        item.ResumeCommand.Execute(null);
+
+        Assert.True(started);
+        Assert.True(item.IsStarting);
+        Assert.Equal("Preparing", item.TileStatus);
+        Assert.Equal(QueueStatusTone.Transfer, item.StatusTone);
+        Assert.False(item.CanResume);
+        Assert.False(item.ResumeCommand.CanExecute(null));
+        Assert.Contains("Starting this job", item.ResumeToolTip, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void QueueResume_Completed_DisabledWithReason()
+    {
+        var started = false;
+        var item = new QueueJobItem(
+            new Job { Status = JobStatus.Completed },
+            onResume: _ => started = true);
+        Assert.False(item.CanResume);
+        Assert.False(item.ResumeCommand.CanExecute(null));
+        Assert.Contains("finished", item.ResumeToolTip, StringComparison.OrdinalIgnoreCase);
+        item.ResumeCommand.Execute(null);
+        Assert.False(started);
+        Assert.Equal("Done", item.TileStatus);
+    }
+
+    [Fact]
+    public void ResumeQueueJobCommand_IncompleteItem_MarksStarting()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mercury-qresume-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        MainViewModel? vm = null;
+        try
+        {
+            vm = new MainViewModel(new AppPaths(root));
+            var item = new QueueJobItem(new Job
+            {
+                Name = "span",
+                Status = JobStatus.Incomplete
+            });
+            Assert.True(vm.ResumeQueueJobCommand.CanExecute(item));
+            vm.ResumeQueueJobCommand.Execute(item);
+            Assert.True(item.IsStarting);
+            Assert.Equal("Preparing", item.TileStatus);
+            Assert.False(vm.ResumeQueueJobCommand.CanExecute(item));
+        }
+        finally
+        {
+            vm?.Dispose();
+            try
+            {
+                Directory.Delete(root, true);
+            }
+            catch
+            {
+                // leftover
+            }
+        }
+    }
+
+    [Fact]
+    public void OpenLogCommand_LoadsJobFileIntoConsole()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mercury-openlog-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        MainViewModel? vm = null;
+        try
+        {
+            var paths = new AppPaths(root);
+            Directory.CreateDirectory(paths.Logs);
+            var jobId = "joblog1";
+            File.WriteAllText(paths.JobLogFile(jobId), "2026-09-23T00:00:00.0000000Z [Error] 25423 issues\ninfo line\n");
+            vm = new MainViewModel(paths);
+            var selected = false;
+            vm.SelectConsoleRequested = () => selected = true;
+            Assert.True(vm.OpenLogCommand.CanExecute(jobId));
+            vm.OpenLogCommand.Execute(jobId);
+            Assert.True(selected);
+            Assert.Contains(vm.ConsoleLines, l => l.IsError && l.Text.Contains("25423 issues", StringComparison.Ordinal));
+            Assert.Contains(vm.ConsoleLines, l => !l.IsError && l.Text.Contains("info line", StringComparison.Ordinal));
+        }
+        finally
+        {
+            vm?.Dispose();
+            try
+            {
+                Directory.Delete(root, true);
+            }
+            catch
+            {
+                // leftover
+            }
+        }
+    }
+
+    [Fact]
+    public void HistoryItem_CanOpenLog_WhenMessageMentionsLogOrFileExists()
+    {
+        Assert.True(new HistoryItem(new TransferHistoryEntry
+        {
+            ResultMessage = "Incomplete — 25423 issue(s). Open the log for details."
+        }).CanOpenLog);
+        Assert.False(new HistoryItem(new TransferHistoryEntry
+        {
+            ResultMessage = "Verified complete."
+        }).CanOpenLog);
+        Assert.True(new HistoryItem(new TransferHistoryEntry
+        {
+            ResultMessage = "Verified complete."
+        }, logExists: true).CanOpenLog);
     }
 
     [Fact]

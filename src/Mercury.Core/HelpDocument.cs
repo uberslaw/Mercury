@@ -58,7 +58,7 @@ public static class HelpDocument
             Body =
                 "Job options order: Start After + Overwrite, then Window + Verify, then Unlimited / Max / Dry Run / Small Files / Skip Compressed / Ignore Storage Limit / RoboFlags / Retries / Wait.\n\n" +
                 "Max throttles this job. The unit (MB/s or Mbps) sits to the right of the box and follows Global → MB/s or Mbps (1 MB/s = 8 Mbps). Stored caps stay MB/s.\n\n" +
-                "Global bandwidth Min / Unlimited / Max / Throttle Active PC apply to all jobs immediately. Each number box has its unit on the right. MB/s or Mbps also switches Progress Speed.\n\n" +
+                "Global bandwidth Min / Unlimited / Max / Throttle Active PC apply to all jobs immediately. Each labelled value sits next to its box, then the unit (MB/s or Mbps). Unlimited is a checkbox with no box; Max is disabled while Unlimited is on. MB/s or Mbps also switches Progress Speed.\n\n" +
                 "Throttle Active PC: while other programs are using the PC " +
                 "(CPU above about 18%, excluding Mercury’s own copy when possible), every job is capped at that speed. " +
                 "When the PC is idle, Unlimited / Max still apply. The cap takes effect mid-job — no restart.\n\n" +
@@ -119,6 +119,7 @@ public static class HelpDocument
                 "Job: 2 of 5 is the running job’s place in the listed queue (omitted when there is a single job). " +
                 "Stats sit under the bars in a table (key: value), including the current File name. Status text lives in this header — the Transfer tab no longer repeats them. " +
                 "Start, Pause, Pause after this file, and Stop sit under that file name at the bottom of this header. Start reads Resume when paused or when Source/Dest match a stopped job you can continue. " +
+                "When a job finishes incomplete, Open log on this header (and Job log on the Console tab) shows that job’s text log in the Console pane. " +
                 "During enumerate, Types shows a mix such as Video: 40 files, 2.1 TB. " +
                 "Writing rundown and Verifying run in the background after copy so the next queued job can start transferring. " +
                 "The copier stays one job at a time; Start is enabled when that copy slot is free. Stop during rundown or verify is immediate. " +
@@ -140,7 +141,7 @@ public static class HelpDocument
             Title = "Queue tab",
             Body =
                 "Jobs wait here until you Start them, or until the previous job finishes (queue drain). Add to queue never auto-starts. " +
-                "An empty queue shows one line: No jobs in the queue. Each job is a tile: order #, source → dest, status (Pending / Transferring / Verifying / Rundown / Paused / On hold / Stopped / Done), flag badges, and per-tile Start / Pause / Stop (plus Hold, Job Options, Remove, Up, Down). " +
+                "An empty queue shows one line: No jobs in the queue. Each job is a tile: order #, source → dest, status (Pending / Transferring / Verifying / Rundown / Paused / On hold / Stopped / Done), flag badges, and per-tile Start / Resume / Pause / Stop (plus Hold, Job Options, Remove, Up, Down). Resume on a row starts that stopped, incomplete, paused, or pending job (the chip switches to Preparing) — it is not a dead control; a disabled Resume explains why in its tooltip. " +
                 "Job Options on a tile pops out the same fields as Transfer (speed, Window, retries, overwrite, verify, Dry Run, Small Files, Skip Compressed, Extensions…, Ignore Storage Limit, Start After, RoboFlags, Include source folder name, Catcher template). " +
                 "Those values are stored on the job you Add — they are not locked to the Transfer tab while a copy runs. " +
                 "Tiles show compact badges for non-default flags (Dry Run, Small Files, Ignore Storage Limit, Window, Hold, Catcher, Contents only when wrap is off). " +
@@ -157,7 +158,7 @@ public static class HelpDocument
             Title = "Console tab",
             Body =
                 "Live log of the current session. Each line starts with the local date and 24-hour time (not UTC, not 12-hour). Search filters lines; Follow stays on the newest line; Errors only hides info. " +
-                "Copy copies the view. Open logs folder opens the logs directory. " +
+                "Copy copies the view. Job log loads that job’s text log into this pane. Open logs folder opens the logs directory. " +
                 "A daily error log (mercury-YYYYMMDD.log) is also written under Settings so you can check failures later. " +
                 "When a finished job is verifying or writing its rundown off the copy slot, the console logs Verify running in background then Rundown running in background."
         },
@@ -166,7 +167,7 @@ public static class HelpDocument
             Id = "history",
             Title = "History tab",
             Body =
-                "Finished transfers, newest first. Click a row to restore its rundown (started, ended, files, mismatch). Stored in history.db."
+                "Finished transfers, newest first. Click a row to restore its rundown (started, ended, files, mismatch). Open log on a row that mentions a log (or still has a log file) shows that job’s text log on the Console tab. Stored in history.db."
         },
         new()
         {

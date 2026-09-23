@@ -17,10 +17,13 @@ public partial class MainWindow : Window
     private bool _forceClose;
     private bool _closing;
 
-    public MainWindow()
+    public MainWindow() : this(new MainViewModel())
+    {
+    }
+
+    public MainWindow(MainViewModel vm)
     {
         InitializeComponent();
-        var vm = new MainViewModel();
         DataContext = vm;
         vm.AttachConsoleView(CollectionViewSource.GetDefaultView(vm.ConsoleLines));
         ConsoleList.ItemsSource = vm.ConsoleView;
@@ -30,6 +33,7 @@ public partial class MainWindow : Window
         vm.Theme.OpenPreviewRequested = OpenThemePreview;
         vm.Theme.PopOutEditorRequested = OpenThemeEditor;
         vm.OpenJobOptionsRequested = OpenJobOptions;
+        vm.SelectConsoleRequested = SelectConsoleTab;
         vm.OpenSettingsRequested = () =>
         {
             LeaveThemeSession();
@@ -57,6 +61,17 @@ public partial class MainWindow : Window
         {
             HelpTab.IsSelected = true;
         }
+    }
+
+    private void SelectConsoleTab()
+    {
+        LeaveThemeSession();
+        if (ConsoleTab is not null)
+        {
+            ConsoleTab.IsSelected = true;
+        }
+
+        ScrollConsoleToLatest();
     }
 
     private void MainTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -367,6 +382,7 @@ public partial class MainWindow : Window
         Vm.Theme.OpenPreviewRequested = null;
         Vm.Theme.PopOutEditorRequested = null;
         Vm.OpenJobOptionsRequested = null;
+        Vm.SelectConsoleRequested = null;
         ThemeChrome.SetHelpersEnabled(false);
         Vm.Theme.ClearRowHighlights();
         _preview?.Close();

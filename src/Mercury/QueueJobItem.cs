@@ -1,12 +1,14 @@
 using System.ComponentModel;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Windows.Input;
 
 namespace Mercury;
 
 public sealed class QueueJobItem : INotifyPropertyChanged
 {
     private readonly Action<QueueJobItem>? _onSpeedChanged;
+    private readonly Action<QueueJobItem>? _onResume;
     private bool _unlimitedSpeed = true;
     private string _maxMBpsText = "";
     private bool _suppressSpeed;
@@ -14,11 +16,17 @@ public sealed class QueueJobItem : INotifyPropertyChanged
     private ProgressStats _stats = ProgressStats.Idle;
     private bool _canMoveUp;
     private bool _canMoveDown;
+    private bool _isStarting;
 
-    public QueueJobItem(Job job, Action<QueueJobItem>? onSpeedChanged = null)
+    public QueueJobItem(
+        Job job,
+        Action<QueueJobItem>? onSpeedChanged = null,
+        Action<QueueJobItem>? onResume = null)
     {
         Job = job;
         _onSpeedChanged = onSpeedChanged;
+        _onResume = onResume;
+        ResumeCommand = new RelayCommand(ExecuteResume, () => CanResume);
         SyncSpeedFromJob();
     }
 
@@ -52,6 +60,12 @@ public sealed class QueueJobItem : INotifyPropertyChanged
     {
         get
         {
+            if (_isStarting
+                && Job.Status is not (JobStatus.Preparing or JobStatus.Enumerating or JobStatus.Copying))
+            {
+                return "Preparing";
+            }
+
             if (Job.OnHold)
             {
                 return "On hold";
@@ -189,12 +203,58 @@ public sealed class QueueJobItem : INotifyPropertyChanged
         && Job.Status is JobStatus.Enumerating or JobStatus.Copying;
 
     public bool CanResume =>
-        Job.Status == JobStatus.Pending
-        || Job.OnHold
-        || Job.Status is JobStatus.Paused or JobStatus.PausedOutsideHours
-            or JobStatus.Cancelled or JobStatus.Incomplete or JobStatus.Failed;
+        !_isStarting
+        && (Job.Status == JobStatus.Pending
+            || Job.OnHold
+            || Job.Status is JobStatus.Paused or JobStatus.PausedOutsideHours
+                or JobStatus.Cancelled or JobStatus.Incomplete or JobStatus.Failed);
 
-    public string ResumeLabel => Job.Status == JobStatus.Pending ? "Start" : "Resume";
+    public string ResumeLabel =>
+        Job.Status == JobStatus.Pending && !Job.OnHold && !_isStarting ? "Start" : "Resume";
+
+    public ICommand ResumeCommand { get; }
+
+    public bool IsStarting => _isStarting;
+
+    public string ResumeToolTip
+    {
+        get
+        {
+            if (_isStarting)
+            {
+                return "Starting this job…";
+            }
+
+            if (CanResume)
+            {
+                return ResumeLabel == "Start"
+                    ? "Start this job now."
+                    : "Resume this job from its saved progress.";
+            }
+
+            if (Job.Status is JobStatus.Preparing or JobStatus.Enumerating or JobStatus.Copying)
+            {
+                return "This job is already transferring.";
+            }
+
+            if (_verifying || Job.Status == JobStatus.Verifying)
+            {
+                return "This job is verifying. Stop it first if you need to start again.";
+            }
+
+            if (_writingRundown)
+            {
+                return "This job is writing rundown. Wait for it to finish, or Stop, then Resume.";
+            }
+
+            if (Job.Status == JobStatus.Completed)
+            {
+                return "This job finished. Queue a new copy from Transfer if you need another run.";
+            }
+
+            return "This job cannot be resumed right now.";
+        }
+    }
 
     public bool CanStop => IsActive;
 
@@ -260,8 +320,20 @@ public sealed class QueueJobItem : INotifyPropertyChanged
     {
         _writingRundown = progress.IsRundownStage;
         _verifying = progress.IsVerifyStage;
+        if (progress.Status is JobStatus.Preparing or JobStatus.Enumerating or JobStatus.Copying
+            or JobStatus.Verifying or JobStatus.Paused or JobStatus.PausedOutsideHours)
+        {
+            _isStarting = false;
+        }
+
         Percent = progress.Percent;
         Stats = ProgressStats.From(progress);
+        RaiseComputed();
+    }
+
+    public void BeginResume()
+    {
+        _isStarting = true;
         RaiseComputed();
     }
 
@@ -277,6 +349,9 @@ public sealed class QueueJobItem : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanPause)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanResume)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ResumeLabel)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ResumeToolTip)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsStarting)));
+        (ResumeCommand as RelayCommand)?.RaiseCanExecuteChanged();
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanStop)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanRemove)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanToggleHold)));
@@ -289,6 +364,17 @@ public sealed class QueueJobItem : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Rundown)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(RundownLine)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasRundown)));
+    }
+
+    private void ExecuteResume()
+    {
+        if (!CanResume)
+        {
+            return;
+        }
+
+        BeginResume();
+        _onResume?.Invoke(this);
     }
 
     private bool SetField<T>(ref T field, T value, [CallerMemberName] string? name = null)

@@ -152,7 +152,15 @@
                                        Visibility="{Binding ShowHeaderStatus, Converter={StaticResource BoolToVis}}"/>
                         </Border>
                         <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OkBrush,DangerBrush">
-                            <TextBlock Text="{Binding ResultBanner}" Foreground="{Binding ResultBrush}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                            <DockPanel Margin="0,2,0,0">
+                                <Button DockPanel.Dock="Right" Content="Open log" Style="{StaticResource HeaderButton}"
+                                        Command="{Binding OpenLogCommand}"
+                                        Visibility="{Binding ShowOpenLog, Converter={StaticResource BoolToVis}}"
+                                        Margin="8,0,0,0"
+                                        VerticalAlignment="Top"
+                                        ToolTip="Show this job’s text log on the Console tab."/>
+                                <TextBlock Text="{Binding ResultBanner}" Foreground="{Binding ResultBrush}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                            </DockPanel>
                         </Border>
                         <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="WarnBrush">
                             <TextBlock Text="This destination looks like a cloud-synced folder. Mercury verifies the local copy, not the cloud upload."
@@ -230,53 +238,44 @@
                             <GroupBox Header="Job options" Margin="0,0,8,0" VerticalAlignment="Top">
                                 <local:JobOptionsPanel/>
                             </GroupBox>
-                            <GroupBox Grid.Column="1" Header="Global" Margin="0" VerticalAlignment="Top"
+                            <GroupBox x:Name="GlobalGroup" Grid.Column="1" Header="Global" Margin="0" VerticalAlignment="Top"
                                       Width="340" HorizontalAlignment="Right">
                                 <StackPanel>
-                                    <CheckBox Style="{StaticResource OptionsCheckBox}" Margin="0,0,0,8"
+                                    <CheckBox x:Name="GlobalUnitCheck" Style="{StaticResource OptionsCheckBox}" Margin="0,0,0,8"
                                               Content="MB/s or Mbps"
                                               IsChecked="{Binding ShowSpeedInMegabits}"
                                               ToolTip="When on, Min / Max / Throttle boxes and Progress Speed use megabits per second (1 MB/s = 8 Mbps). Stored caps stay MB/s."/>
-                                    <Grid HorizontalAlignment="Stretch">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="38"/>
-                                            <RowDefinition Height="38"/>
-                                            <RowDefinition Height="38"/>
-                                            <RowDefinition Height="38"/>
-                                        </Grid.RowDefinitions>
-                                        <TextBlock Style="{StaticResource OptionsLabel}" Text="Min"
-                                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                        <TextBox Grid.Column="1" Style="{StaticResource OptionsNarrowField}" Margin="0,0,8,0"
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                        <TextBlock x:Name="GlobalMinLabel" Style="{StaticResource OptionsLabel}" Text="Min"/>
+                                        <TextBox x:Name="GlobalMinBox" Style="{StaticResource OptionsNarrowField}"
                                                  Text="{Binding GlobalMinText, UpdateSourceTrigger=PropertyChanged}"
                                                  ToolTip="Do not throttle the aggregate below this when work is available. Applies immediately."/>
-                                        <TextBlock Grid.Column="2" Style="{StaticResource OptionsLabel}" Margin="0"
+                                        <TextBlock Style="{StaticResource OptionsLabel}" Margin="0"
                                                    Text="{Binding SpeedUnitLabel}"/>
-                                        <CheckBox Grid.Row="1" Style="{StaticResource OptionsCheckBox}" Margin="0"
-                                                  Content="Unlimited" IsChecked="{Binding GlobalMaxUnlimited}"
-                                                  ToolTip="No global max. Per-job Max still applies."/>
-                                        <TextBlock Grid.Row="2" Style="{StaticResource OptionsLabel}" Text="Max"
-                                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                        <TextBox Grid.Row="2" Grid.Column="1" Style="{StaticResource OptionsNarrowField}" Margin="0,0,8,0"
+                                    </StackPanel>
+                                    <CheckBox x:Name="GlobalUnlimitedCheck" Style="{StaticResource OptionsCheckBox}" Margin="0,0,0,8"
+                                              Content="Unlimited" IsChecked="{Binding GlobalMaxUnlimited}"
+                                              ToolTip="No global max. Per-job Max still applies."/>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                        <TextBlock x:Name="GlobalMaxLabel" Style="{StaticResource OptionsLabel}" Text="Max"/>
+                                        <TextBox x:Name="GlobalMaxBox" Style="{StaticResource OptionsNarrowField}"
                                                  Text="{Binding GlobalMaxText, UpdateSourceTrigger=PropertyChanged}"
                                                  IsEnabled="{Binding GlobalMaxUnlimited, Converter={StaticResource InverseBool}}"
                                                  ToolTip="Applies immediately to running jobs."/>
-                                        <TextBlock Grid.Row="2" Grid.Column="2" Style="{StaticResource OptionsLabel}" Margin="0"
+                                        <TextBlock Style="{StaticResource OptionsLabel}" Margin="0"
                                                    Text="{Binding SpeedUnitLabel}"/>
-                                        <CheckBox Grid.Row="3" Style="{StaticResource OptionsCheckBox}" Margin="0,0,8,0"
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal">
+                                        <CheckBox x:Name="GlobalIdleCheck" Style="{StaticResource OptionsCheckBox}" Margin="0,0,8,0"
                                                   Content="Throttle Active PC" IsChecked="{Binding IdleThrottleEnabled}"
                                                   ToolTip="When other programs are using the PC (CPU above about 18%, excluding Mercury’s copy when possible), cap every job to this speed. Idle uses Unlimited / Max. Applies immediately — no restart."/>
-                                        <TextBox Grid.Row="3" Grid.Column="1" Style="{StaticResource OptionsNarrowField}" Margin="0,0,8,0"
+                                        <TextBox x:Name="GlobalIdleBox" Style="{StaticResource OptionsNarrowField}"
                                                  Text="{Binding IdleThrottleText, UpdateSourceTrigger=PropertyChanged}"
                                                  IsEnabled="{Binding IdleThrottleEnabled}"
                                                  ToolTip="Speed while the PC is busy. Leave Throttle Active PC off to use only Unlimited / Max."/>
-                                        <TextBlock Grid.Row="3" Grid.Column="2" Style="{StaticResource OptionsLabel}" Margin="0"
+                                        <TextBlock Style="{StaticResource OptionsLabel}" Margin="0"
                                                    Text="{Binding SpeedUnitLabel}"/>
-                                    </Grid>
+                                    </StackPanel>
                                 </StackPanel>
                             </GroupBox>
                         </Grid>
@@ -398,9 +397,10 @@
                                 <DockPanel>
                                     <WrapPanel DockPanel.Dock="Right" VerticalAlignment="Top">
                                         <Button Content="{Binding ResumeLabel}" Style="{StaticResource CompactButton}"
-                                                IsEnabled="{Binding CanResume}"
-                                                Command="{Binding DataContext.ResumeQueueJobCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                CommandParameter="{Binding}"/>
+                                                Command="{Binding ResumeCommand}"
+                                                ToolTip="{Binding ResumeToolTip}"
+                                                ToolTipService.ShowOnDisabled="True"
+                                                ClickMode="Press"/>
                                         <Button Content="Pause" Style="{StaticResource CompactButton}"
                                                 IsEnabled="{Binding CanPause}"
                                                 Command="{Binding DataContext.PauseQueueJobCommand, RelativeSource={RelativeSource AncestorType=Window}}"
@@ -464,7 +464,7 @@
             <TabItem Header="Tree">
                 <local:FolderTreePanel Margin="10"/>
             </TabItem>
-            <TabItem Header="Console">
+            <TabItem x:Name="ConsoleTab" Header="Console">
                 <DockPanel Margin="12">
                     <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
@@ -477,6 +477,8 @@
                                       ToolTip="When on, the console stays on the newest line. Scroll up or search to pause."/>
                             <CheckBox Content="Errors only" IsChecked="{Binding ErrorsOnly}" VerticalAlignment="Center"/>
                             <Button Content="Copy" Style="{StaticResource ToolbarButton}" Command="{Binding CopyConsoleCommand}"/>
+                            <Button Content="Job log" Style="{StaticResource ToolbarButton}" Command="{Binding OpenLogCommand}"
+                                    ToolTip="Show this job’s text log in this pane."/>
                             <Button Content="Open logs folder" Style="{StaticResource ToolbarButton}" Command="{Binding OpenLogsCommand}" Margin="0"/>
                         </StackPanel>
                         <TextBlock Text="Verbose job output" VerticalAlignment="Center" Opacity="0.8"/>
@@ -539,7 +541,15 @@
                         </ListBox.ItemContainerStyle>
                         <ListBox.ItemTemplate>
                             <DataTemplate>
-                                <StackPanel>
+                                <DockPanel>
+                                    <Button DockPanel.Dock="Right" Content="Open log" Style="{StaticResource CompactButton}"
+                                            Command="{Binding DataContext.OpenLogCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                            CommandParameter="{Binding}"
+                                            Visibility="{Binding CanOpenLog, Converter={StaticResource BoolToVis}}"
+                                            Margin="8,0,0,0"
+                                            VerticalAlignment="Top"
+                                            ToolTip="Show this transfer’s text log on the Console tab."/>
+                                    <StackPanel>
                                     <TextBlock Text="{Binding Title}" FontWeight="SemiBold"/>
                                     <TextBlock Text="{Binding Route}" Opacity="0.8" TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
                                     <TextBlock Text="{Binding StatusLabel}" Margin="0,4,0,0"/>
@@ -561,7 +571,8 @@
                                             </Style>
                                         </TextBlock.Style>
                                     </TextBlock>
-                                </StackPanel>
+                                    </StackPanel>
+                                </DockPanel>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>

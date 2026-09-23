@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -249,6 +250,68 @@ public class ProgressStatsLayoutTests
                 catch
                 {
                     // test cleanup
+                }
+            }
+        });
+    }
+
+    [Fact]
+    public void GlobalMinMax_LabelsSitBesideBoxes()
+    {
+        WpfSta.Run(() =>
+        {
+            WpfSta.EnsureApp();
+            var root = Path.Combine(Path.GetTempPath(), "mercury-global-ui-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(root);
+            MainWindow? window = null;
+            try
+            {
+                var vm = new MainViewModel(new AppPaths(root));
+                window = new MainWindow(vm)
+                {
+                    Width = 1080,
+                    Height = 780,
+                    WindowStartupLocation = WindowStartupLocation.Manual,
+                    Left = -4000,
+                    Top = 0
+                };
+                window.Show();
+                WpfSta.Flush();
+                window.UpdateLayout();
+                WpfSta.Flush();
+
+                var group = window.GlobalGroup;
+                var minGap = LeftX(window.GlobalMinBox, group) - RightX(window.GlobalMinLabel, group);
+                var maxGap = LeftX(window.GlobalMaxBox, group) - RightX(window.GlobalMaxLabel, group);
+                var idleGap = LeftX(window.GlobalIdleBox, group) - RightX(window.GlobalIdleCheck, group);
+                Assert.True(minGap >= -1 && minGap < 20, $"Min label must sit beside its box (gap {minGap})");
+                Assert.True(maxGap >= -1 && maxGap < 20, $"Max label must sit beside its box (gap {maxGap})");
+                Assert.True(idleGap >= -1 && idleGap < 20, $"Throttle Active PC must sit beside its box (gap {idleGap})");
+                Assert.True(window.GlobalMinBox.ActualWidth >= 70);
+                Assert.Equal(window.GlobalMinBox.ActualWidth, window.GlobalMaxBox.ActualWidth, 1);
+                Assert.True(window.GlobalUnlimitedCheck.ActualWidth > 40);
+                Assert.True(
+                    window.GlobalUnlimitedCheck.TranslatePoint(new WpfPoint(0, 0), group).Y
+                    < window.GlobalMaxLabel.TranslatePoint(new WpfPoint(0, 0), group).Y);
+            }
+            finally
+            {
+                try
+                {
+                    window?.Close();
+                }
+                catch
+                {
+                    // test cleanup
+                }
+
+                try
+                {
+                    Directory.Delete(root, true);
+                }
+                catch
+                {
+                    // leftover
                 }
             }
         });
