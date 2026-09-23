@@ -99,7 +99,13 @@ public sealed class ThemeService
         new("InputBackgroundBrush", "Text box / combo background", "#ffe7cb", "Inputs / lists"),
         new("PanelAltBrush", "List / alternate panel", "#ffe7cb", "Inputs / lists"),
         new("ConsoleBackgroundBrush", "Console list background", "#ffe7cb", "Inputs / lists"),
-        new("QueueBackgroundBrush", "Queue list background", "#ffe7cb", "Inputs / lists")
+        new("QueueBackgroundBrush", "Queue list background", "#ffe7cb", "Inputs / lists"),
+        new("QueueStatusTransferBrush", "Queue: transferring", "#c5e4f7", "Queue status"),
+        new("QueueStatusVerifyBrush", "Queue: verifying / rundown", "#ffe08a", "Queue status"),
+        new("QueueStatusCompleteBrush", "Queue: complete", "#c5e8c8", "Queue status"),
+        new("QueueStatusErrorBrush", "Queue: incomplete / error", "#f5b4b0", "Queue status"),
+        new("QueueStatusPausedBrush", "Queue: paused", "#ffd0a8", "Queue status"),
+        new("QueueStatusQueuedBrush", "Queue: pending / hold", "#d9d4d0", "Queue status")
     ];
 
     public static IReadOnlyList<ThemeFontSlot> FontSlots { get; } =
@@ -874,7 +880,13 @@ public sealed class ThemeService
         ["OkBrush"] = "#e7e8ec",
         ["WarnBrush"] = "#b1adad",
         ["DangerBrush"] = "#ada8a5",
-        ["QueueBackgroundBrush"] = "#b1adad"
+        ["QueueBackgroundBrush"] = "#b1adad",
+        ["QueueStatusTransferBrush"] = "#c5d4e4",
+        ["QueueStatusVerifyBrush"] = "#e8d98a",
+        ["QueueStatusCompleteBrush"] = "#c5d8c8",
+        ["QueueStatusErrorBrush"] = "#d4b0ae",
+        ["QueueStatusPausedBrush"] = "#d4b896",
+        ["QueueStatusQueuedBrush"] = "#9a9696"
     };
 
     private void NotifyChanged(bool reloadEditor)

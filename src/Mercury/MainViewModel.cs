@@ -714,6 +714,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             if (SetField(ref _jobStats, value))
             {
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderStats)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderElapsed)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderEta)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowProgressDetail)));
             }
         }
@@ -765,6 +767,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public ProgressStats HeaderStats => JobStats;
     public TransferRundown HeaderRundown => TransferRundown.Empty;
     public string HeaderRundownLine => "";
+    public StatPair HeaderElapsed => JobStats.Elapsed;
+    public StatPair HeaderEta => JobStats.Eta;
     public string HeaderElapsedText => JobStats.Elapsed.HasValue ? JobStats.Elapsed.Value : "";
     public bool ShowHeaderElapsed => ShowProgressDetail && !string.IsNullOrWhiteSpace(HeaderElapsedText);
     public string HeaderEtaText => JobStats.Eta.HasValue ? JobStats.Eta.Value : "";
@@ -3149,8 +3153,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderRundown)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderRundownLine)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowHeaderRundown)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderElapsed)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderElapsedText)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowHeaderElapsed)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderEta)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderEtaText)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowHeaderEta)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowHeaderStatus)));

@@ -39,6 +39,8 @@ public sealed class QueueJobItem : INotifyPropertyChanged
 
     public string StatusLabel => TileStatus;
 
+    public QueueStatusTone StatusTone => QueueStatusHighlight.For(this);
+
     public string TileStatus
     {
         get
@@ -254,6 +256,7 @@ public sealed class QueueJobItem : INotifyPropertyChanged
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StatusLabel)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TileStatus)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StatusTone)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(OrderText)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SettingsSummary)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(OptionBadges)));

@@ -350,6 +350,7 @@ public class PathAndTreeUiTests
     {
         var copying = new QueueJobItem(new Job { Name = "copy", Status = JobStatus.Copying });
         Assert.Equal("Transferring", copying.TileStatus);
+        Assert.Equal(QueueStatusTone.Transfer, copying.StatusTone);
 
         var verifying = new QueueJobItem(new Job { Name = "v", Status = JobStatus.Verifying });
         verifying.ApplyProgress(new JobProgress
@@ -362,6 +363,7 @@ public class PathAndTreeUiTests
             Eta = null
         });
         Assert.Equal("Verifying", verifying.TileStatus);
+        Assert.Equal(QueueStatusTone.Verify, verifying.StatusTone);
         Assert.False(verifying.CanPause);
         Assert.True(verifying.IsActive);
 
@@ -376,6 +378,119 @@ public class PathAndTreeUiTests
         });
         Assert.Equal("Rundown", rundown.TileStatus);
         Assert.True(rundown.IsActive);
+        Assert.Equal(QueueStatusTone.Verify, rundown.StatusTone);
+        Assert.Equal(QueueStatusHighlight.VerifyBrushKey, QueueStatusHighlight.BrushKey(rundown.StatusTone));
+    }
+
+    [Fact]
+    public void QueueStatusHighlight_MapsTileStatusesToTones()
+    {
+        Assert.Equal(QueueStatusTone.Transfer, new QueueJobItem(new Job { Status = JobStatus.Copying }).StatusTone);
+        Assert.Equal(QueueStatusTone.Transfer, new QueueJobItem(new Job { Status = JobStatus.Preparing }).StatusTone);
+        Assert.Equal(QueueStatusTone.Transfer, new QueueJobItem(new Job { Status = JobStatus.Enumerating }).StatusTone);
+        Assert.Equal(QueueStatusTone.Verify, new QueueJobItem(new Job { Status = JobStatus.Verifying }).StatusTone);
+        Assert.Equal(QueueStatusTone.Complete, new QueueJobItem(new Job { Status = JobStatus.Completed }).StatusTone);
+        Assert.Equal(QueueStatusTone.Error, new QueueJobItem(new Job { Status = JobStatus.Incomplete }).StatusTone);
+        Assert.Equal(QueueStatusTone.Error, new QueueJobItem(new Job { Status = JobStatus.Failed }).StatusTone);
+        Assert.Equal(QueueStatusTone.Paused, new QueueJobItem(new Job { Status = JobStatus.Paused }).StatusTone);
+        Assert.Equal(QueueStatusTone.Paused, new QueueJobItem(new Job { Status = JobStatus.PausedOutsideHours }).StatusTone);
+        Assert.Equal(QueueStatusTone.Queued, new QueueJobItem(new Job { Status = JobStatus.Pending }).StatusTone);
+        Assert.Equal(QueueStatusTone.Queued, new QueueJobItem(new Job { Status = JobStatus.Pending, OnHold = true }).StatusTone);
+        Assert.Equal(QueueStatusTone.Queued, new QueueJobItem(new Job { Status = JobStatus.Cancelled }).StatusTone);
+
+        Assert.Equal(QueueStatusTone.Transfer, QueueStatusHighlight.ForLabel("Transferring"));
+        Assert.Equal(QueueStatusTone.Transfer, QueueStatusHighlight.ForLabel("Copying"));
+        Assert.Equal(QueueStatusTone.Transfer, QueueStatusHighlight.ForLabel("Running"));
+        Assert.Equal(QueueStatusTone.Verify, QueueStatusHighlight.ForLabel("Rundown"));
+        Assert.Equal(QueueStatusTone.Complete, QueueStatusHighlight.ForLabel("Done"));
+        Assert.Equal(QueueStatusTone.Complete, QueueStatusHighlight.ForLabel("Finished"));
+        Assert.Equal(QueueStatusTone.Error, QueueStatusHighlight.ForLabel("Failed"));
+        Assert.Equal(QueueStatusHighlight.TransferBrushKey, QueueStatusHighlight.BrushKey(QueueStatusTone.Transfer));
+        Assert.Equal(QueueStatusHighlight.VerifyBrushKey, QueueStatusHighlight.BrushKey(QueueStatusTone.Verify));
+        Assert.Equal(QueueStatusHighlight.CompleteBrushKey, QueueStatusHighlight.BrushKey(QueueStatusTone.Complete));
+        Assert.Equal(QueueStatusHighlight.ErrorBrushKey, QueueStatusHighlight.BrushKey(QueueStatusTone.Error));
+        Assert.Equal(QueueStatusHighlight.PausedBrushKey, QueueStatusHighlight.BrushKey(QueueStatusTone.Paused));
+        Assert.Equal(QueueStatusHighlight.QueuedBrushKey, QueueStatusHighlight.BrushKey(QueueStatusTone.Queued));
+    }
+
+    [Fact]
+    public void QueueStatusChip_HighlightsWordNotWholeRow()
+    {
+        WpfSta.Run(() =>
+        {
+            WpfSta.EnsureApp();
+            Window? window = null;
+            try
+            {
+                var item = new QueueJobItem(new Job
+                {
+                    Name = "Warren Truss",
+                    SourcePath = @"D:\Warren Truss",
+                    DestinationPath = @"Z:\dest",
+                    Status = JobStatus.Copying
+                });
+                var chip = new Border
+                {
+                    Style = (Style)System.Windows.Application.Current.FindResource("QueueStatusChip"),
+                    DataContext = item,
+                    Child = new TextBlock
+                    {
+                        Text = item.TileStatus,
+                        FontWeight = FontWeights.SemiBold
+                    }
+                };
+                var buttons = new WrapPanel
+                {
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    Children =
+                    {
+                        new Button { Content = "Job Options", MinWidth = 88 }
+                    }
+                };
+                var row = new DockPanel { Width = 720 };
+                DockPanel.SetDock(buttons, Dock.Right);
+                row.Children.Add(buttons);
+                var body = new StackPanel();
+                body.Children.Add(new TextBlock { Text = "#2  Warren Truss", FontWeight = FontWeights.SemiBold });
+                body.Children.Add(chip);
+                body.Children.Add(new ProgressBar { Value = 40, Maximum = 100, Height = 14 });
+                row.Children.Add(body);
+
+                window = new Window
+                {
+                    Width = 760,
+                    Height = 180,
+                    Content = row
+                };
+                window.Show();
+                WpfSta.Flush();
+                row.UpdateLayout();
+                WpfSta.Flush();
+
+                Assert.Equal("Transferring", item.TileStatus);
+                Assert.Equal(QueueStatusTone.Transfer, item.StatusTone);
+                Assert.Equal(HorizontalAlignment.Left, chip.HorizontalAlignment);
+                Assert.True(chip.ActualWidth > 40, "chip should wrap the status word");
+                Assert.True(chip.ActualWidth < 220, "chip must not stretch across the queue row");
+                Assert.True(buttons.ActualWidth > 40);
+
+                var fill = Assert.IsType<SolidColorBrush>(chip.Background);
+                var expected = Assert.IsType<SolidColorBrush>(
+                    System.Windows.Application.Current.FindResource(QueueStatusHighlight.TransferBrushKey));
+                Assert.Equal(expected.Color, fill.Color);
+            }
+            finally
+            {
+                try
+                {
+                    window?.Close();
+                }
+                catch
+                {
+                    // test cleanup
+                }
+            }
+        });
     }
 
     [Fact]
@@ -398,6 +513,108 @@ public class PathAndTreeUiTests
         Assert.Equal(10, form.ToOptions().MaxMegabytesPerSecond);
     }
 
+    [Fact]
+    public void JobPathsPanel_SourceAndDestinationSections_AlignSelectorsAndButtons()
+    {
+        WpfSta.Run(() =>
+        {
+            WpfSta.EnsureApp();
+            Window? window = null;
+            try
+            {
+                var panel = new JobPathsPanel
+                {
+                    Width = 860,
+                    SourcePath = @"D:\Anchor Span",
+                    DestPath = @"Z:\BNE\Projects\313000\EngA data drive",
+                    DestKindIndex = 0,
+                    DestIsFolder = true,
+                    DestIsCatcher = false,
+                    HasSourceFolders = true,
+                    SourceFolders = new[] { new SourceFolderItem(@"D:\Anchor Span") },
+                    IncludeSourceFolderName = true,
+                    LandingPreview = @"Will land in: Z:\BNE\Projects\313000\EngA data drive\Anchor Span",
+                    ShowLandingPreview = true,
+                    PathsEditable = true
+                };
+                window = new Window
+                {
+                    Width = 900,
+                    Height = 420,
+                    Content = panel
+                };
+                window.Show();
+                WpfSta.Flush();
+                panel.UpdateLayout();
+                WpfSta.Flush();
+
+                Assert.Equal("Source", panel.SourceGroup.Header);
+                Assert.Equal("Destination", panel.DestinationGroup.Header);
+                Assert.DoesNotContain(
+                    FindVisualChildren<GroupBox>(panel),
+                    g => string.Equals(g.Header as string, "Paths", StringComparison.Ordinal));
+
+                Assert.Equal(HorizontalAlignment.Left, panel.SourcePathCombo.HorizontalContentAlignment);
+                Assert.Equal(HorizontalAlignment.Left, panel.DestPathCombo.HorizontalContentAlignment);
+                Assert.Equal(HorizontalAlignment.Left, panel.DestKindCombo.HorizontalContentAlignment);
+                var sourceBox = FindDescendant<TextBox>(panel.SourcePathCombo);
+                if (sourceBox is not null)
+                {
+                    Assert.Equal(TextAlignment.Left, sourceBox.TextAlignment);
+                }
+
+                var buttons = new[]
+                {
+                    panel.BrowseSourceButton,
+                    panel.AddSourceButton,
+                    panel.ClearSourcesButton,
+                    panel.BrowseDestButton
+                };
+                var remove = Assert.Single(FindVisualChildren<Button>(panel.SourceRemoveList));
+                Assert.Equal("Remove", remove.Content);
+                var all = buttons.Append(remove).ToArray();
+                Assert.True(all.All(b => Math.Abs(b.ActualWidth - all[0].ActualWidth) < 1.5), "path action buttons must share width");
+                Assert.True(all.All(b => Math.Abs(b.ActualHeight - all[0].ActualHeight) < 1.5), "path action buttons must share height");
+                Assert.True(all[0].ActualWidth >= 80);
+
+                var browseX = LeftX(panel.BrowseSourceButton, panel);
+                var destBrowseX = LeftX(panel.BrowseDestButton, panel);
+                var removeX = LeftX(remove, panel);
+                Assert.True(Math.Abs(browseX - destBrowseX) < 2.5, $"Browse buttons must share X ({browseX} vs {destBrowseX})");
+                Assert.True(Math.Abs(browseX - removeX) < 2.5, $"Remove must stack under Browse ({browseX} vs {removeX})");
+                var addX = LeftX(panel.AddSourceButton, panel);
+                var clearX = LeftX(panel.ClearSourcesButton, panel);
+                Assert.True(Math.Abs(addX - clearX) < 2.5, $"Clear must stack under Add ({addX} vs {clearX})");
+
+                var sourceComboX = LeftX(panel.SourcePathCombo, panel);
+                var destComboX = LeftX(panel.DestPathCombo, panel);
+                Assert.True(Math.Abs(sourceComboX - destComboX) < 2.5, $"path combos must share left X ({sourceComboX} vs {destComboX})");
+                Assert.True(Math.Abs(panel.SourcePathCombo.ActualWidth - panel.DestPathCombo.ActualWidth) < 3,
+                    $"path combos must share width ({panel.SourcePathCombo.ActualWidth} vs {panel.DestPathCombo.ActualWidth})");
+
+                var kindX = LeftX(panel.DestKindCombo, panel);
+                Assert.True(kindX <= destComboX + 1, "Folder combo stays left, not shrinking the dest path");
+                Assert.True(panel.DestKindCombo.ActualWidth < panel.DestPathCombo.ActualWidth / 2);
+
+                Assert.True(IsAncestor(panel.DestinationGroup, panel.IncludeCheckBox));
+                Assert.True(IsAncestor(panel.DestinationGroup, panel.LandingPreviewText));
+                Assert.True(IsAncestor(panel.SourceGroup, panel.SourceFolderList));
+                Assert.False(IsAncestor(panel.SourceGroup, panel.IncludeCheckBox));
+            }
+            finally
+            {
+                try
+                {
+                    window?.Close();
+                }
+                catch
+                {
+                    // test cleanup
+                }
+            }
+        });
+    }
+
     private static TreeViewItem? FindTreeItem(DependencyObject root)
     {
         var count = VisualTreeHelper.GetChildrenCount(root);
@@ -417,5 +634,52 @@ public class PathAndTreeUiTests
         }
 
         return null;
+    }
+
+    private static double LeftX(FrameworkElement element, Visual ancestor) =>
+        element.TransformToAncestor(ancestor).Transform(new WpfPoint(0, 0)).X;
+
+    private static bool IsAncestor(DependencyObject ancestor, DependencyObject? node)
+    {
+        while (node is not null)
+        {
+            if (ReferenceEquals(node, ancestor))
+            {
+                return true;
+            }
+
+            node = VisualTreeHelper.GetParent(node);
+        }
+
+        return false;
+    }
+
+    private static T? FindDescendant<T>(DependencyObject root) where T : DependencyObject
+    {
+        foreach (var child in FindVisualChildren<T>(root))
+        {
+            return child;
+        }
+
+        return null;
+    }
+
+    private static IEnumerable<T> FindVisualChildren<T>(DependencyObject root)
+        where T : DependencyObject
+    {
+        var count = VisualTreeHelper.GetChildrenCount(root);
+        for (var i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is T match)
+            {
+                yield return match;
+            }
+
+            foreach (var nested in FindVisualChildren<T>(child))
+            {
+                yield return nested;
+            }
+        }
     }
 }

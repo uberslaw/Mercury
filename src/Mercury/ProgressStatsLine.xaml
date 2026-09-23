@@ -14,6 +14,7 @@
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
                     <local:StatPairText Margin="0,0,10,2"
+                                        KeySizeGroup="{Binding KeySizeGroup}"
                                         Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=local:ProgressStatsLine}}"/>
                 </DataTemplate>
             </ItemsControl.ItemTemplate>

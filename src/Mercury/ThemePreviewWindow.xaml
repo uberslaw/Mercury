@@ -27,26 +27,16 @@
                                        Foreground="{DynamicResource OnHeaderBrush}"
                                        FontFamily="{DynamicResource BodyFontFamily}" FontSize="{DynamicResource BodyFontSize}"/>
                         </Border>
-                        <StackPanel Grid.Column="1" HorizontalAlignment="Right">
+                        <StackPanel Grid.Column="1" HorizontalAlignment="Right" Grid.IsSharedSizeScope="True">
                             <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Label,Value,Progress">
-                                <TextBlock HorizontalAlignment="Right" Foreground="{DynamicResource OnHeaderBrush}">
-                                    <Run Text="Elapsed: " FontWeight="SemiBold"
-                                         FontFamily="{DynamicResource LabelFontFamily}"
-                                         FontSize="{DynamicResource ProgressFontSize}"/>
-                                    <Run Text="1m 59s"
-                                         FontFamily="{DynamicResource ValueFontFamily}"
-                                         FontSize="{DynamicResource ProgressFontSize}"/>
-                                </TextBlock>
+                                <local:StatPairText x:Name="PreviewElapsed"
+                                                    KeySizeGroup="HeaderClockKey"
+                                                    Foreground="{DynamicResource OnHeaderBrush}"/>
                             </Border>
                             <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Label,Value,Progress">
-                                <TextBlock HorizontalAlignment="Right" Foreground="{DynamicResource OnHeaderBrush}">
-                                    <Run Text="ETA: " FontWeight="SemiBold"
-                                         FontFamily="{DynamicResource LabelFontFamily}"
-                                         FontSize="{DynamicResource ProgressFontSize}"/>
-                                    <Run Text="12m 40s"
-                                         FontFamily="{DynamicResource ValueFontFamily}"
-                                         FontSize="{DynamicResource ProgressFontSize}"/>
-                                </TextBlock>
+                                <local:StatPairText x:Name="PreviewEta"
+                                                    KeySizeGroup="HeaderClockKey"
+                                                    Foreground="{DynamicResource OnHeaderBrush}"/>
                             </Border>
                         </StackPanel>
                     </Grid>
@@ -70,7 +60,9 @@
                         </Border>
                         <Grid Grid.Row="1">
                             <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="HeaderBarFillBrush,HeaderBarTrackBrush">
-                                <ProgressBar Value="62" Maximum="100" Height="15"
+                                <ProgressBar Value="62" Maximum="100"
+                                             Height="{DynamicResource HeaderProgressBarHeight}"
+                                             MinHeight="{DynamicResource HeaderProgressBarHeight}"
                                              Foreground="{DynamicResource HeaderBarFillBrush}"
                                              Background="{DynamicResource HeaderBarTrackBrush}"/>
                             </Border>
@@ -80,7 +72,9 @@
                         </Grid>
                         <Grid Grid.Row="1" Grid.Column="2">
                             <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="HeaderBarFillBrush,HeaderBarTrackBrush">
-                                <ProgressBar Value="28" Maximum="100" Height="15"
+                                <ProgressBar Value="28" Maximum="100"
+                                             Height="{DynamicResource HeaderProgressBarHeight}"
+                                             MinHeight="{DynamicResource HeaderProgressBarHeight}"
                                              Foreground="{DynamicResource HeaderBarFillBrush}"
                                              Background="{DynamicResource HeaderBarTrackBrush}"/>
                             </Border>
@@ -207,12 +201,30 @@
                     </ScrollViewer>
                 </TabItem>
                 <TabItem Header="Queue">
-                    <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="QueueBackgroundBrush" Margin="10">
+                    <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="QueueBackgroundBrush,QueueStatusTransferBrush,QueueStatusVerifyBrush,QueueStatusCompleteBrush,QueueStatusErrorBrush,QueueStatusPausedBrush,QueueStatusQueuedBrush" Margin="10">
                         <ListBox FontFamily="Segoe UI" FontSize="13" Background="{DynamicResource QueueBackgroundBrush}">
                             <ListBoxItem>
                                 <StackPanel>
                                     <TextBlock Text="Weekend backup" FontWeight="SemiBold"/>
                                     <TextBlock Text="C:\Src  →  D:\Dest" Opacity="0.8"/>
+                                    <WrapPanel Margin="0,4,0,0">
+                                        <Border Style="{StaticResource QueueStatusChip}" Margin="0,0,8,4"
+                                                Background="{DynamicResource QueueStatusTransferBrush}">
+                                            <TextBlock Text="Transferring" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"/>
+                                        </Border>
+                                        <Border Style="{StaticResource QueueStatusChip}" Margin="0,0,8,4"
+                                                Background="{DynamicResource QueueStatusVerifyBrush}">
+                                            <TextBlock Text="Verifying" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"/>
+                                        </Border>
+                                        <Border Style="{StaticResource QueueStatusChip}" Margin="0,0,8,4"
+                                                Background="{DynamicResource QueueStatusCompleteBrush}">
+                                            <TextBlock Text="Done" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"/>
+                                        </Border>
+                                        <Border Style="{StaticResource QueueStatusChip}" Margin="0,0,8,4"
+                                                Background="{DynamicResource QueueStatusErrorBrush}">
+                                            <TextBlock Text="Incomplete" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"/>
+                                        </Border>
+                                    </WrapPanel>
                                     <ProgressBar Value="55" Maximum="100" Height="14" Margin="0,6,0,0"/>
                                 </StackPanel>
                             </ListBoxItem>

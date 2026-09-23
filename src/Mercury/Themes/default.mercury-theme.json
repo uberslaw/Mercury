@@ -32,7 +32,13 @@
     "InputBackgroundBrush": "#ffe7cb",
     "PanelAltBrush": "#ffe7cb",
     "ConsoleBackgroundBrush": "#ffe7cb",
-    "QueueBackgroundBrush": "#ffe7cb"
+    "QueueBackgroundBrush": "#ffe7cb",
+    "QueueStatusTransferBrush": "#c5e4f7",
+    "QueueStatusVerifyBrush": "#ffe08a",
+    "QueueStatusCompleteBrush": "#c5e8c8",
+    "QueueStatusErrorBrush": "#f5b4b0",
+    "QueueStatusPausedBrush": "#ffd0a8",
+    "QueueStatusQueuedBrush": "#d9d4d0"
   },
   "fonts": {
     "Progress.Family": "Segoe UI",

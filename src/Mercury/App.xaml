@@ -44,6 +44,12 @@
         <SolidColorBrush x:Key="TabUnselectedForegroundBrush" Color="#8c5e5a" po:Freeze="False"/>
         <SolidColorBrush x:Key="ConsoleBackgroundBrush" Color="#ffe7cb" po:Freeze="False"/>
         <SolidColorBrush x:Key="QueueBackgroundBrush" Color="#ffe7cb" po:Freeze="False"/>
+        <SolidColorBrush x:Key="QueueStatusTransferBrush" Color="#c5e4f7" po:Freeze="False"/>
+        <SolidColorBrush x:Key="QueueStatusVerifyBrush" Color="#ffe08a" po:Freeze="False"/>
+        <SolidColorBrush x:Key="QueueStatusCompleteBrush" Color="#c5e8c8" po:Freeze="False"/>
+        <SolidColorBrush x:Key="QueueStatusErrorBrush" Color="#f5b4b0" po:Freeze="False"/>
+        <SolidColorBrush x:Key="QueueStatusPausedBrush" Color="#ffd0a8" po:Freeze="False"/>
+        <SolidColorBrush x:Key="QueueStatusQueuedBrush" Color="#d9d4d0" po:Freeze="False"/>
 
         <FontFamily x:Key="BodyFontFamily">Segoe UI</FontFamily>
         <sys:Double x:Key="BodyFontSize">15</sys:Double>
@@ -53,6 +59,8 @@
         <sys:Double x:Key="LabelFontSize">15</sys:Double>
         <sys:Double x:Key="OptionsFontSize">15</sys:Double>
         <sys:Double x:Key="ControlMinHeight">30</sys:Double>
+        <sys:Double x:Key="HeaderProgressBarHeight">22.5</sys:Double>
+        <sys:Double x:Key="PathActionButtonWidth">88</sys:Double>
         <sys:Double x:Key="OptionsNarrowWidth">72</sys:Double>
         <sys:Double x:Key="OptionsWideWidth">248</sys:Double>
         <Thickness x:Key="ControlPadding">8,5,8,5</Thickness>
@@ -100,6 +108,32 @@
                 <TextBlock Text="{Binding}" FontSize="11" Foreground="{DynamicResource TextBrush}"/>
             </Border>
         </DataTemplate>
+        <Style x:Key="QueueStatusChip" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource QueueStatusQueuedBrush}"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Padding" Value="8,2"/>
+            <Setter Property="Margin" Value="0,4,0,4"/>
+            <Setter Property="HorizontalAlignment" Value="Left"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding StatusTone}" Value="Transfer">
+                    <Setter Property="Background" Value="{DynamicResource QueueStatusTransferBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StatusTone}" Value="Verify">
+                    <Setter Property="Background" Value="{DynamicResource QueueStatusVerifyBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StatusTone}" Value="Complete">
+                    <Setter Property="Background" Value="{DynamicResource QueueStatusCompleteBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StatusTone}" Value="Error">
+                    <Setter Property="Background" Value="{DynamicResource QueueStatusErrorBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StatusTone}" Value="Paused">
+                    <Setter Property="Background" Value="{DynamicResource QueueStatusPausedBrush}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
 
         <Style TargetType="Window">
             <Setter Property="Icon" Value="pack://application:,,,/Mercury;component/Assets/Mercury.ico"/>
@@ -151,6 +185,27 @@
             <Setter Property="MinWidth" Value="0"/>
             <Setter Property="Padding" Value="10,6"/>
             <Setter Property="Margin" Value="0,0,8,0"/>
+        </Style>
+        <Style x:Key="PathActionButton" TargetType="Button" BasedOn="{StaticResource ToolbarButton}">
+            <Setter Property="Width" Value="{StaticResource PathActionButtonWidth}"/>
+            <Setter Property="MinWidth" Value="{StaticResource PathActionButtonWidth}"/>
+            <Setter Property="MaxWidth" Value="{StaticResource PathActionButtonWidth}"/>
+            <Setter Property="Height" Value="{DynamicResource ControlMinHeight}"/>
+            <Setter Property="MinHeight" Value="{DynamicResource ControlMinHeight}"/>
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="Margin" Value="8,0,0,0"/>
+            <Setter Property="HorizontalAlignment" Value="Left"/>
+            <Setter Property="VerticalAlignment" Value="Top"/>
+        </Style>
+        <Style x:Key="PathComboBox" TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Style.Resources>
+                <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+                    <Setter Property="TextAlignment" Value="Left"/>
+                    <Setter Property="HorizontalContentAlignment" Value="Left"/>
+                </Style>
+            </Style.Resources>
         </Style>
         <Style x:Key="HeaderButton" TargetType="Button" BasedOn="{StaticResource ToolbarButton}">
             <Setter Property="Background" Value="{DynamicResource HeaderBarTrackBrush}"/>

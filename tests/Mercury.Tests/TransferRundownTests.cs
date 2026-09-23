@@ -145,6 +145,44 @@ public class TransferRundownTests
         Assert.Equal("2 of 5", many.Job.Value);
         Assert.Contains(many.TableCells, p => p.Key == "Job");
         Assert.Contains(many.TableCells, p => p.Key == "Overall files");
+        Assert.Equal(0, many.TableCells.First(p => p.Key == "Job").ColumnIndex);
+        Assert.Equal(3, many.TableCells.First(p => p.Key == "This stage").ColumnIndex);
+        for (var i = 0; i < many.TableCells.Count; i++)
+        {
+            Assert.Equal(i % ProgressStats.TableColumnCount, many.TableCells[i].ColumnIndex);
+            Assert.Equal("ProgressStatKey" + many.TableCells[i].ColumnIndex, many.TableCells[i].KeySizeGroup);
+        }
+    }
+
+    [Fact]
+    public void ProgressStatsTableCellsShareKeyGroupsByVisualColumn()
+    {
+        var stats = ProgressStats.From(
+            new JobProgress
+            {
+                Status = JobStatus.Copying,
+                StageName = "Copying",
+                StageIndex = 2,
+                StageCount = 4,
+                CurrentFile = @"compressed\file.zip",
+                FilesCopied = 10,
+                FilesTotal = 20,
+                BytesCopied = 100,
+                BytesTotal = 200,
+                StartedUtc = DateTimeOffset.UtcNow.AddMinutes(-5),
+                StageStartedUtc = DateTimeOffset.UtcNow.AddMinutes(-1),
+                TypeSummary = "Archives: 20 files"
+            },
+            jobIndex: 2,
+            jobCount: 2,
+            overall: new JobProgress { FilesCopied = 30, FilesTotal = 80 });
+
+        Assert.Equal("ProgressStatKey0", stats.TableCells.First(p => p.Key == "Job").KeySizeGroup);
+        Assert.Equal("ProgressStatKey0", stats.TableCells.First(p => p.Key == "Files").KeySizeGroup);
+        Assert.Equal("ProgressStatKey0", stats.TableCells.First(p => p.Key == "Types").KeySizeGroup);
+        Assert.Equal("ProgressStatKey1", stats.TableCells.First(p => p.Key == "Overall files").KeySizeGroup);
+        Assert.Equal("ProgressStatKey3", stats.TableCells.First(p => p.Key == "This stage").KeySizeGroup);
+        Assert.Equal("ProgressStatKey3", stats.TableCells.First(p => p.Key == "Speed").KeySizeGroup);
     }
 
     [Fact]

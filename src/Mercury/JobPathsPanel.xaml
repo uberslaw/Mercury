@@ -1,0 +1,162 @@
+<UserControl x:Class="Mercury.JobPathsPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:Mercury">
+    <StackPanel Grid.IsSharedSizeScope="True">
+        <GroupBox x:Name="SourceGroup" Header="Source" Margin="0,0,0,8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" SharedSizeGroup="PathSelector"/>
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="PathButton1"/>
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="PathButton2"/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="InputBackgroundBrush"
+                        Margin="0,0,0,8">
+                    <ComboBox x:Name="SourcePathCombo"
+                              Style="{StaticResource PathComboBox}"
+                              IsEditable="True"
+                              IsTextSearchEnabled="False"
+                              local:ComboBoxFit.PreserveText="True"
+                              HorizontalContentAlignment="Left"
+                              Text="{Binding SourcePath, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}, UpdateSourceTrigger=PropertyChanged}"
+                              ItemsSource="{Binding RecentSources, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}}"
+                              IsEnabled="{Binding PathsEditable, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}}"
+                              ToolTip="Type or paste a path, then Add. Browse picks multiple folders in one dialog and adds them without removing earlier picks. Drop folders from Explorer to add."/>
+                </Border>
+                <Button x:Name="BrowseSourceButton" Grid.Column="1" Content="Browse" Style="{StaticResource PathActionButton}"
+                        Margin="8,0,0,8"
+                        Command="{Binding BrowseSourceCommand, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}}"
+                        ToolTip="Multi-select folders from this location, then browse another parent and add more. Does not wipe the list."/>
+                <Button x:Name="AddSourceButton" Grid.Column="2" Content="Add" Style="{StaticResource PathActionButton}"
+                        Margin="8,0,0,8"
+                        Command="{Binding AddSourceCommand, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}}"
+                        ToolTip="Add the path in the box to this job’s source list."/>
+
+                <ScrollViewer Grid.Row="1" MaxHeight="88"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled"
+                              Visibility="{Binding HasSourceFolders, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}, Converter={StaticResource BoolToVis}}">
+                    <ItemsControl x:Name="SourceFolderList"
+                                  ItemsSource="{Binding SourceFolders, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}}"
+                                  ToolTip="Every selected source folder for this job. Remove one without affecting the others.">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Path}" TextTrimming="CharacterEllipsis"
+                                           Height="{DynamicResource ControlMinHeight}"
+                                           Margin="0,0,0,4"
+                                           VerticalAlignment="Center"
+                                           ToolTip="{Binding Path}"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+                <ItemsControl x:Name="SourceRemoveList" Grid.Row="1" Grid.Column="1"
+                              ItemsSource="{Binding SourceFolders, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}}"
+                              Visibility="{Binding HasSourceFolders, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}, Converter={StaticResource BoolToVis}}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Button Content="Remove" Style="{StaticResource PathActionButton}" Margin="8,0,0,4"
+                                    Command="{Binding RemoveSourceCommand, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}}"
+                                    CommandParameter="{Binding}"
+                                    IsEnabled="{Binding PathsEditable, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}}"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button x:Name="ClearSourcesButton" Grid.Row="1" Grid.Column="2" Content="Clear"
+                        Style="{StaticResource PathActionButton}" Margin="8,0,0,4"
+                        VerticalAlignment="Top"
+                        Command="{Binding ClearSourcesCommand, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}}"
+                        Visibility="{Binding HasSourceFolders, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}, Converter={StaticResource BoolToVis}}"/>
+            </Grid>
+        </GroupBox>
+
+        <GroupBox x:Name="DestinationGroup" Header="Destination">
+            <StackPanel>
+                <ComboBox x:Name="DestKindCombo"
+                          SelectedIndex="{Binding DestKindIndex, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}, Mode=TwoWay}"
+                          Margin="0,0,0,8"
+                          HorizontalAlignment="Left"
+                          HorizontalContentAlignment="Left"
+                          VerticalAlignment="Center"
+                          local:ComboBoxFit.ToContent="True"
+                          IsEnabled="{Binding PathsEditable, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}}"
+                          ToolTip="Folder copy is unchanged. Catcher sends HTTPS to a listener on the other side of the router.">
+                    <ComboBoxItem>Folder</ComboBoxItem>
+                    <ComboBoxItem>Catcher</ComboBoxItem>
+                </ComboBox>
+                <Grid Visibility="{Binding DestIsFolder, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}, Converter={StaticResource BoolToVis}}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" SharedSizeGroup="PathSelector"/>
+                        <ColumnDefinition Width="Auto" SharedSizeGroup="PathButton1"/>
+                        <ColumnDefinition Width="Auto" SharedSizeGroup="PathButton2"/>
+                    </Grid.ColumnDefinitions>
+                    <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="InputBackgroundBrush"
+                            Margin="0,0,0,8">
+                        <ComboBox x:Name="DestPathCombo"
+                                  Style="{StaticResource PathComboBox}"
+                                  IsEditable="True"
+                                  IsTextSearchEnabled="False"
+                                  local:ComboBoxFit.PreserveText="True"
+                                  HorizontalContentAlignment="Left"
+                                  Text="{Binding DestPath, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}, UpdateSourceTrigger=PropertyChanged}"
+                                  ItemsSource="{Binding RecentDestinations, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}}"
+                                  IsEnabled="{Binding PathsEditable, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}}"
+                                  ToolTip="Type, paste, or pick a recent destination."/>
+                    </Border>
+                    <Button x:Name="BrowseDestButton" Grid.Column="1" Content="Browse" Style="{StaticResource PathActionButton}"
+                            Margin="8,0,0,8"
+                            Command="{Binding BrowseDestCommand, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}}"/>
+                    <Border x:Name="DestButtonSpacer" Grid.Column="2"
+                            Width="{StaticResource PathActionButtonWidth}"
+                            Height="{DynamicResource ControlMinHeight}"
+                            Margin="8,0,0,8"/>
+                </Grid>
+                <StackPanel Visibility="{Binding DestIsCatcher, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}, Converter={StaticResource BoolToVis}}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="90"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <TextBlock Text="Template" VerticalAlignment="Center"/>
+                        <ComboBox Grid.Column="1" Margin="0,0,0,8"
+                                  HorizontalContentAlignment="Left"
+                                  ItemsSource="{Binding CatcherTemplates, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}}"
+                                  SelectedItem="{Binding SelectedCatcherTemplate, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}}"
+                                  DisplayMemberPath="Display"
+                                  IsEnabled="{Binding PathsEditable, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}}"/>
+                        <TextBlock Grid.Row="1" Text="Passphrase" VerticalAlignment="Center"/>
+                        <PasswordBox x:Name="CatcherPassphraseBox" Grid.Row="1" Grid.Column="1"
+                                     IsEnabled="{Binding PathsEditable, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}}"/>
+                    </Grid>
+                    <StackPanel Visibility="{Binding ShowCatcherStatus, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="{Binding CatcherOnlineStatus, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}}"
+                                   TextWrapping="Wrap" Margin="0,8,0,0"
+                                   Foreground="{DynamicResource MutedBrush}"/>
+                        <TextBlock Text="{Binding CatcherTransferHint, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}}"
+                                   TextWrapping="Wrap" Margin="0,4,0,0"
+                                   Foreground="{DynamicResource MutedBrush}"/>
+                    </StackPanel>
+                </StackPanel>
+                <CheckBox x:Name="IncludeCheckBox" Margin="0,8,0,0"
+                          Content="Include source folder name"
+                          IsChecked="{Binding IncludeSourceFolderName, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}}"
+                          Visibility="{Binding DestIsFolder, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}, Converter={StaticResource BoolToVis}}"
+                          ToolTip="On (default, like Explorer): dest gets a folder named after the source (D:\Anchor Span → dest\Anchor Span\...). Off (Contents only): files and subfolders land directly in dest. Drive roots always dump contents into dest. Dest already containing a child folder does not uncheck this."/>
+                <TextBlock x:Name="LandingPreviewText" Margin="0,6,0,0"
+                           Text="{Binding LandingPreview, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}}"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource MutedBrush}"
+                           Visibility="{Binding ShowLandingPreview, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}, Converter={StaticResource BoolToVis}}"
+                           ToolTip="Where this job will create the top folder or file. If you browse Destination inside a previous copy, this path nests the source folder name again."/>
+            </StackPanel>
+        </GroupBox>
+    </StackPanel>
+</UserControl>

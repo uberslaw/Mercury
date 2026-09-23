@@ -9,10 +9,17 @@ public readonly record struct StatPair(string Key, string Value)
     public bool HasValue => !string.IsNullOrWhiteSpace(Key);
 
     public string Display => HasValue ? $"{Key}: {Value}" : "";
+
+    /// <summary>Visual column in the Progress stats UniformGrid (0-based).</summary>
+    public int ColumnIndex { get; init; }
+
+    public string KeySizeGroup => "ProgressStatKey" + ColumnIndex.ToString(CultureInfo.InvariantCulture);
 }
 
 public sealed class ProgressStats
 {
+    public const int TableColumnCount = 4;
+
     public static ProgressStats Idle { get; } = new()
     {
         Job = StatPair.Empty,
@@ -45,11 +52,14 @@ public sealed class ProgressStats
     {
         get
         {
-        StatPair[] all =
+            StatPair[] all =
             [
                 Job, Stage, File, ThisStage, Files, OverallFiles, Bytes, Speed, PauseAfter, Types
             ];
-            return all.Where(p => p.HasValue).ToArray();
+            return all
+                .Where(p => p.HasValue)
+                .Select((p, i) => p with { ColumnIndex = i % TableColumnCount })
+                .ToArray();
         }
     }
 

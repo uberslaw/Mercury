@@ -43,6 +43,10 @@ public partial class MainWindow : Window
             _forceClose = true;
             Close();
         };
+        TransferPaths.SourceDrop += Source_Drop;
+        TransferPaths.DestDrop += Dest_Drop;
+        TransferPaths.PassphraseChanged += OnPanelPassphraseChanged;
+        QueuePaths.PassphraseChanged += OnPanelPassphraseChanged;
     }
 
     private MainViewModel Vm => (MainViewModel)DataContext;
@@ -66,9 +70,9 @@ public partial class MainWindow : Window
         {
             LeaveThemeSession();
             Vm.PrepareQueueForm();
-            if (QueueCatcherPassphraseBox is not null && CatcherPassphraseBox is not null)
+            if (QueuePaths?.PassphraseBox is not null && TransferPaths?.PassphraseBox is not null)
             {
-                QueueCatcherPassphraseBox.Password = CatcherPassphraseBox.Password;
+                QueuePaths.PassphraseBox.Password = TransferPaths.PassphraseBox.Password;
             }
 
             return;
@@ -335,6 +339,9 @@ public partial class MainWindow : Window
             Vm.SetCatcherPassphrase(box.Password);
         }
     }
+
+    private void OnPanelPassphraseChanged(object? sender, string password) =>
+        Vm.SetCatcherPassphrase(password);
 
     private void Window_Loaded(object sender, RoutedEventArgs e)
     {

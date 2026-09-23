@@ -5,30 +5,39 @@
              Foreground="{DynamicResource TextBrush}">
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto" SharedSizeGroup="ProgressStatKey"/>
+            <ColumnDefinition x:Name="KeyColumn" Width="Auto" SharedSizeGroup="ProgressStatKey0"/>
+            <ColumnDefinition Width="Auto"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
-        <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Label">
-            <TextBlock FontFamily="{DynamicResource ProgressFontFamily}"
-                       FontSize="{DynamicResource ProgressFontSize}"
-                       TextAlignment="Right"
-                       TextWrapping="NoWrap"
-                       TextTrimming="CharacterEllipsis">
-                <Run Text="{Binding Key, Mode=OneWay}"
-                     FontWeight="Bold"
-                     FontFamily="{DynamicResource LabelFontFamily}"
-                     FontSize="{DynamicResource LabelFontSize}"
-                     Foreground="{DynamicResource MutedBrush}"/>
-                <Run Text=":"
-                     FontWeight="Bold"
-                     FontFamily="{DynamicResource LabelFontFamily}"
-                     FontSize="{DynamicResource LabelFontSize}"
-                     Foreground="{DynamicResource MutedBrush}"/>
-            </TextBlock>
+        <!-- Shared-size key column: words sit left (sized to glyphs). Empty space before the colon is intentional. -->
+        <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Label"
+                HorizontalAlignment="Stretch">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
+                <TextBlock x:Name="KeyText"
+                           FontFamily="{DynamicResource LabelFontFamily}"
+                           FontSize="{DynamicResource LabelFontSize}"
+                           FontWeight="Bold"
+                           HorizontalAlignment="Left"
+                           TextAlignment="Left"
+                           TextWrapping="NoWrap"
+                           Text="{Binding Key, Mode=OneWay}"
+                           Foreground="{DynamicResource MutedBrush}"/>
+            </StackPanel>
         </Border>
-        <Border Grid.Column="1" Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Value" Margin="8,0,0,0">
-            <TextBlock FontFamily="{DynamicResource ProgressFontFamily}"
+        <Border Grid.Column="1" Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Label">
+            <TextBlock x:Name="ColonText"
+                       FontFamily="{DynamicResource LabelFontFamily}"
+                       FontSize="{DynamicResource LabelFontSize}"
+                       FontWeight="Bold"
+                       VerticalAlignment="Center"
+                       Text=":"
+                       Foreground="{DynamicResource MutedBrush}"/>
+        </Border>
+        <Border Grid.Column="2" Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Value" Margin="8,0,0,0">
+            <TextBlock x:Name="ValueText"
+                       FontFamily="{DynamicResource ProgressFontFamily}"
                        FontSize="{DynamicResource ProgressFontSize}"
+                       TextAlignment="Left"
                        TextWrapping="NoWrap"
                        TextTrimming="CharacterEllipsis">
                 <Run Text="{Binding Value, Mode=OneWay}"
