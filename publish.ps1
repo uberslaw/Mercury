@@ -34,7 +34,7 @@ function Test-FileLocked {
 
 if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
     Write-Host "ERROR: 'dotnet' is not on PATH."
-    Write-Host "Install the .NET 8 SDK on this build machine, then re-run this script."
+    Write-Host "Install the .NET 10 SDK on this build machine, then re-run this script."
     Write-Host "Target PCs do not need the SDK or runtime - this pack bundles .NET."
     exit 1
 }

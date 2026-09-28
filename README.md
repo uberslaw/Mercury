@@ -155,7 +155,7 @@ The queue is sequential (`MaxConcurrentJobs` stays 1). Raising concurrency is a 
 
 ## Build from source
 
-Windows 10/11 x64, .NET 8 SDK (to compile only):
+Windows 10/11 x64, .NET 10 SDK (to compile only; `global.json` pins SDK 10.0.401 with `rollForward: latestFeature`):
 
 ```powershell
 dotnet test Mercury.slnx
@@ -172,7 +172,7 @@ Output: `dist\Mercury\` — copy that folder; do not install it.
 
 ### Assumptions
 
-- Runtime: Windows 10/11 x64; .NET 8 is **bundled** in the published folder.
+- Runtime: Windows 10/11 x64; .NET 10 is **bundled** in the published folder (end users do not install the SDK).
 - Network: folder copy needs the same reachability Explorer already needs. Catcher needs the sender to reach `publicHost:publicPort`, a listening Catcher, and a one-time router port-forward. Windows Firewall must allow Catcher on the internal port.
 - Permissions: user-level; writes next to the exe (`data\`) or LocalAppData. No admin. Binding port 443 on Catcher itself may need elevation — default internal port is 8443.
 - Topology: folder copy is one PC. Catcher is sender outbound → receiving-site listener.
