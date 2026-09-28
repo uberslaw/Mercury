@@ -86,32 +86,36 @@ public class PathAndTreeUiTests
     [Fact]
     public void CompareBrowseStaysEnabledWhileRunningCopy()
     {
-        var root = Path.Combine(Path.GetTempPath(), "mercury-compare-run-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
-        MainViewModel? vm = null;
-        try
+        WpfSta.Run(() =>
         {
-            vm = new MainViewModel(new AppPaths(root));
-            vm.IsRunning = true;
-            vm.IsPaused = false;
-            Assert.False(vm.PathsEditable);
-            Assert.False(vm.BrowseSourceCommand.CanExecute(null));
-            Assert.True(vm.Compare.BrowseLeftCommand.CanExecute(null));
-            Assert.True(vm.Compare.BrowseRightCommand.CanExecute(null));
-            Assert.True(vm.Compare.PathsEditable);
-        }
-        finally
-        {
-            vm?.Dispose();
+            WpfSta.EnsureApp();
+            var root = Path.Combine(Path.GetTempPath(), "mercury-compare-run-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(root);
+            MainViewModel? vm = null;
             try
             {
-                Directory.Delete(root, true);
+                vm = new MainViewModel(new AppPaths(root));
+                vm.IsRunning = true;
+                vm.IsPaused = false;
+                Assert.False(vm.PathsEditable);
+                Assert.False(vm.BrowseSourceCommand.CanExecute(null));
+                Assert.True(vm.Compare.BrowseLeftCommand.CanExecute(null));
+                Assert.True(vm.Compare.BrowseRightCommand.CanExecute(null));
+                Assert.True(vm.Compare.PathsEditable);
             }
-            catch
+            finally
             {
-                // leftover
+                vm?.Dispose();
+                try
+                {
+                    Directory.Delete(root, true);
+                }
+                catch
+                {
+                    // leftover
+                }
             }
-        }
+        });
     }
 
     [Fact]
@@ -167,6 +171,63 @@ public class PathAndTreeUiTests
                 }
             }
         });
+    }
+
+    [Fact]
+    public void CompareShowDestOnlyDefaultsTrue_HidesDestOnlyFromList()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mercury-compare-toggle-" + Guid.NewGuid().ToString("N"));
+        var left = Path.Combine(root, "src");
+        var right = Path.Combine(root, "dst");
+        Directory.CreateDirectory(left);
+        Directory.CreateDirectory(right);
+        File.WriteAllText(Path.Combine(left, "only-source.txt"), "solo");
+        Directory.CreateDirectory(Path.Combine(right, "only-dest-dir"));
+        File.WriteAllText(Path.Combine(right, "only-dest.txt"), "extra");
+        CompareViewModel? vm = null;
+        try
+        {
+            vm = new CompareViewModel(new AppPaths(root));
+            Assert.True(vm.ShowDestOnly);
+            var compared = DirectoryComparer.Compare(left, right);
+            vm.LoadResultForTests(compared);
+
+            Assert.Contains(vm.ListedDifferences, d => d.IsMissingOnDest && d.RelativePath == "only-source.txt");
+            Assert.Contains(vm.ListedDifferences, d => d.IsDestOnly && d.RelativePath == "only-dest.txt");
+            Assert.Contains(vm.ListedDifferences, d => d.IsDestOnly && d.RelativePath == "only-dest-dir");
+            Assert.Contains(vm.Highlights, h => h.IsDestOnly);
+            Assert.Contains(vm.Highlights, h => h.IsMissingOnDest);
+            Assert.Contains("Source", vm.SummaryText, StringComparison.Ordinal);
+            Assert.Contains("Destination", vm.SummaryText, StringComparison.Ordinal);
+            Assert.Contains("dest only", vm.SummaryText, StringComparison.Ordinal);
+
+            vm.ShowDestOnly = false;
+            Assert.Contains(vm.ListedDifferences, d => d.IsMissingOnDest);
+            Assert.DoesNotContain(vm.ListedDifferences, d => d.IsDestOnly);
+            Assert.DoesNotContain(vm.Highlights, h => h.IsDestOnly);
+            Assert.Contains(vm.Highlights, h => h.IsMissingOnDest);
+            Assert.Contains("dest only 1", vm.SummaryText, StringComparison.Ordinal);
+            Assert.Contains("destination-only hidden", vm.ListCaption, StringComparison.OrdinalIgnoreCase);
+
+            var txt = vm.ExportTextForTests();
+            Assert.Contains("only-dest.txt", txt, StringComparison.Ordinal);
+            Assert.Contains("only-dest-dir", txt, StringComparison.Ordinal);
+            Assert.Contains("Source:", txt, StringComparison.Ordinal);
+            Assert.Contains("Destination:", txt, StringComparison.Ordinal);
+            Assert.Contains("=== Destination-only files", txt, StringComparison.Ordinal);
+        }
+        finally
+        {
+            vm?.Dispose();
+            try
+            {
+                Directory.Delete(root, true);
+            }
+            catch
+            {
+                // leftover
+            }
+        }
     }
 
     [Fact]

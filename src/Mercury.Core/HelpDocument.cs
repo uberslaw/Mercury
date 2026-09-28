@@ -141,12 +141,13 @@ public static class HelpDocument
             Id = "compare",
             Title = "Compare tab",
             Body =
-                "Compare two folders (Left / Right). Browse or paste including UNC. Compare does not pause, stop, or change a running copy — Transfer, Queue, and Progress stay as they are.\n\n" +
-                "Default scan recursively counts folders and files: left/right totals, only-left, only-right, matching-name folders, and files with the same relative path. It does not hash or compare size/time. " +
+                "Compare two folders (Source / Destination). Browse or paste including UNC. Compare does not pause, stop, or change a running copy — Transfer, Queue, and Progress stay as they are.\n\n" +
+                "Default scan recursively counts folders and files: source/destination totals, source-only (missing on dest, shown in red), dest-only (purple), matching-name folders, and files with the same relative path. It does not hash or compare size/time. " +
                 "Advanced also compares size, last-write time (optional FAT 2s, same as RoboFlags), name casing, and files per folder. Tick Hash (xxHash64, the Thorough verify hasher) only if you need content compare — it is off by default because it is slow.\n\n" +
                 "Filters choose which difference kinds appear in the summary, highlight cards, list, and TXT export. Default filters are folder counts and file counts only. " +
-                "Highlight cards show the main diffs to act on (top only-left folders, largest size mismatches, newest time mismatches, hash failures). The list below is capped; Export TXT writes the full enabled lists (default name compare-YYYYMMDD-HHMM.txt under Compare reports in Settings, or a path you pick).\n\n" +
-                "Add missing to queue creates a catch-up copy Left→Right or Right→Left: Include source folder name off (contents of one root into the other), overwrite Skip if dest newer or equal. It is added to the Queue and does not start. Enumeration skips files that already match dest — Mercury does not build a custom skip list."
+                "Highlight cards show the main diffs to act on (top source-only folders in red, dest-only in purple, largest size mismatches, newest time mismatches, hash failures). " +
+                "Show destination-only is on by default; turn it off to hide dest-only files and folders from the list and cards. Summary counts and Export TXT still include dest-only. The list below is capped; Export TXT writes the full enabled lists (default name compare-YYYYMMDD-HHMM.txt under Compare reports in Settings, or a path you pick).\n\n" +
+                "Add missing to queue creates a catch-up copy Source→Dest or Dest→Source: Include source folder name off (contents of one root into the other), overwrite Skip if dest newer or equal. Source→Dest is the catch-up of items missing on dest. It is added to the Queue and does not start. Enumeration skips files that already match dest — Mercury does not build a custom skip list."
         },
         new()
         {

@@ -30,6 +30,13 @@ public enum CompareDiffKind
     FolderFileCountMismatch
 }
 
+public enum CompareListTone
+{
+    Default,
+    MissingOnDest,
+    DestOnly
+}
+
 public sealed class DirectoryCompareOptions
 {
     public static DirectoryCompareOptions Default { get; } = new();
@@ -71,10 +78,10 @@ public sealed class DirectoryCompareDiff
 
     public string KindLabel => Kind switch
     {
-        CompareDiffKind.OnlyLeftFile => "only left · file",
-        CompareDiffKind.OnlyRightFile => "only right · file",
-        CompareDiffKind.OnlyLeftFolder => "only left · folder",
-        CompareDiffKind.OnlyRightFolder => "only right · folder",
+        CompareDiffKind.OnlyLeftFile => "source only · file",
+        CompareDiffKind.OnlyRightFile => "dest only · file",
+        CompareDiffKind.OnlyLeftFolder => "source only · folder",
+        CompareDiffKind.OnlyRightFolder => "dest only · folder",
         CompareDiffKind.SizeMismatch => "size",
         CompareDiffKind.TimestampMismatch => "timestamp",
         CompareDiffKind.HashMismatch => "hash",
@@ -82,6 +89,26 @@ public sealed class DirectoryCompareDiff
         CompareDiffKind.FolderFileCountMismatch => "files in folder",
         _ => Kind.ToString()
     };
+
+    public CompareListTone ListTone => Kind switch
+    {
+        CompareDiffKind.OnlyLeftFile or CompareDiffKind.OnlyLeftFolder => CompareListTone.MissingOnDest,
+        CompareDiffKind.OnlyRightFile or CompareDiffKind.OnlyRightFolder => CompareListTone.DestOnly,
+        _ => CompareListTone.Default
+    };
+
+    public bool IsMissingOnDest => ListTone == CompareListTone.MissingOnDest;
+    public bool IsDestOnly => ListTone == CompareListTone.DestOnly;
+
+    public string ListForegroundKey => ListTone switch
+    {
+        CompareListTone.MissingOnDest => "CompareMissingOnDestBrush",
+        CompareListTone.DestOnly => "CompareDestOnlyBrush",
+        _ => "TextBrush"
+    };
+
+    public static bool IsDestOnlyKind(CompareDiffKind kind) =>
+        kind is CompareDiffKind.OnlyRightFile or CompareDiffKind.OnlyRightFolder;
 
     public string ListText =>
         string.IsNullOrWhiteSpace(Detail)
@@ -107,6 +134,8 @@ public sealed class DirectoryCompareHighlight
 {
     public string Title { get; init; } = "";
     public IReadOnlyList<string> Lines { get; init; } = [];
+    public bool IsMissingOnDest { get; init; }
+    public bool IsDestOnly { get; init; }
 }
 
 public sealed class DirectoryCompareResult
@@ -143,64 +172,82 @@ public sealed class DirectoryCompareResult
     /// <summary>Every computed difference (scan mode), unfiltered and uncapped — for export and re-filter.</summary>
     public IReadOnlyList<DirectoryCompareDiff> Differences { get; init; } = [];
 
-    public IEnumerable<DirectoryCompareDiff> Filtered(CompareFilter filter) =>
-        Differences.Where(d => DirectoryCompareDiff.IsIncluded(d.Kind, filter));
+    public IEnumerable<DirectoryCompareDiff> Filtered(CompareFilter filter, bool includeDestOnly = true) =>
+        Differences.Where(d =>
+            DirectoryCompareDiff.IsIncluded(d.Kind, filter) &&
+            (includeDestOnly || !DirectoryCompareDiff.IsDestOnlyKind(d.Kind)));
 
-    public IReadOnlyList<DirectoryCompareDiff> Listed(CompareFilter filter, int cap)
+    public IReadOnlyList<DirectoryCompareDiff> Listed(CompareFilter filter, int cap, bool includeDestOnly = true)
     {
+        var rows = Filtered(filter, includeDestOnly);
         if (cap <= 0)
         {
-            return Filtered(filter).ToList();
+            return rows.ToList();
         }
 
-        return Filtered(filter).Take(cap).ToList();
+        return rows.Take(cap).ToList();
     }
 
-    public IReadOnlyList<DirectoryCompareHighlight> Highlights(CompareFilter filter, int limit)
+    public IReadOnlyList<DirectoryCompareHighlight> Highlights(CompareFilter filter, int limit, bool includeDestOnly = true)
     {
         limit = Math.Max(1, limit);
         var cards = new List<DirectoryCompareHighlight>();
         var diffs = Differences;
 
-        void AddCard(string title, IEnumerable<string> lines)
+        void AddCard(string title, IEnumerable<string> lines, bool missingOnDest = false, bool destOnly = false)
         {
+            if (destOnly && !includeDestOnly)
+            {
+                return;
+            }
+
             var list = lines.Take(limit).ToList();
             if (list.Count > 0)
             {
-                cards.Add(new DirectoryCompareHighlight { Title = title, Lines = list });
+                cards.Add(new DirectoryCompareHighlight
+                {
+                    Title = title,
+                    Lines = list,
+                    IsMissingOnDest = missingOnDest,
+                    IsDestOnly = destOnly
+                });
             }
         }
 
         if (filter.HasFlag(CompareFilter.FolderCounts))
         {
             AddCard(
-                "Only-left folders",
+                "Source-only folders",
                 diffs.Where(d => d.Kind == CompareDiffKind.OnlyLeftFolder)
                     .OrderByDescending(d => d.LeftFileCount ?? 0)
                     .ThenBy(d => d.RelativePath, StringComparer.OrdinalIgnoreCase)
-                    .Select(d => FolderLine(d, left: true)));
+                    .Select(d => FolderLine(d, left: true)),
+                missingOnDest: true);
             AddCard(
-                "Only-right folders",
+                "Destination-only folders",
                 diffs.Where(d => d.Kind == CompareDiffKind.OnlyRightFolder)
                     .OrderByDescending(d => d.RightFileCount ?? 0)
                     .ThenBy(d => d.RelativePath, StringComparer.OrdinalIgnoreCase)
-                    .Select(d => FolderLine(d, left: false)));
+                    .Select(d => FolderLine(d, left: false)),
+                destOnly: true);
         }
 
         if (filter.HasFlag(CompareFilter.FileCounts))
         {
             AddCard(
-                "Only-left files",
+                "Source-only files",
                 diffs.Where(d => d.Kind == CompareDiffKind.OnlyLeftFile)
                     .OrderByDescending(d => d.LeftSize ?? 0)
                     .ThenBy(d => d.RelativePath, StringComparer.OrdinalIgnoreCase)
-                    .Select(FileLine));
+                    .Select(FileLine),
+                missingOnDest: true);
             AddCard(
-                "Only-right files",
+                "Destination-only files",
                 diffs.Where(d => d.Kind == CompareDiffKind.OnlyRightFile)
                     .OrderByDescending(d => d.RightSize ?? 0)
                     .ThenBy(d => d.RelativePath, StringComparer.OrdinalIgnoreCase)
-                    .Select(FileLine));
+                    .Select(FileLine),
+                destOnly: true);
         }
 
         if (filter.HasFlag(CompareFilter.Size))
@@ -304,12 +351,12 @@ public static class DirectoryComparer
             var rightPath = PathNormalizer.Normalize(rightRoot);
             if (!Directory.Exists(leftPath))
             {
-                return Failed(leftPath, rightRoot, started, $"Left folder not found: {leftPath}");
+                return Failed(leftPath, rightRoot, started, $"Source folder not found: {leftPath}");
             }
 
             if (!Directory.Exists(rightPath))
             {
-                return Failed(leftPath, rightPath, started, $"Right folder not found: {rightPath}");
+                return Failed(leftPath, rightPath, started, $"Destination folder not found: {rightPath}");
             }
 
             var filesVisited = 0;
@@ -878,8 +925,8 @@ public static class DirectoryCompareReport
         }
 
         sb.AppendLine();
-        sb.AppendLine("Left:  " + result.LeftRoot);
-        sb.AppendLine("Right: " + result.RightRoot);
+        sb.AppendLine("Source:      " + result.LeftRoot);
+        sb.AppendLine("Destination: " + result.RightRoot);
         sb.AppendLine("Started:  " + TransferRundown.FormatLogTime(result.StartedUtc));
         sb.AppendLine("Finished: " + TransferRundown.FormatLogTime(result.EndedUtc));
         if (result.Canceled)
@@ -898,9 +945,9 @@ public static class DirectoryCompareReport
         sb.AppendLine($"Visited: {result.FilesVisited} files, {result.FoldersVisited} folders");
         sb.AppendLine();
         sb.AppendLine("Folders");
-        sb.AppendLine($"  Left {result.LeftFolders}  Right {result.RightFolders}  Only left {result.FoldersOnlyLeft}  Only right {result.FoldersOnlyRight}  Matching name {result.FoldersMatchingName}");
+        sb.AppendLine($"  Source {result.LeftFolders}  Destination {result.RightFolders}  Source only {result.FoldersOnlyLeft}  Dest only {result.FoldersOnlyRight}  Matching name {result.FoldersMatchingName}");
         sb.AppendLine("Files");
-        sb.AppendLine($"  Left {result.LeftFiles}  Right {result.RightFiles}  Only left {result.FilesOnlyLeft}  Only right {result.FilesOnlyRight}  Same relative path {result.FilesSameRelativePath}");
+        sb.AppendLine($"  Source {result.LeftFiles}  Destination {result.RightFiles}  Source only {result.FilesOnlyLeft}  Dest only {result.FilesOnlyRight}  Same relative path {result.FilesSameRelativePath}");
         if (result.Advanced)
         {
             sb.AppendLine($"Size mismatches: {result.SizeMismatches}");
@@ -932,10 +979,10 @@ public static class DirectoryCompareReport
             }
         }
 
-        Section("Only left files", CompareDiffKind.OnlyLeftFile);
-        Section("Only right files", CompareDiffKind.OnlyRightFile);
-        Section("Only left folders", CompareDiffKind.OnlyLeftFolder);
-        Section("Only right folders", CompareDiffKind.OnlyRightFolder);
+        Section("Source-only files (missing on destination)", CompareDiffKind.OnlyLeftFile);
+        Section("Destination-only files", CompareDiffKind.OnlyRightFile);
+        Section("Source-only folders (missing on destination)", CompareDiffKind.OnlyLeftFolder);
+        Section("Destination-only folders", CompareDiffKind.OnlyRightFolder);
         Section("Size mismatches", CompareDiffKind.SizeMismatch);
         Section("Timestamp mismatches", CompareDiffKind.TimestampMismatch);
         Section("Hash mismatches", CompareDiffKind.HashMismatch);

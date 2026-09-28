@@ -34,8 +34,9 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
     private int _copyDirectionIndex;
     private int _filesVisited;
     private int _foldersVisited;
+    private bool _showDestOnly = true;
     private string _progressText = "";
-    private string _statusText = "Pick Left and Right folders, then Compare.";
+    private string _statusText = "Pick Source and Destination folders, then Compare.";
     private string _summaryText = "";
     private string _listCaption = "Differences";
     private string _lastExportPath = "";
@@ -259,6 +260,18 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
     {
         get => _copyDirectionIndex;
         set => SetField(ref _copyDirectionIndex, value);
+    }
+
+    public bool ShowDestOnly
+    {
+        get => _showDestOnly;
+        set
+        {
+            if (SetField(ref _showDestOnly, value))
+            {
+                RefreshView();
+            }
+        }
     }
 
     public bool IsScanning
@@ -537,23 +550,36 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
         var filter = CurrentFilter;
         SummaryText = BuildSummary(_result, filter);
         Highlights.Clear();
-        foreach (var card in _result.Highlights(filter, 5))
+        foreach (var card in _result.Highlights(filter, 5, ShowDestOnly))
         {
             Highlights.Add(card);
         }
 
         ListedDifferences.Clear();
         const int cap = 2_000;
-        var listed = _result.Listed(filter, cap);
+        var listed = _result.Listed(filter, cap, ShowDestOnly);
         foreach (var row in listed)
         {
             ListedDifferences.Add(row);
         }
 
-        var total = _result.Filtered(filter).Count();
-        ListCaption = total > listed.Count
-            ? $"Differences ({total:N0}; showing {listed.Count:N0} — export TXT for the full list)"
-            : $"Differences ({total:N0})";
+        var total = _result.Filtered(filter, ShowDestOnly).Count();
+        var hiddenDestOnly = ShowDestOnly
+            ? 0
+            : _result.Filtered(filter).Count(d => d.IsDestOnly);
+        if (total > listed.Count)
+        {
+            ListCaption = $"Differences ({total:N0}; showing {listed.Count:N0} — export TXT for the full list)";
+        }
+        else if (hiddenDestOnly > 0)
+        {
+            ListCaption = $"Differences ({total:N0}; {hiddenDestOnly:N0} destination-only hidden)";
+        }
+        else
+        {
+            ListCaption = $"Differences ({total:N0})";
+        }
+
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasHighlights)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasListedDifferences)));
     }
@@ -562,17 +588,17 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
     {
         var lines = new List<string>
         {
-            $"Folders  Left {result.LeftFolders}  Right {result.RightFolders}",
-            $"Files  Left {result.LeftFiles}  Right {result.RightFiles}"
+            $"Folders  Source {result.LeftFolders}  Destination {result.RightFolders}",
+            $"Files  Source {result.LeftFiles}  Destination {result.RightFiles}"
         };
         if (filter.HasFlag(CompareFilter.FolderCounts))
         {
-            lines.Add($"Folder diffs  only left {result.FoldersOnlyLeft}  only right {result.FoldersOnlyRight}  matching name {result.FoldersMatchingName}");
+            lines.Add($"Folder diffs  source only {result.FoldersOnlyLeft}  dest only {result.FoldersOnlyRight}  matching name {result.FoldersMatchingName}");
         }
 
         if (filter.HasFlag(CompareFilter.FileCounts))
         {
-            lines.Add($"File diffs  only left {result.FilesOnlyLeft}  only right {result.FilesOnlyRight}  same relative path {result.FilesSameRelativePath}");
+            lines.Add($"File diffs  source only {result.FilesOnlyLeft}  dest only {result.FilesOnlyRight}  same relative path {result.FilesSameRelativePath}");
         }
 
         if (result.Advanced)
@@ -671,8 +697,8 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
         var dest = leftToRight ? RightPath : LeftPath;
         QueueCatchUpRequested?.Invoke(source, dest);
         StatusText = leftToRight
-            ? "Queued catch-up Left → Right. Enumeration skips files that already match dest."
-            : "Queued catch-up Right → Left. Enumeration skips files that already match dest.";
+            ? "Queued catch-up Source → Dest. Enumeration skips files that already match dest."
+            : "Queued catch-up Dest → Source. Enumeration skips files that already match dest.";
     }
 
     private void BrowseLeft() => Browse(isLeft: true);
@@ -685,7 +711,7 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
         var current = isLeft ? LeftPath : RightPath;
         var last = isLeft ? recents.LastCompareLeftDir : recents.LastCompareRightDir;
         var start = LibraryStore.BrowseStartDir(last, current);
-        var folder = new OpenFolderDialog { Title = isLeft ? "Compare — Left folder" : "Compare — Right folder" };
+        var folder = new OpenFolderDialog { Title = isLeft ? "Compare — Source folder" : "Compare — Destination folder" };
         if (!string.IsNullOrEmpty(start))
         {
             folder.InitialDirectory = start;

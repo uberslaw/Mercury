@@ -30,6 +30,20 @@ public class DirectoryCompareTests
             Assert.Equal(0, result.SizeMismatches);
             Assert.Contains(result.Differences, d => d.Kind == CompareDiffKind.OnlyLeftFile && d.RelativePath == "only-left.txt");
             Assert.Contains(result.Differences, d => d.Kind == CompareDiffKind.OnlyRightFolder && d.RelativePath == "only-right-dir");
+            var missing = Assert.Single(result.Differences, d => d.Kind == CompareDiffKind.OnlyLeftFile);
+            Assert.True(missing.IsMissingOnDest);
+            Assert.False(missing.IsDestOnly);
+            Assert.Equal(CompareListTone.MissingOnDest, missing.ListTone);
+            Assert.Equal("CompareMissingOnDestBrush", missing.ListForegroundKey);
+            Assert.Contains("source only", missing.KindLabel, StringComparison.Ordinal);
+            Assert.DoesNotContain("left", missing.KindLabel, StringComparison.OrdinalIgnoreCase);
+            var destOnly = Assert.Single(result.Differences, d => d.Kind == CompareDiffKind.OnlyRightFolder);
+            Assert.True(destOnly.IsDestOnly);
+            Assert.False(destOnly.IsMissingOnDest);
+            Assert.Equal(CompareListTone.DestOnly, destOnly.ListTone);
+            Assert.Equal("CompareDestOnlyBrush", destOnly.ListForegroundKey);
+            Assert.Contains("dest only", destOnly.KindLabel, StringComparison.Ordinal);
+            Assert.DoesNotContain("right", destOnly.KindLabel, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain(result.Differences, d => d.Kind == CompareDiffKind.SizeMismatch);
         }
         finally
@@ -147,6 +161,12 @@ public class DirectoryCompareTests
             var txt = DirectoryCompareReport.Build(result, CompareFilter.FolderCounts | CompareFilter.FileCounts);
             Assert.Contains("only-left.txt", txt, StringComparison.Ordinal);
             Assert.Contains("only-right-dir", txt, StringComparison.Ordinal);
+            Assert.Contains("Source:", txt, StringComparison.Ordinal);
+            Assert.Contains("Destination:", txt, StringComparison.Ordinal);
+            Assert.Contains("=== Destination-only folders", txt, StringComparison.Ordinal);
+            Assert.Contains("=== Source-only files", txt, StringComparison.Ordinal);
+            Assert.DoesNotContain("Left:", txt, StringComparison.Ordinal);
+            Assert.DoesNotContain("Right:", txt, StringComparison.Ordinal);
             Assert.Contains(left, txt, StringComparison.OrdinalIgnoreCase);
             Assert.Contains(right, txt, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("Default counts", txt, StringComparison.Ordinal);
@@ -173,8 +193,44 @@ public class DirectoryCompareTests
         Assert.Contains("does not start", section.Body, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Skip if dest newer or equal", section.Body, StringComparison.Ordinal);
         Assert.Contains("xxHash64", section.Body, StringComparison.Ordinal);
+        Assert.Contains("Source / Destination", section.Body, StringComparison.Ordinal);
+        Assert.Contains("Source→Dest", section.Body, StringComparison.Ordinal);
+        Assert.Contains("Show destination-only", section.Body, StringComparison.Ordinal);
+        Assert.DoesNotContain("Left / Right", section.Body, StringComparison.Ordinal);
         Assert.Contains(HelpDocument.Search("Compare"), s => s.Id == "compare");
         Assert.Contains("Compare", HelpDocument.Sections.Single(s => s.Id == "start").Body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DestOnlyToggleHidesFromListAndCards_SummaryAndReportStillInclude()
+    {
+        var (left, right) = Trees();
+        try
+        {
+            File.WriteAllText(Path.Combine(left, "only-source.txt"), "solo");
+            Directory.CreateDirectory(Path.Combine(right, "only-dest-dir"));
+            File.WriteAllText(Path.Combine(right, "only-dest.txt"), "extra");
+
+            var result = DirectoryComparer.Compare(left, right);
+            var filter = CompareFilter.FolderCounts | CompareFilter.FileCounts;
+            Assert.Contains(result.Listed(filter, 2_000, includeDestOnly: true), d => d.IsDestOnly);
+            Assert.DoesNotContain(result.Listed(filter, 2_000, includeDestOnly: false), d => d.IsDestOnly);
+            Assert.Contains(result.Listed(filter, 2_000, includeDestOnly: false), d => d.IsMissingOnDest);
+            Assert.Contains(result.Highlights(filter, 5, includeDestOnly: true), h => h.IsDestOnly);
+            Assert.DoesNotContain(result.Highlights(filter, 5, includeDestOnly: false), h => h.IsDestOnly);
+            Assert.Contains(result.Highlights(filter, 5, includeDestOnly: false), h => h.IsMissingOnDest);
+            Assert.Equal(1, result.FilesOnlyRight);
+            Assert.Equal(1, result.FoldersOnlyRight);
+            var txt = DirectoryCompareReport.Build(result, filter);
+            Assert.Contains("only-dest.txt", txt, StringComparison.Ordinal);
+            Assert.Contains("only-dest-dir", txt, StringComparison.Ordinal);
+            Assert.Contains("=== Destination-only files", txt, StringComparison.Ordinal);
+            Assert.Contains("=== Destination-only folders", txt, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Cleanup(left, right);
+        }
     }
 
     [Fact]

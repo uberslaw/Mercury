@@ -258,9 +258,18 @@
                             </Border>
                             <CheckBox Style="{StaticResource OptionsCheckBox}" Content="Advanced scan" IsChecked="True"/>
                             <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="PanelAltBrush" Margin="0,8,0,0">
-                                <ListBox FontFamily="Segoe UI" FontSize="13" Height="56"
+                                <ListBox FontFamily="Segoe UI" FontSize="13" Height="80"
                                          Background="{DynamicResource PanelAltBrush}">
-                                    <ListBoxItem>only left · file  extra.jpg</ListBoxItem>
+                                    <ListBoxItem>
+                                        <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="CompareMissingOnDestBrush">
+                                            <TextBlock Text="source only · file  extra.jpg" Foreground="{DynamicResource CompareMissingOnDestBrush}"/>
+                                        </Border>
+                                    </ListBoxItem>
+                                    <ListBoxItem>
+                                        <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="CompareDestOnlyBrush">
+                                            <TextBlock Text="dest only · file  dest-only.jpg" Foreground="{DynamicResource CompareDestOnlyBrush}"/>
+                                        </Border>
+                                    </ListBoxItem>
                                 </ListBox>
                             </Border>
                         </StackPanel>

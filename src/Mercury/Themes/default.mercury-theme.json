@@ -39,7 +39,9 @@
     "QueueStatusErrorBrush": "#f5b4b0",
     "QueueStatusPausedBrush": "#ffd0a8",
     "QueueStatusPauseAfterBrush": "#f4c96a",
-    "QueueStatusQueuedBrush": "#d9d4d0"
+    "QueueStatusQueuedBrush": "#d9d4d0",
+    "CompareMissingOnDestBrush": "#c41e3a",
+    "CompareDestOnlyBrush": "#6b21a8"
   },
   "fonts": {
     "Progress.Family": "Segoe UI",

@@ -51,6 +51,8 @@
         <SolidColorBrush x:Key="QueueStatusPausedBrush" Color="#ffd0a8" po:Freeze="False"/>
         <SolidColorBrush x:Key="QueueStatusPauseAfterBrush" Color="#f4c96a" po:Freeze="False"/>
         <SolidColorBrush x:Key="QueueStatusQueuedBrush" Color="#d9d4d0" po:Freeze="False"/>
+        <SolidColorBrush x:Key="CompareMissingOnDestBrush" Color="#c41e3a" po:Freeze="False"/>
+        <SolidColorBrush x:Key="CompareDestOnlyBrush" Color="#6b21a8" po:Freeze="False"/>
 
         <FontFamily x:Key="BodyFontFamily">Segoe UI</FontFamily>
         <sys:Double x:Key="BodyFontSize">15</sys:Double>

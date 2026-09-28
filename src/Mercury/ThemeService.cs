@@ -106,7 +106,9 @@ public sealed class ThemeService
         new("QueueStatusErrorBrush", "Queue: incomplete / error", "#f5b4b0", "Queue status"),
         new("QueueStatusPausedBrush", "Queue: paused", "#ffd0a8", "Queue status"),
         new("QueueStatusPauseAfterBrush", "Queue: pausing after file", "#f4c96a", "Queue status"),
-        new("QueueStatusQueuedBrush", "Queue: pending / hold", "#d9d4d0", "Queue status")
+        new("QueueStatusQueuedBrush", "Queue: pending / hold", "#d9d4d0", "Queue status"),
+        new("CompareMissingOnDestBrush", "Compare: missing on destination", "#c41e3a", "Compare"),
+        new("CompareDestOnlyBrush", "Compare: destination only", "#6b21a8", "Compare")
     ];
 
     public static IReadOnlyList<ThemeFontSlot> FontSlots { get; } =
@@ -888,7 +890,9 @@ public sealed class ThemeService
         ["QueueStatusErrorBrush"] = "#d4b0ae",
         ["QueueStatusPausedBrush"] = "#d4b896",
         ["QueueStatusPauseAfterBrush"] = "#d4bc6a",
-        ["QueueStatusQueuedBrush"] = "#9a9696"
+        ["QueueStatusQueuedBrush"] = "#9a9696",
+        ["CompareMissingOnDestBrush"] = "#a05050",
+        ["CompareDestOnlyBrush"] = "#6a5080"
     };
 
     private void NotifyChanged(bool reloadEditor)
