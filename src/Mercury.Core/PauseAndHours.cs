@@ -11,6 +11,7 @@ public sealed class PauseGate
     private long _fileSize;
     private long _fileCopied;
     private long _fileStart;
+    private long _fileStartedUtcTicks;
 
     public PauseGate? Parent { get; set; }
 
@@ -25,6 +26,15 @@ public sealed class PauseGate
     public long CurrentFileCopied => Interlocked.Read(ref _fileCopied);
 
     public long CurrentFileSize => Interlocked.Read(ref _fileSize);
+
+    public DateTimeOffset? CurrentFileStartedUtc
+    {
+        get
+        {
+            var ticks = Interlocked.Read(ref _fileStartedUtcTicks);
+            return ticks == 0 ? null : new DateTimeOffset(ticks, TimeSpan.Zero);
+        }
+    }
 
     public void Pause()
     {
@@ -67,6 +77,7 @@ public sealed class PauseGate
         _fileSize = size;
         Interlocked.Exchange(ref _fileCopied, 0);
         Interlocked.Exchange(ref _fileStart, Stopwatch.GetTimestamp());
+        Interlocked.Exchange(ref _fileStartedUtcTicks, DateTimeOffset.UtcNow.UtcTicks);
     }
 
     public void AddFileBytes(long count) => Interlocked.Add(ref _fileCopied, count);
@@ -77,6 +88,7 @@ public sealed class PauseGate
         _fileSize = 0;
         Interlocked.Exchange(ref _fileCopied, 0);
         Interlocked.Exchange(ref _fileStart, 0);
+        Interlocked.Exchange(ref _fileStartedUtcTicks, 0);
     }
 
     /// <summary>

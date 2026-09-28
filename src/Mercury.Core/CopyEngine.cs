@@ -563,25 +563,34 @@ public sealed class CopyEngine : ICopyEngine
 
         var fileName = CatcherCrypto.SafeFileName(Path.GetFileName(payloadPath));
         var sha = CatcherCrypto.Sha256File(payloadPath);
-        log.Info(job.Id, name, $"Sending {fileName} ({ByteFormatter.ToString(new FileInfo(payloadPath).Length)}) over HTTPS.");
+        var length = new FileInfo(payloadPath).Length;
+        log.Info(job.Id, name, $"Sending {fileName} ({ByteFormatter.ToString(length)}) over HTTPS.");
+        pause.BeginFile(fileName, length);
         reporter.Update($"Sending {fileName} over HTTPS…", fileName, speed);
-
-        var result = await CatcherClient.PushAsync(
-            catcher,
-            passphrase,
-            payloadPath,
-            fileName,
-            sha,
-            budget,
-            job.Id,
-            job.Options.MaxBytesPerSecond,
-            bytes =>
-            {
-                speed.Add(bytes);
-                reporter.Update($"Sending {fileName} over HTTPS…", fileName, speed);
-            },
-            cancellationToken,
-            unpack: pack).ConfigureAwait(false);
+        CatcherPushResult result;
+        try
+        {
+            result = await CatcherClient.PushAsync(
+                catcher,
+                passphrase,
+                payloadPath,
+                fileName,
+                sha,
+                budget,
+                job.Id,
+                job.Options.MaxBytesPerSecond,
+                bytes =>
+                {
+                    speed.Add(bytes);
+                    pause.AddFileBytes(bytes);
+                },
+                cancellationToken,
+                unpack: pack).ConfigureAwait(false);
+        }
+        finally
+        {
+            pause.EndFile();
+        }
 
         if (!pack)
         {
@@ -850,11 +859,11 @@ public sealed class CopyEngine : ICopyEngine
             cancellationToken.ThrowIfCancellationRequested();
             await pause.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
             await WaitForHoursAsync(job, pause, log, name, reporter, cloud, cancellationToken).ConfigureAwait(false);
-            reporter.Update($"Copying {file.RelativePath}", file.RelativePath, speed);
             try
             {
                 if (ShouldSkip(file, job.Options))
                 {
+                    reporter.Update($"Copying {file.RelativePath}", file.RelativePath, speed);
                     TryJournal(journal, () => journal.MarkSkipped(file.RelativePath, "Destination is newer or equal"), log, job.Id, name);
                     log.Info(job.Id, name, $"Skip {file.RelativePath} (dest newer or equal)");
                     speed.Add(file.Size);
@@ -862,6 +871,7 @@ public sealed class CopyEngine : ICopyEngine
                 }
 
                 pause.BeginFile(file.RelativePath, file.Size);
+                reporter.Update($"Copying {file.RelativePath}", file.RelativePath, speed);
                 var copied = await CopyWithRetriesAsync(job, file, journal, budget, pause, log, name, speed, cancellationToken, io)
                     .ConfigureAwait(false);
                 pause.EndFile();
@@ -1014,10 +1024,10 @@ public sealed class CopyEngine : ICopyEngine
         {
             cancellationToken.ThrowIfCancellationRequested();
             await pause.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
-            reporter.Update($"Retrying deferred {file.RelativePath}", file.RelativePath, speed);
             try
             {
             pause.BeginFile(file.RelativePath, file.Size);
+            reporter.Update($"Retrying deferred {file.RelativePath}", file.RelativePath, speed);
             var copied = await CopyWithRetriesAsync(job, file, journal, budget, pause, log, name, speed, cancellationToken, io)
                 .ConfigureAwait(false);
             pause.EndFile();
@@ -1404,17 +1414,18 @@ public sealed class CopyEngine : ICopyEngine
                 continue;
             }
 
-            reporter?.Update($"Copying {file.RelativePath} (already compressed)", file.RelativePath, speed);
             try
             {
                 if (ShouldSkip(file, job.Options))
                 {
+                    reporter?.Update($"Copying {file.RelativePath} (already compressed)", file.RelativePath, speed);
                     TryJournal(journal, () => journal.MarkSkipped(file.RelativePath, "Destination is newer or equal"), log, job.Id, name);
                     log.Info(job.Id, name, $"Skip {file.RelativePath} (already compressed, dest newer or equal)");
                     continue;
                 }
 
                 pause.BeginFile(file.RelativePath, file.Size);
+                reporter?.Update($"Copying {file.RelativePath} (already compressed)", file.RelativePath, speed);
                 var copied = await CopyWithRetriesAsync(job, file, journal, budget, pause, log, name, speed, cancellationToken, io)
                     .ConfigureAwait(false);
                 pause.EndFile();

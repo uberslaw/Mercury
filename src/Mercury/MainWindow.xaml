@@ -144,6 +144,50 @@
                                            FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}"/>
                             </Grid>
                         </Grid>
+                        <Grid Margin="0,6,0,2">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid>
+                                <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="HeaderBarFillBrush,HeaderBarTrackBrush,OnHeaderBrush">
+                                    <ProgressBar x:Name="HeaderFileProgressBar"
+                                                 Value="{Binding CurrentFilePercent, Mode=OneWay}" Maximum="100"
+                                                 Height="{DynamicResource HeaderProgressBarHeight}"
+                                                 MinHeight="{DynamicResource HeaderProgressBarHeight}"
+                                                 Foreground="{DynamicResource HeaderBarFillBrush}"
+                                                 Background="{DynamicResource HeaderBarTrackBrush}"/>
+                                </Border>
+                                <TextBlock x:Name="HeaderFileProgressText"
+                                           Text="{Binding CurrentFileBarText}"
+                                           HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                                           Margin="8,0"
+                                           TextTrimming="CharacterEllipsis"
+                                           FontWeight="SemiBold" IsHitTestVisible="False"
+                                           Foreground="{DynamicResource OnHeaderBrush}"
+                                           FontFamily="{DynamicResource ProgressFontFamily}"
+                                           FontSize="{DynamicResource ProgressFontSize}">
+                                    <TextBlock.Effect>
+                                        <DropShadowEffect BlurRadius="6" ShadowDepth="0" Color="#CC000000" Opacity="0.7"/>
+                                    </TextBlock.Effect>
+                                </TextBlock>
+                            </Grid>
+                            <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center"
+                                        HorizontalAlignment="Right" Grid.IsSharedSizeScope="True">
+                                <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Label,Value,Progress">
+                                    <local:StatPairText x:Name="HeaderThisFilePair"
+                                                        DataContext="{Binding HeaderThisFile}"
+                                                        KeySizeGroup="FileClockKey"
+                                                        Foreground="{DynamicResource OnHeaderBrush}"/>
+                                </Border>
+                                <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Label,Value,Progress">
+                                    <local:StatPairText x:Name="HeaderFileEtaPair"
+                                                        DataContext="{Binding HeaderFileEta}"
+                                                        KeySizeGroup="FileClockKey"
+                                                        Foreground="{DynamicResource OnHeaderBrush}"/>
+                                </Border>
+                            </StackPanel>
+                        </Grid>
                         <local:ProgressStatsLine DataContext="{Binding HeaderStats}" Foreground="{DynamicResource OnHeaderBrush}"/>
                         <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Progress">
                             <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" Margin="0,2,0,0"

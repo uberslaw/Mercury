@@ -189,6 +189,78 @@ public class ProgressStatsLayoutTests
     }
 
     [Fact]
+    public void HeaderFileClocks_ThisFileAndFileEta_KeysLeftAlign_ColonsShareX()
+    {
+        WpfSta.Run(() =>
+        {
+            WpfSta.EnsureApp();
+            Window? window = null;
+            try
+            {
+                var thisFile = new StatPairText
+                {
+                    DataContext = new StatPair("This file", "1m 12s"),
+                    KeySizeGroup = "FileClockKey"
+                };
+                var fileEta = new StatPairText
+                {
+                    DataContext = new StatPair("File ETA", "3m 40s"),
+                    KeySizeGroup = "FileClockKey"
+                };
+                var clocks = new StackPanel { HorizontalAlignment = HorizontalAlignment.Right };
+                Grid.SetIsSharedSizeScope(clocks, true);
+                clocks.Children.Add(thisFile);
+                clocks.Children.Add(fileEta);
+
+                var host = new Grid { Width = 720 };
+                host.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                host.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                Grid.SetColumn(clocks, 1);
+                host.Children.Add(clocks);
+
+                window = new Window
+                {
+                    Width = 760,
+                    Height = 140,
+                    Content = host
+                };
+                window.Show();
+                WpfSta.Flush();
+                host.UpdateLayout();
+                WpfSta.Flush();
+
+                Assert.Equal("This file", thisFile.KeyText.Text);
+                Assert.Equal("File ETA", fileEta.KeyText.Text);
+                Assert.Equal("FileClockKey", thisFile.KeySizeGroup);
+                Assert.Equal(thisFile.KeySizeGroup, fileEta.KeySizeGroup);
+                Assert.Equal(TextAlignment.Left, thisFile.KeyText.TextAlignment);
+                Assert.Equal(TextAlignment.Left, fileEta.KeyText.TextAlignment);
+
+                var thisKeyX = LeftX(thisFile.KeyText, clocks);
+                var etaKeyX = LeftX(fileEta.KeyText, clocks);
+                var thisColonX = LeftX(thisFile.ColonText, clocks);
+                var etaColonX = LeftX(fileEta.ColonText, clocks);
+
+                Assert.True(Math.Abs(thisKeyX - etaKeyX) < 1.5, $"key words must start on the same X ({thisKeyX} vs {etaKeyX})");
+                Assert.True(Math.Abs(thisColonX - etaColonX) < 1.5, $"colons must share an X ({thisColonX} vs {etaColonX})");
+                Assert.True(RightX(thisFile.KeyText, clocks) + 2 < thisColonX, "This file must not right-align to the colon");
+                Assert.True(RightX(fileEta.KeyText, clocks) + 2 < etaColonX, "File ETA must not right-align to the colon");
+            }
+            finally
+            {
+                try
+                {
+                    window?.Close();
+                }
+                catch
+                {
+                    // test cleanup
+                }
+            }
+        });
+    }
+
+    [Fact]
     public void HeaderProgressBars_AreFiftyPercentTaller_QueueBarUnchanged()
     {
         WpfSta.Run(() =>
@@ -250,6 +322,88 @@ public class ProgressStatsLayoutTests
                 catch
                 {
                     // test cleanup
+                }
+            }
+        });
+    }
+
+    [Fact]
+    public void HeaderFileProgressBar_ShowsPathAndFileClocks()
+    {
+        WpfSta.Run(() =>
+        {
+            WpfSta.EnsureApp();
+            var root = Path.Combine(Path.GetTempPath(), "mercury-filebar-ui-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(root);
+            MainWindow? window = null;
+            try
+            {
+                var now = DateTimeOffset.UtcNow;
+                var vm = new MainViewModel(new AppPaths(root));
+                vm.JobPercent = 40;
+                vm.JobStats = ProgressStats.From(new JobProgress
+                {
+                    Status = JobStatus.Copying,
+                    StageName = "Copying",
+                    StageIndex = 3,
+                    StageCount = 6,
+                    CurrentFile = @"Warren Truss\clip.mkv",
+                    CurrentFileBytesCopied = 42,
+                    CurrentFileBytesTotal = 100,
+                    CurrentFileStartedUtc = now.AddSeconds(-72),
+                    FilesCopied = 3,
+                    FilesTotal = 10,
+                    BytesCopied = 42,
+                    BytesTotal = 1000,
+                    StartedUtc = now.AddMinutes(-5),
+                    StageStartedUtc = now.AddMinutes(-2)
+                }, now);
+
+                window = new MainWindow(vm)
+                {
+                    Width = 1080,
+                    Height = 780,
+                    WindowStartupLocation = WindowStartupLocation.Manual,
+                    Left = -4000,
+                    Top = 0
+                };
+                window.Show();
+                WpfSta.Flush();
+                window.UpdateLayout();
+                WpfSta.Flush();
+
+                Assert.True(window.HeaderFileProgressBar.ActualHeight > 0);
+                Assert.Equal(42, window.HeaderFileProgressBar.Value, 1);
+                Assert.Contains("clip.mkv", window.HeaderFileProgressText.Text, StringComparison.Ordinal);
+                Assert.Contains("42%", window.HeaderFileProgressText.Text, StringComparison.Ordinal);
+                Assert.Equal("This file", window.HeaderThisFilePair.KeyText.Text);
+                Assert.Equal("File ETA", window.HeaderFileEtaPair.KeyText.Text);
+                Assert.Equal("1m 12s", vm.HeaderThisFile.Value);
+                Assert.Equal(TextAlignment.Left, window.HeaderThisFilePair.KeyText.TextAlignment);
+                Assert.Equal(window.HeaderThisFilePair.KeySizeGroup, window.HeaderFileEtaPair.KeySizeGroup);
+
+                var thisKeyX = LeftX(window.HeaderThisFilePair.KeyText, window);
+                var etaKeyX = LeftX(window.HeaderFileEtaPair.KeyText, window);
+                Assert.True(Math.Abs(thisKeyX - etaKeyX) < 1.5, $"file clock keys must start on the same X ({thisKeyX} vs {etaKeyX})");
+            }
+            finally
+            {
+                try
+                {
+                    window?.Close();
+                }
+                catch
+                {
+                    // test cleanup
+                }
+
+                try
+                {
+                    Directory.Delete(root, true);
+                }
+                catch
+                {
+                    // leftover
                 }
             }
         });

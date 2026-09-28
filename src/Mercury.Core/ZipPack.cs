@@ -169,8 +169,8 @@ public static class ZipPack
                     cancellationToken.ThrowIfCancellationRequested();
                     await pause.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
                     await waitHours(job, pause, log, name, progress, cloud, cancellationToken).ConfigureAwait(false);
-                    Report(progress, job, name, cloud, $"Packing {file.RelativePath}", file.RelativePath, speed);
                     pause.BeginFile(file.RelativePath, file.Size);
+                    Report(progress, job, name, cloud, $"Packing {file.RelativePath}", file.RelativePath, speed);
                     var packedOk = false;
                     try
                     {
@@ -512,12 +512,11 @@ public static class ZipPack
                 continue;
             }
 
+            pause?.BeginFile(relative, size);
             if (job is not null)
             {
                 Report(progress, job, name, cloud, $"Unpacking {relative}", relative, speed);
             }
-
-            pause?.BeginFile(relative, size);
 
             var key = EntryName(relative);
             if (!entries.TryGetValue(key, out var entry))

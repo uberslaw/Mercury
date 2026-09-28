@@ -245,6 +245,7 @@ public sealed class JobProgress
     public string? CurrentFile { get; init; }
     public long CurrentFileBytesCopied { get; init; }
     public long CurrentFileBytesTotal { get; init; }
+    public DateTimeOffset? CurrentFileStartedUtc { get; init; }
     public long BytesCopied { get; init; }
     public long BytesTotal { get; init; }
     public int FilesCopied { get; init; }
@@ -298,11 +299,28 @@ public sealed class JobProgress
         }
     }
 
+    /// <summary>0–100 for the file in flight. 0 when size is unknown or no file is copying.</summary>
+    public double CurrentFilePercent
+    {
+        get
+        {
+            if (CurrentFileBytesTotal <= 0)
+            {
+                return 0;
+            }
+
+            return Math.Clamp(100.0 * CurrentFileBytesCopied / CurrentFileBytesTotal, 0, 100);
+        }
+    }
+
     public TimeSpan ElapsedAt(DateTimeOffset now) =>
         Duration(StartedUtc, EndedUtc ?? PausedUtc ?? now);
 
     public TimeSpan StageElapsedAt(DateTimeOffset now) =>
         Duration(StageStartedUtc, EndedUtc ?? PausedUtc ?? now);
+
+    public TimeSpan CurrentFileElapsedAt(DateTimeOffset now) =>
+        Duration(CurrentFileStartedUtc, EndedUtc ?? PausedUtc ?? now);
 
     private static TimeSpan Duration(DateTimeOffset? start, DateTimeOffset now)
     {

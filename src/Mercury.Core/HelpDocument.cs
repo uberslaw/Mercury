@@ -110,6 +110,7 @@ public static class HelpDocument
             Body =
                 "The pink header is Progress. Current and Overall bars stay on one row for running, paused, stopped, and finished (Overall hides only when there is a single job). Each bar shows its percent in the middle. " +
                 "Below 1%, the label uses one decimal (0.1%) or <1% so a started job never shows 0%. " +
+                "Under those bars, a current-file bar fills as that file copies; the landing-relative path (and percent when size is known) sits on the bar. This file (elapsed on this file) and File ETA sit to the right of that bar, with left-aligned keys and aligned colons. Between files, while idle, verifying, or writing rundown, that bar is empty, the path is —, and both file clocks are —. Overall job bar and Overall ETA are unchanged. " +
                 "The stats table is Stage / File / This stage / Files / Bytes / Speed — inactive cells show — (or last known values), not a different rundown-only layout. Keys are bold; colons and values line up in columns. Elapsed and ETA sit in the top-right of this header (Elapsed above ETA), at the Progress size, using the table’s Label / Value fonts. Exception text never replaces the table; errors go to Console and History. " +
                 "Overall is copied bytes versus known totals across every queued job. A finished job counts its copied size as both done and total, so job 2 of 2 at <1% cannot show Overall 100%. " +
                 "MB/s or Mbps (Global) switches Speed between MB/s and Mbps (1 MB/s = 8 Mbps). " +
@@ -119,7 +120,7 @@ public static class HelpDocument
                 "When two or more jobs are in the queue, the stats table includes Overall files (example: Files: 12/400). " +
                 "Job: 2 of 5 is the running job’s place in the listed queue (omitted when there is a single job). " +
                 "Stats sit under the bars in a table (key: value), including the current File name. Status text lives in this header — the Transfer tab no longer repeats them. " +
-                "Start, Pause, Pause after this file, and Stop sit under that file name at the bottom of this header. Start reads Resume when paused or when Source/Dest match a stopped job you can continue. " +
+                "Start, Pause, Pause after this file, and Stop sit under the current-file bar at the bottom of this header. Start reads Resume when paused or when Source/Dest match a stopped job you can continue. " +
                 "When a job finishes incomplete, Open log on this header (and Job log on the Console tab) shows that job’s text log in the Console pane. " +
                 "During enumerate, Types shows a mix such as Video: 40 files, 2.1 TB. " +
                 "Writing rundown and Verifying run in the background after copy so the next queued job can start transferring. " +

@@ -128,7 +128,7 @@ public sealed class JobProgressReporter : IProgress<JobProgress>
 
     public async Task HeartbeatAsync(CancellationToken cancellationToken)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(250));
         try
         {
             while (await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
@@ -217,9 +217,10 @@ public sealed class JobProgressReporter : IProgress<JobProgress>
                 JobId = _job.Id,
                 JobName = _name,
                 Status = _job.Status,
-                CurrentFile = CopyShape.ProgressRelative(_job, _current),
+                CurrentFile = CurrentFileSnapshot(),
                 CurrentFileBytesCopied = _pause?.CurrentFileCopied ?? 0,
                 CurrentFileBytesTotal = _pause?.CurrentFileSize ?? 0,
+                CurrentFileStartedUtc = _pause?.CurrentFileStartedUtc,
                 Message = _message,
                 CloudDestination = _cloud,
                 BytesCopied = bytesCopied,
@@ -239,5 +240,21 @@ public sealed class JobProgressReporter : IProgress<JobProgress>
         }
 
         _progress.Report(snapshot);
+    }
+
+    private string? CurrentFileSnapshot()
+    {
+        var pausePath = _pause?.CurrentFilePath;
+        if (!string.IsNullOrEmpty(pausePath))
+        {
+            return CopyShape.ProgressRelative(_job, pausePath);
+        }
+
+        if (_kind is CopyStageKind.Transferring or CopyStageKind.Unpacking or CopyStageKind.Pushing)
+        {
+            return null;
+        }
+
+        return CopyShape.ProgressRelative(_job, _current);
     }
 }

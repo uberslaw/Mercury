@@ -10,6 +10,8 @@ public partial class ThemePreviewWindow : Window
         InitializeComponent();
         PreviewElapsed.DataContext = new StatPair("Elapsed", "1m 59s");
         PreviewEta.DataContext = new StatPair("ETA", "12m 40s");
+        PreviewThisFile.DataContext = new StatPair("This file", "1m 12s");
+        PreviewFileEta.DataContext = new StatPair("File ETA", "3m 40s");
         PreviewMouseRightButtonDown += OnPreviewRightClick;
         PreviewKeyDown += OnPreviewKeyDown;
         Closed += (_, _) => ThemeChrome.Unpin();

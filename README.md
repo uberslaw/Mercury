@@ -143,7 +143,7 @@ Jobs run **one at a time**, in **queue list order**. **Add to queue** on the Que
 
 **Start** ignores the calendar picker and runs as soon as the slot is free (hours still apply). Closing the app keeps queued jobs; interrupted copies show as stopped and can be resumed from the Queue tab.
 
-The **History** tab lists finished transfers (newest first) from `data\history.db`. Click a row to restore that transfer’s rundown. The Progress header always shows **Current**; **Overall** (bar + overall file counts) appears under it when two or more jobs are queued. **Job: n of m** is the running job’s place in the list. While a copy is running, Current shows **Stage: n of m** and a live elapsed timer; a new Start clears the previous rundown immediately.
+The **History** tab lists finished transfers (newest first) from `data\history.db`. Click a row to restore that transfer’s rundown. The Progress header always shows **Current**; **Overall** (bar + overall file counts) appears under it when two or more jobs are queued. **Job: n of m** is the running job’s place in the list. While a copy is running, Current shows **Stage: n of m** and a live elapsed timer; a current-file bar shows that file’s path and fill, with **This file** elapsed and **File ETA** beside it. A new Start clears the previous rundown immediately.
 
 **Throttle when not idle** (Transfer → Global bandwidth): cap all jobs to X MB/s while other programs are using the PC (CPU above about 18%, excluding Mercury’s own copy when possible). When idle, Unlimited / Max MB/s apply. Lives in `settings.json`.
 

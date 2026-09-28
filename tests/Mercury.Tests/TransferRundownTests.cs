@@ -131,6 +131,93 @@ public class TransferRundownTests
     }
 
     [Fact]
+    public void ProgressStatsCurrentFileBarIncludesFractionAndElapsed()
+    {
+        var now = new DateTimeOffset(2026, 9, 29, 10, 0, 20, TimeSpan.Zero);
+        var started = now.AddSeconds(-12);
+        var stats = ProgressStats.From(new JobProgress
+        {
+            Status = JobStatus.Copying,
+            CurrentFile = @"day1\clip.mkv",
+            CurrentFileBytesCopied = 42,
+            CurrentFileBytesTotal = 100,
+            CurrentFileStartedUtc = started,
+            FilesCopied = 1,
+            FilesTotal = 4,
+            BytesCopied = 42,
+            BytesTotal = 400
+        }, now);
+
+        Assert.Equal(42, stats.CurrentFilePercent);
+        Assert.Equal(@"day1\clip.mkv  42%", stats.CurrentFileBarText);
+        Assert.Equal("This file", stats.ThisFile.Key);
+        Assert.Equal(ByteFormatter.Duration(TimeSpan.FromSeconds(12)), stats.ThisFile.Value);
+        Assert.Equal("File ETA", stats.FileEta.Key);
+    }
+
+    [Fact]
+    public void ProgressStatsFileEtaIsDashUntilFileRateExists()
+    {
+        var now = new DateTimeOffset(2026, 9, 29, 10, 0, 2, TimeSpan.Zero);
+        var stats = ProgressStats.From(new JobProgress
+        {
+            Status = JobStatus.Copying,
+            CurrentFile = "big.bin",
+            CurrentFileBytesCopied = 1_000_000,
+            CurrentFileBytesTotal = 10_000_000,
+            CurrentFileStartedUtc = now.AddSeconds(-1)
+        }, now);
+
+        Assert.Equal("—", stats.FileEta.Value);
+        Assert.Equal(10, stats.CurrentFilePercent);
+    }
+
+    [Fact]
+    public void ProgressStatsFileElapsedIncreasesWithClock()
+    {
+        var start = new DateTimeOffset(2026, 9, 29, 10, 0, 0, TimeSpan.Zero);
+        var progress = new JobProgress
+        {
+            Status = JobStatus.Copying,
+            CurrentFile = "a.bin",
+            CurrentFileBytesCopied = 4_000_000,
+            CurrentFileBytesTotal = 8_000_000,
+            CurrentFileStartedUtc = start
+        };
+        var early = ProgressStats.From(progress, start.AddSeconds(1));
+        var later = ProgressStats.From(progress, start.AddSeconds(72));
+        Assert.Equal("1s", early.ThisFile.Value);
+        Assert.Equal("1m 12s", later.ThisFile.Value);
+        Assert.Equal("—", early.FileEta.Value);
+        Assert.Equal("1m 12s", later.FileEta.Value);
+    }
+
+    [Fact]
+    public void ProgressStatsFileBarClearsWhenNotCopyingAFile()
+    {
+        var now = new DateTimeOffset(2026, 9, 29, 11, 0, 0, TimeSpan.Zero);
+        var verifying = ProgressStats.From(new JobProgress
+        {
+            Status = JobStatus.Verifying,
+            StageName = "Verifying",
+            CurrentFile = "clip.mkv",
+            CurrentFileBytesCopied = 50,
+            CurrentFileBytesTotal = 100,
+            CurrentFileStartedUtc = now.AddSeconds(-30)
+        }, now);
+        Assert.Equal(0, verifying.CurrentFilePercent);
+        Assert.Equal("—", verifying.CurrentFileBarText);
+        Assert.Equal("—", verifying.ThisFile.Value);
+        Assert.Equal("—", verifying.FileEta.Value);
+
+        var idle = ProgressStats.From(new JobProgress { Status = JobStatus.Preparing }, now);
+        Assert.Equal(0, idle.CurrentFilePercent);
+        Assert.Equal("—", idle.CurrentFileBarText);
+        Assert.Equal("—", idle.ThisFile.Value);
+        Assert.Equal("—", idle.FileEta.Value);
+    }
+
+    [Fact]
     public void ProgressStatsShowsOverallFilesOnlyWhenQueueHasTwoJobs()
     {
         var current = new JobProgress { FilesCopied = 12, FilesTotal = 400 };
@@ -303,7 +390,8 @@ public class TransferRundownTests
         Assert.Contains("Elapsed and ETA sit in the top-right", progress.Body, StringComparison.Ordinal);
         Assert.Contains("Keys are bold", progress.Body, StringComparison.Ordinal);
         Assert.Contains("job 2 of 2 at <1% cannot show Overall 100%", progress.Body, StringComparison.Ordinal);
-        Assert.Contains("Start, Pause, Pause after this file, and Stop sit under that file name", progress.Body, StringComparison.Ordinal);
+        Assert.Contains("Start, Pause, Pause after this file, and Stop sit under the current-file bar", progress.Body, StringComparison.Ordinal);
+        Assert.Contains("This file (elapsed on this file) and File ETA", progress.Body, StringComparison.Ordinal);
         Assert.Contains("Start reads Resume when paused or when Source/Dest match a stopped job", progress.Body, StringComparison.Ordinal);
         Assert.Contains("choose No, that snapshot is cleared", progress.Body, StringComparison.Ordinal);
         Assert.Contains("Rundown running in background", HelpDocument.Sections.Single(s => s.Id == "console").Body, StringComparison.Ordinal);

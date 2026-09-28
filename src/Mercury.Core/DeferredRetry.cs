@@ -306,6 +306,52 @@ public static class ProgressHeader
         return name + "  " + PercentLabel(percent, copied > 0);
     }
 
+    /// <summary>
+    /// Overlay on the current-file bar: landing-relative path plus percent when size is known.
+    /// Dash when no file is in flight.
+    /// </summary>
+    public static string CurrentFileBarText(string? path, long copied, long total, bool fileInFlight)
+    {
+        if (!fileInFlight)
+        {
+            return "—";
+        }
+
+        return CurrentFileDisplay(path, copied, total);
+    }
+
+    /// <summary>
+    /// Remaining time for the file in flight from that file’s own rate.
+    /// Null until copied bytes / elapsed is known (about 3s), or when no file is transferring.
+    /// </summary>
+    public static TimeSpan? EstimateFileEta(long copied, long total, DateTimeOffset? startedUtc, DateTimeOffset now)
+    {
+        if (total <= 0 || startedUtc is null)
+        {
+            return null;
+        }
+
+        var remaining = total - Math.Clamp(copied, 0, total);
+        if (remaining <= 0)
+        {
+            return null;
+        }
+
+        var elapsed = now - startedUtc.Value;
+        if (elapsed < TimeSpan.Zero)
+        {
+            return null;
+        }
+
+        var rate = ByteFormatter.EffectiveRate(0, copied, elapsed);
+        if (rate < 1)
+        {
+            return null;
+        }
+
+        return TimeSpan.FromSeconds(remaining / rate);
+    }
+
     public static string PercentLabel(double percent, bool workStarted = false)
     {
         var p = Math.Clamp(percent, 0, 100);

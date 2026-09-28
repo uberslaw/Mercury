@@ -32,7 +32,10 @@ public sealed class ProgressStats
         Elapsed = StatPair.Empty,
         ThisStage = StatPair.Empty,
         Types = StatPair.Empty,
-        File = StatPair.Empty
+        File = StatPair.Empty,
+        ThisFile = StatPair.Empty,
+        FileEta = StatPair.Empty,
+        CurrentFileBarText = "—"
     };
 
     public StatPair Job { get; init; } = StatPair.Empty;
@@ -47,6 +50,10 @@ public sealed class ProgressStats
     public StatPair Types { get; init; } = StatPair.Empty;
     public StatPair OverallFiles { get; init; } = StatPair.Empty;
     public StatPair File { get; init; } = StatPair.Empty;
+    public StatPair ThisFile { get; init; } = StatPair.Empty;
+    public StatPair FileEta { get; init; } = StatPair.Empty;
+    public double CurrentFilePercent { get; init; }
+    public string CurrentFileBarText { get; init; } = "—";
 
     public IReadOnlyList<StatPair> TableCells
     {
@@ -139,6 +146,26 @@ public sealed class ProgressStats
                 ? $"{ByteFormatter.ToString(e.BytesCopied)} / {ByteFormatter.ToString(e.BytesTotal)}"
                 : "—");
 
+        var fileInFlight = (live || paused)
+            && !walk
+            && e.CurrentFileStartedUtc is not null
+            && !string.IsNullOrWhiteSpace(e.CurrentFile);
+        var thisFile = includeStage
+            ? new StatPair("This file", fileInFlight
+                ? ByteFormatter.Duration(e.CurrentFileElapsedAt(elapsedClock))
+                : "—")
+            : StatPair.Empty;
+        var fileEta = includeStage
+            ? new StatPair("File ETA",
+                !fileInFlight || paused
+                    ? "—"
+                    : ByteFormatter.Eta(ProgressHeader.EstimateFileEta(
+                        e.CurrentFileBytesCopied,
+                        e.CurrentFileBytesTotal,
+                        e.CurrentFileStartedUtc,
+                        elapsedClock)))
+            : StatPair.Empty;
+
         return new ProgressStats
         {
             Job = jobPair,
@@ -150,6 +177,14 @@ public sealed class ProgressStats
             PauseAfter = pauseAfter ?? StatPair.Empty,
             Stage = stage,
             File = file,
+            ThisFile = thisFile,
+            FileEta = fileEta,
+            CurrentFilePercent = fileInFlight ? e.CurrentFilePercent : 0,
+            CurrentFileBarText = ProgressHeader.CurrentFileBarText(
+                e.CurrentFile,
+                e.CurrentFileBytesCopied,
+                e.CurrentFileBytesTotal,
+                fileInFlight),
             Elapsed = elapsed,
             ThisStage = thisStage,
             Types = string.IsNullOrWhiteSpace(e.TypeSummary)

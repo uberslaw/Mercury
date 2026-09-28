@@ -728,6 +728,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderStats)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderElapsed)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderEta)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderThisFile)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderFileEta)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CurrentFilePercent)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CurrentFileBarText)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowProgressDetail)));
             }
         }
@@ -781,6 +785,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public string HeaderRundownLine => "";
     public StatPair HeaderElapsed => JobStats.Elapsed;
     public StatPair HeaderEta => JobStats.Eta;
+    public StatPair HeaderThisFile => JobStats.ThisFile;
+    public StatPair HeaderFileEta => JobStats.FileEta;
+    public double CurrentFilePercent => JobStats.CurrentFilePercent;
+    public string CurrentFileBarText => JobStats.CurrentFileBarText;
     public string HeaderElapsedText => JobStats.Elapsed.HasValue ? JobStats.Elapsed.Value : "";
     public bool ShowHeaderElapsed => ShowProgressDetail && !string.IsNullOrWhiteSpace(HeaderElapsedText);
     public string HeaderEtaText => JobStats.Eta.HasValue ? JobStats.Eta.Value : "";
@@ -3398,6 +3406,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderEta)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderEtaText)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowHeaderEta)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderThisFile)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderFileEta)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CurrentFilePercent)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CurrentFileBarText)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowHeaderStatus)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowProgressDetail)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(JobPercent)));
