@@ -37,6 +37,7 @@ public sealed class JobOptionsForm : INotifyPropertyChanged
     private bool _fatTimestampTolerance;
     private bool _excludeHiddenSystem;
     private bool _purgeExtraDestFiles;
+    private bool _adaptiveCopy = true;
     private bool _scheduleEnabled;
     private DateTime? _scheduledDate = DateTime.Today;
     private string _scheduledTime = "09:00";
@@ -183,6 +184,7 @@ public sealed class JobOptionsForm : INotifyPropertyChanged
     public int OverwriteIndex { get => _overwriteIndex; set => SetField(ref _overwriteIndex, value); }
     public int VerifyIndex { get => _verifyIndex; set => SetField(ref _verifyIndex, value); }
     public bool DryRun { get => _dryRun; set => SetField(ref _dryRun, value); }
+    public bool AdaptiveCopy { get => _adaptiveCopy; set => SetField(ref _adaptiveCopy, value); }
     public bool PackAsZip { get => _packAsZip; set => SetField(ref _packAsZip, value); }
     public bool SkipCompressedWhenPacking { get => _skipCompressedWhenPacking; set => SetField(ref _skipCompressedWhenPacking, value); }
     public bool IgnoreFreeSpaceCheck { get => _ignoreFreeSpaceCheck; set => SetField(ref _ignoreFreeSpaceCheck, value); }
@@ -286,6 +288,7 @@ public sealed class JobOptionsForm : INotifyPropertyChanged
             FatTimestampTolerance = options.FatTimestampTolerance;
             ExcludeHiddenSystem = options.ExcludeHiddenSystem;
             PurgeExtraDestFiles = options.PurgeExtraDestFiles;
+            AdaptiveCopy = options.AdaptiveCopy;
             ScheduleEnabled = scheduledStart is not null;
             if (scheduledStart is { } start)
             {
@@ -388,7 +391,8 @@ public sealed class JobOptionsForm : INotifyPropertyChanged
             CopySymbolicLinksAsLinks = CopySymbolicLinksAsLinks,
             FatTimestampTolerance = FatTimestampTolerance,
             ExcludeHiddenSystem = ExcludeHiddenSystem,
-            PurgeExtraDestFiles = PurgeExtraDestFiles
+            PurgeExtraDestFiles = PurgeExtraDestFiles,
+            AdaptiveCopy = AdaptiveCopy
         };
     }
 

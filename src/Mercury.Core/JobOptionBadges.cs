@@ -137,6 +137,11 @@ public static class JobOptionBadges
             badges.Add("Contents only");
         }
 
+        if (!o.AdaptiveCopy)
+        {
+            badges.Add("One stream");
+        }
+
         return badges;
     }
 }

@@ -75,6 +75,10 @@ public static class HelpDocument
                 "Settings holds Never pack and Always consider packing extension lists (add/remove; with or without a leading dot). " +
                 "Job options → Extensions… jumps to that Settings page. Pack list wins over Skip Compressed; never-pack always copies as-is; other extensions keep automated classification. " +
                 "Leave Small Files off unless you want to force packing everything eligible.\n\n" +
+                "Adaptive copy (default on) times one stream against copying several files at once and against splitting one large file, and keeps a mode only when it is clearly faster. " +
+                "The winner is remembered for that source volume and destination volume. " +
+                "Packing, hashing, and verify of files already copied run in the gaps: a large file can move in slices while small files zip, unless several files at once was faster. " +
+                "A speed cap stays on one stream. Turn Adaptive copy off to force one stream. The tree rundown still follows the copy so the report includes every file.\n\n" +
                 "Ignore Storage Limit: still logs Need vs free space but does not abort on thin/growable volumes.\n\n" +
                 "RoboFlags (button on this tab) opens native copy checkboxes — see the RoboFlags help section. Timestamps default on so dest keeps source creation time.\n\n" +
                 "Include source folder name (default on): the selected top-level folder is created at dest. Uncheck for Contents only. Packed zips and unpacked files both follow that landing.\n\n" +

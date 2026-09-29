@@ -117,6 +117,11 @@ public sealed class JobOptions
     public bool ExcludeHiddenSystem { get; set; }
     /// <summary>Delete dest files/folders not in source (/PURGE). Default off. Destructive — UI confirms.</summary>
     public bool PurgeExtraDestFiles { get; set; }
+    /// <summary>
+    /// Probe one stream vs several files vs two ranges, and overlap packing, hashing, and verify when that is faster.
+    /// Default on. Off forces one stream and keeps packing beside the copy the way it did before.
+    /// </summary>
+    public bool AdaptiveCopy { get; set; } = true;
 
     public double? MaxBytesPerSecond =>
         MaxMegabytesPerSecond is > 0 ? MaxMegabytesPerSecond.Value * 1024 * 1024 : null;
@@ -156,6 +161,7 @@ public sealed class JobOptions
         FatTimestampTolerance = other.FatTimestampTolerance;
         ExcludeHiddenSystem = other.ExcludeHiddenSystem;
         PurgeExtraDestFiles = other.PurgeExtraDestFiles;
+        AdaptiveCopy = other.AdaptiveCopy;
     }
 }
 

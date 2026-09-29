@@ -9,6 +9,20 @@ namespace Mercury;
 internal static class FileCopier
 {
     private const FileOptions NoBufferingFlag = (FileOptions)0x20000000;
+    private static readonly AsyncLocal<string?> ProgressPath = new();
+
+    private static void NoteBytes(PauseGate? pause, long count)
+    {
+        var path = ProgressPath.Value;
+        if (string.IsNullOrEmpty(path))
+        {
+            pause?.AddFileBytes(count);
+        }
+        else
+        {
+            pause?.AddFileBytes(count, path);
+        }
+    }
 
     public static async Task<string?> CopyAsync(
         Job job,
@@ -22,12 +36,48 @@ internal static class FileCopier
         UnbufferedIoSession? io,
         Action<long>? onCopied = null)
     {
+        var done = await CopyAdaptiveAsync(
+                job, file, budget, pause, speed, cancellationToken, log, jobName, io, onCopied)
+            .ConfigureAwait(false);
+        return done.Hash;
+    }
+
+    internal static async Task<AdaptiveFileCopy> CopyAdaptiveAsync(
+        Job job,
+        FileRecord file,
+        BandwidthBudget budget,
+        PauseGate? pause,
+        SpeedTracker? speed,
+        CancellationToken cancellationToken,
+        IJobLog? log,
+        string? jobName,
+        UnbufferedIoSession? io,
+        Action<long>? onCopied = null,
+        bool stripe = false,
+        long? maxNewBytes = null)
+    {
         var name = jobName ?? (string.IsNullOrWhiteSpace(job.Name) ? job.Id : job.Name);
+        ProgressPath.Value = file.RelativePath;
+        try
+        {
         if (job.Options.CopySymbolicLinksAsLinks &&
             FileMetadata.TryCopySymlinkFile(file.SourcePath, file.DestPath, log, job.Id, name))
         {
             FileMetadata.ApplyCopiedFile(file.SourcePath, file.DestPath, job.Options, log, job.Id, name);
-            return null;
+            return new AdaptiveFileCopy(true, null, file.Size, false);
+        }
+
+        if (stripe && file.Size >= 2)
+        {
+            var striped = await CopyStripedAsync(
+                    job, file, budget, pause, speed, cancellationToken, log, name, onCopied, maxNewBytes)
+                .ConfigureAwait(false);
+            if (!striped.Fallback)
+            {
+                return striped;
+            }
+
+            log?.Info(job.Id, name, $"Split copy of {file.RelativePath} fell back to one stream.");
         }
 
         var destDir = Path.GetDirectoryName(file.DestPath);
@@ -43,13 +93,14 @@ internal static class FileCopier
             log?.Info(job.Id, name,
                 $"Resuming {file.RelativePath} at {ByteFormatter.ToString(resumeAt)} of {ByteFormatter.ToString(file.Size)}.");
             speed?.Add(resumeAt);
-            pause?.AddFileBytes(resumeAt);
+            NoteBytes(pause, resumeAt);
             onCopied?.Invoke(resumeAt);
         }
 
         XxHash64? hasher = job.Options.Verify == VerifyLevel.Thorough ? new XxHash64() : null;
         var sector = VolumeInfo.GetBytesPerSector(file.DestPath);
         io ??= new UnbufferedIoSession(job.Options, new PayloadInventory());
+        var copied = resumeAt;
 
         try
         {
@@ -62,8 +113,9 @@ internal static class FileCopier
                 hasher = null;
             }
 
-            var copied = resumeAt;
-            if (copied == 0 &&
+            var allowance = maxNewBytes ?? long.MaxValue;
+            if (maxNewBytes is null &&
+                copied == 0 &&
                 (io.NeedsBufferedSample(file.SourcePath, file.Size) ||
                  io.NeedsUnbufferedSample(file.SourcePath, file.Size)))
             {
@@ -73,15 +125,16 @@ internal static class FileCopier
                 onCopied?.Invoke(copied);
             }
 
-            if (copied < file.Size)
+            if (copied < file.Size && allowance > 0)
             {
                 var start = copied;
-                var unbuffered = copied == 0 && io.UseUnbufferedFor(file.SourcePath, file.Size);
+                var count = (long)Math.Min(file.Size - copied, allowance);
+                var unbuffered = copied == 0 && maxNewBytes is null && io.UseUnbufferedFor(file.SourcePath, file.Size);
                 copied += await CopyRangeAsync(
                         file.SourcePath,
                         temp,
                         copied,
-                        file.Size - copied,
+                        count,
                         unbuffered,
                         sector,
                         job,
@@ -93,6 +146,12 @@ internal static class FileCopier
                         cancellationToken,
                         onCopied: n => onCopied?.Invoke(start + n))
                     .ConfigureAwait(false);
+            }
+
+            if (copied < file.Size && maxNewBytes is not null)
+            {
+                onCopied?.Invoke(copied);
+                return new AdaptiveFileCopy(false, null, copied, false);
             }
 
             Truncate(temp, copied);
@@ -110,7 +169,15 @@ internal static class FileCopier
             throw;
         }
 
-        return hasher is null ? null : HashUtil.ToHex(hasher.GetCurrentHash());
+        TryDelete(PartPath(file.DestPath, 0));
+        TryDelete(PartPath(file.DestPath, 1));
+        var hash = hasher is null ? null : HashUtil.ToHex(hasher.GetCurrentHash());
+        return new AdaptiveFileCopy(true, hash, copied, false);
+        }
+        finally
+        {
+            ProgressPath.Value = null;
+        }
     }
 
     private const int PrefixCheckBytes = 64 * 1024;
@@ -413,7 +480,7 @@ internal static class FileCopier
             await dst.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
             hasher?.Append(buffer.AsSpan(0, read));
             speed?.Add(read);
-            pause?.AddFileBytes(read);
+            NoteBytes(pause, read);
             remaining -= read;
             copied += read;
             if (copied - lastReport >= 4L * 1024 * 1024)
@@ -479,7 +546,7 @@ internal static class FileCopier
                 .ConfigureAwait(false);
             await RandomAccess.WriteAsync(dst, memory[..writeLen], pos, cancellationToken).ConfigureAwait(false);
             speed?.Add(payload);
-            pause?.AddFileBytes(payload);
+            NoteBytes(pause, payload);
             remaining -= payload;
             copied += payload;
             pos += payload;
@@ -553,6 +620,298 @@ internal static class FileCopier
         }
 
         return (value + sector - 1) / sector * sector;
+    }
+
+    private static string PartPath(string dest, int part) => dest + ".mercury.r" + part + ".tmp";
+
+    private static async Task<AdaptiveFileCopy> CopyStripedAsync(
+        Job job,
+        FileRecord file,
+        BandwidthBudget budget,
+        PauseGate? pause,
+        SpeedTracker? speed,
+        CancellationToken cancellationToken,
+        IJobLog? log,
+        string name,
+        Action<long>? onCopied,
+        long? maxNewBytes)
+    {
+        if (file.Size < 2)
+        {
+            return new AdaptiveFileCopy(false, null, 0, true);
+        }
+
+        var legacy = file.DestPath + ".mercury.tmp";
+        var part0 = PartPath(file.DestPath, 0);
+        var part1 = PartPath(file.DestPath, 1);
+        if (File.Exists(legacy) && SafeLength(legacy) > 0 && !File.Exists(part0) && !File.Exists(part1))
+        {
+            return new AdaptiveFileCopy(false, null, 0, true);
+        }
+
+        var destDir = Path.GetDirectoryName(file.DestPath);
+        if (!string.IsNullOrEmpty(destDir))
+        {
+            Directory.CreateDirectory(destDir);
+        }
+
+        var mid = file.Size / 2;
+        var ranges = new[] { (Offset: 0L, Length: mid), (Offset: mid, Length: file.Size - mid) };
+        var parts = new[] { part0, part1 };
+        try
+        {
+            if (maxNewBytes is null)
+            {
+                await Task.WhenAll(
+                    CopyPartAsync(file, ranges[0].Offset, ranges[0].Length, parts[0], null, job, budget, pause, speed, cancellationToken, onCopied, parts),
+                    CopyPartAsync(file, ranges[1].Offset, ranges[1].Length, parts[1], null, job, budget, pause, speed, cancellationToken, onCopied, parts))
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                var budgetLeft = maxNewBytes.Value;
+                for (var i = 0; i < parts.Length; i++)
+                {
+                    var wrote = await CopyPartAsync(
+                            file, ranges[i].Offset, ranges[i].Length, parts[i], budgetLeft, job, budget, pause, speed,
+                            cancellationToken, onCopied, parts)
+                        .ConfigureAwait(false);
+                    budgetLeft -= wrote;
+                    if (SafeLength(parts[i]) < ranges[i].Length)
+                    {
+                        return new AdaptiveFileCopy(false, null, SumLengths(parts), false);
+                    }
+                }
+            }
+
+            if (SafeLength(part0) < ranges[0].Length || SafeLength(part1) < ranges[1].Length)
+            {
+                return new AdaptiveFileCopy(false, null, SumLengths(parts), false);
+            }
+
+            var hash = await AssembleStripedAsync(job, file, parts, log, name, cancellationToken).ConfigureAwait(false);
+            TryDelete(part0);
+            TryDelete(part1);
+            TryDelete(legacy);
+            onCopied?.Invoke(file.Size);
+            return new AdaptiveFileCopy(true, hash, file.Size, false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            log?.Info(job.Id, name, $"Split copy of {file.RelativePath} fell back to one stream: {ex.Message}");
+            return new AdaptiveFileCopy(false, null, SumLengths(parts), true);
+        }
+    }
+
+    private static async Task<long> CopyPartAsync(
+        FileRecord file,
+        long sourceOffset,
+        long length,
+        string partPath,
+        long? maxNewBytes,
+        Job job,
+        BandwidthBudget budget,
+        PauseGate? pause,
+        SpeedTracker? speed,
+        CancellationToken cancellationToken,
+        Action<long>? onCopied,
+        string[] allParts)
+    {
+        var have = ExistingPartLength(file.SourcePath, partPath, sourceOffset, length);
+        if (have >= length || maxNewBytes is 0)
+        {
+            return 0;
+        }
+
+        var room = maxNewBytes ?? long.MaxValue;
+        var take = Math.Min(length - have, room);
+        if (take <= 0)
+        {
+            return 0;
+        }
+
+        var wrote = await CopySliceAsync(
+                file.SourcePath,
+                sourceOffset + have,
+                partPath,
+                have,
+                take,
+                job,
+                budget,
+                pause,
+                speed,
+                cancellationToken,
+                () => onCopied?.Invoke(SumLengths(allParts)))
+            .ConfigureAwait(false);
+        return wrote;
+    }
+
+    private static async Task<long> CopySliceAsync(
+        string source,
+        long sourceOffset,
+        string dest,
+        long destOffset,
+        long count,
+        Job job,
+        BandwidthBudget budget,
+        PauseGate? pause,
+        SpeedTracker? speed,
+        CancellationToken cancellationToken,
+        Action? onCopied)
+    {
+        var flags = FileOptions.SequentialScan | FileOptions.Asynchronous;
+        var buffer = new byte[HashUtil.BufferSize];
+        await using var src = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, HashUtil.BufferSize, flags);
+        await using var dst = new FileStream(
+            dest,
+            destOffset == 0 ? FileMode.Create : FileMode.OpenOrCreate,
+            FileAccess.Write,
+            FileShare.None,
+            HashUtil.BufferSize,
+            flags);
+        src.Seek(sourceOffset, SeekOrigin.Begin);
+        dst.Seek(destOffset, SeekOrigin.Begin);
+        var remaining = count;
+        var copied = 0L;
+        while (remaining > 0)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (pause is not null)
+            {
+                await pause.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            var take = (int)Math.Min(buffer.Length, remaining);
+            var read = await src.ReadAsync(buffer.AsMemory(0, take), cancellationToken).ConfigureAwait(false);
+            if (read <= 0)
+            {
+                break;
+            }
+
+            await budget.ConsumeAsync(job.Id, job.Options.MaxBytesPerSecond, read, cancellationToken).ConfigureAwait(false);
+            await dst.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+            speed?.Add(read);
+            NoteBytes(pause, read);
+            remaining -= read;
+            copied += read;
+            onCopied?.Invoke();
+        }
+
+        await dst.FlushAsync(cancellationToken).ConfigureAwait(false);
+        return copied;
+    }
+
+    private static long ExistingPartLength(string source, string part, long sourceOffset, long expected)
+    {
+        var length = SafeLength(part);
+        if (length <= 0)
+        {
+            return 0;
+        }
+
+        if (length == expected)
+        {
+            return expected;
+        }
+
+        if (length > expected)
+        {
+            TryDelete(part);
+            return 0;
+        }
+
+        if (!SliceTailMatches(source, part, sourceOffset, length))
+        {
+            TryDelete(part);
+            return 0;
+        }
+
+        return length;
+    }
+
+    private static bool SliceTailMatches(string source, string part, long sourceOffset, long length)
+    {
+        var check = (int)Math.Min(PrefixCheckBytes, length);
+        var destOffset = length - check;
+        var srcOffset = sourceOffset + destOffset;
+        try
+        {
+            using var src = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, check);
+            using var dst = new FileStream(part, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, check);
+            src.Seek(srcOffset, SeekOrigin.Begin);
+            dst.Seek(destOffset, SeekOrigin.Begin);
+            var a = new byte[check];
+            var b = new byte[check];
+            return src.Read(a) == check && dst.Read(b) == check && a.AsSpan().SequenceEqual(b);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static async Task<string?> AssembleStripedAsync(
+        Job job,
+        FileRecord file,
+        string[] parts,
+        IJobLog? log,
+        string name,
+        CancellationToken cancellationToken)
+    {
+        var temp = file.DestPath + ".mercury.tmp";
+        XxHash64? hasher = job.Options.Verify == VerifyLevel.Thorough ? new XxHash64() : null;
+        var buffer = new byte[HashUtil.BufferSize];
+        await using (var output = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None, HashUtil.BufferSize, FileOptions.Asynchronous))
+        {
+            foreach (var part in parts)
+            {
+                await using var input = new FileStream(part, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, HashUtil.BufferSize, FileOptions.Asynchronous);
+                int read;
+                while ((read = await input.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken).ConfigureAwait(false)) > 0)
+                {
+                    hasher?.Append(buffer.AsSpan(0, read));
+                    await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+                }
+            }
+
+            await output.FlushAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        if (File.Exists(file.DestPath))
+        {
+            File.Delete(file.DestPath);
+        }
+
+        File.Move(temp, file.DestPath);
+        FileMetadata.ApplyCopiedFile(file.SourcePath, file.DestPath, job.Options, log, job.Id, name);
+        return hasher is null ? null : HashUtil.ToHex(hasher.GetCurrentHash());
+    }
+
+    private static long SumLengths(string[] parts)
+    {
+        long sum = 0;
+        foreach (var part in parts)
+        {
+            sum += SafeLength(part);
+        }
+
+        return sum;
+    }
+
+    private static long SafeLength(string path)
+    {
+        try
+        {
+            return File.Exists(path) ? new FileInfo(path).Length : 0;
+        }
+        catch
+        {
+            return 0;
+        }
     }
 
     private static void TryDelete(string path)

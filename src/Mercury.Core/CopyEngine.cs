@@ -762,28 +762,42 @@ public sealed class CopyEngine : ICopyEngine
         var stream = plan.Stream
             .Where(f => f.Status is FileCopyStatus.Pending or FileCopyStatus.Failed or FileCopyStatus.Deferred)
             .ToList();
-        var packTask = PackGroupsAsync(
-            job, plan, journal, budget, pause, log, name, reporter, cloud, speed, cancellationToken, io);
-        try
+        var largest = stream.Count == 0 ? 0 : stream.Max(f => f.Size);
+        var adaptive = await AdaptiveCopyPlanner.PrepareAsync(
+                job, budget, stream, plan.HasPacking, largest, log, name, cancellationToken)
+            .ConfigureAwait(false);
+        if (adaptive.UseBalancer)
         {
             await CopyPendingListAsync(
                     job, journal, budget, pause, log, name, reporter, cloud, speed, stream, totals, cancellationToken, io,
-                    markUnpacked: true)
+                    markUnpacked: true, adaptive: adaptive, overlapPlan: plan, adaptiveResolved: true)
                 .ConfigureAwait(false);
-            await packTask.ConfigureAwait(false);
         }
-        catch
+        else
         {
+            var packTask = PackGroupsAsync(
+                job, plan, journal, budget, pause, log, name, reporter, cloud, speed, cancellationToken, io);
             try
             {
+                await CopyPendingListAsync(
+                        job, journal, budget, pause, log, name, reporter, cloud, speed, stream, totals, cancellationToken, io,
+                        markUnpacked: true, adaptive: adaptive, adaptiveResolved: true)
+                    .ConfigureAwait(false);
                 await packTask.ConfigureAwait(false);
             }
             catch
             {
-                // primary exception below
-            }
+                try
+                {
+                    await packTask.ConfigureAwait(false);
+                }
+                catch
+                {
+                    // primary exception below
+                }
 
-            throw;
+                throw;
+            }
         }
 
         reporter.Enter(CopyStageKind.Unpacking, JobStatus.Copying, "Unpacking…");
@@ -826,6 +840,487 @@ public sealed class CopyEngine : ICopyEngine
         }
     }
 
+    private readonly record struct CopyWork(
+        bool Ok,
+        bool Finished,
+        string? Hash,
+        string? Error,
+        bool Transient,
+        long BytesOnDisk);
+
+    private static async Task CopyBalancedAsync(
+        Job job,
+        JobJournal journal,
+        BandwidthBudget budget,
+        PauseGate pause,
+        IJobLog log,
+        string name,
+        JobProgressReporter reporter,
+        bool cloud,
+        SpeedTracker speed,
+        List<FileRecord> pending,
+        FileTotals totals,
+        CancellationToken cancellationToken,
+        UnbufferedIoSession? io,
+        bool markUnpacked,
+        AdaptivePlan adaptive,
+        TransferPlan? overlapPlan)
+    {
+        var deferred = new DeferredRetrySession(job, journal, log, name);
+        var queue = new LinkedList<FileRecord>();
+        foreach (var file in pending)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await pause.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
+            if (ShouldSkip(file, job.Options))
+            {
+                TryJournal(journal, () => journal.MarkSkipped(file.RelativePath, "Destination is newer or equal"), log, job.Id, name);
+                log.Info(job.Id, name, $"Skip {file.RelativePath} (dest newer or equal)");
+                speed.Add(file.Size);
+                continue;
+            }
+
+            queue.AddLast(file);
+        }
+
+        var fileCount = Math.Max(pending.Count, totals.Files);
+        var totalBytes = totals.Bytes;
+        var mode = adaptive.Mode;
+        var baseline = adaptive.BaselineBps;
+        var dropped = false;
+        Task? packTask = null;
+        var active = new List<(FileRecord File, Task<CopyWork> Task)>();
+        string? lastFinished = null;
+
+        try
+        {
+        while (queue.Count > 0 || active.Count > 0 || packTask is { IsCompleted: false })
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await pause.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
+            await WaitForHoursAsync(job, pause, log, name, reporter, cloud, cancellationToken).ConfigureAwait(false);
+
+            for (var i = active.Count - 1; i >= 0; i--)
+            {
+                if (!active[i].Task.IsCompleted)
+                {
+                    continue;
+                }
+
+                var slot = active[i];
+                active.RemoveAt(i);
+                var work = await slot.Task.ConfigureAwait(false);
+                if (work.Ok && !work.Finished)
+                {
+                    var madeProgress = work.BytesOnDisk > slot.File.BytesCopied;
+                    slot.File.BytesCopied = work.BytesOnDisk;
+                    if (!madeProgress || pause.PauseAfterFileRequested)
+                    {
+                        pause.BeginFile(slot.File.RelativePath, slot.File.Size);
+                        active.Add((slot.File, CopyAdaptiveFileAsync(
+                            job, slot.File, journal, budget, pause, log, name, speed, cancellationToken, io, stripe: false, maxNewBytes: null)));
+                    }
+                    else
+                    {
+                        queue.AddFirst(slot.File);
+                    }
+
+                    continue;
+                }
+
+                RecordCopyOutcome(job, journal, deferred, log, name, slot.File, work, markUnpacked);
+                if (work.Ok && work.Finished)
+                {
+                    lastFinished = slot.File.RelativePath;
+                }
+
+                try
+                {
+                    await RetryDeferredCopyAsync(
+                            job, journal, deferred, budget, pause, log, name, reporter, speed, fileCount, totalBytes,
+                            afterFile: true, endOfPass: false, cancellationToken, io)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    log.Error(job.Id, name, "Continuing after file-level error: " + ProgressHeader.DescribeFileError(ex));
+                }
+            }
+
+            if (pause.PauseAfterFileRequested && active.Count == 0)
+            {
+                await PauseAfterFileIfRequestedAsync(
+                        job, journal, pause, log, name, lastFinished ?? "", reporter, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            if (!dropped && baseline > 1 && mode != AdaptiveCopyMode.Sequential &&
+                speed.Bytes >= AdaptiveCopyPolicy.FalloffBytes)
+            {
+                var live = speed.EffectiveBytesPerSecond;
+                if (live > 1 && live < baseline * AdaptiveCopyPolicy.SpeedDropRatio)
+                {
+                    dropped = true;
+                    mode = AdaptiveCopyMode.Sequential;
+                    AdaptiveCopyMemory.Forget(job.SourcePath, job.DestinationPath);
+                    log.Info(job.Id, name, "Adaptive copy slowed down; one stream for the rest of this job.");
+                }
+            }
+
+            if (pause.PauseAfterFileRequested)
+            {
+                if (active.Count == 0)
+                {
+                    if (queue.Count == 0 && packTask is not { IsCompleted: false })
+                    {
+                        break;
+                    }
+
+                    continue;
+                }
+
+                await Task.WhenAny(active.Select(slot => slot.Task)).ConfigureAwait(false);
+                continue;
+            }
+
+            long largest = 0;
+            long pendingBytes = 0;
+            foreach (var file in queue)
+            {
+                if (file.Size > largest)
+                {
+                    largest = file.Size;
+                }
+
+                pendingBytes += Math.Max(0, file.Size - file.BytesCopied);
+            }
+
+            var step = TransferBalancer.Next(new BalanceInput
+            {
+                Mode = mode,
+                AdaptiveEnabled = true,
+                Capped = adaptive.Capped,
+                PendingFiles = queue.Count,
+                PendingCopyBytes = pendingBytes,
+                LargestPendingBytes = largest,
+                PackBytesRemaining = PackBytesRemaining(overlapPlan, packTask),
+                PackRunning = packTask is { IsCompleted: false },
+                CopyInFlight = active.Count,
+                UnverifiedCopied = CountUnverified(journal, job.Id)
+            });
+            pause.CopyModeLabel = step.Label;
+            reporter.Update(step.Label, pause.CurrentFilePath, speed);
+
+            if (step.RunPack && packTask is null && overlapPlan is not null)
+            {
+                packTask = PackGroupsAsync(
+                    job, overlapPlan, journal, budget, pause, log, name, reporter, cloud, speed, cancellationToken, io);
+            }
+
+            if (step.VerifyBatch > 0 && (active.Count < step.CopyWidth || adaptive.Capped))
+            {
+                VerifySpare(job, journal, log, name, step.VerifyBatch, cancellationToken);
+            }
+
+            var preferLarge = step.PortionBytes is not null || step.Stripe;
+            while (active.Count < step.CopyWidth && queue.Count > 0 && !pause.PauseAfterFileRequested)
+            {
+                var file = TakeQueued(queue, preferLarge);
+                var remaining = Math.Max(0, file.Size - file.BytesCopied);
+                long? portion = step.PortionBytes is long cap && remaining > cap ? cap : null;
+                var stripe = step.Stripe && file.Size >= AdaptiveCopyPolicy.LargeFileBytes;
+                pause.BeginFile(file.RelativePath, file.Size);
+                active.Add((file, CopyAdaptiveFileAsync(
+                    job, file, journal, budget, pause, log, name, speed, cancellationToken, io, stripe, portion)));
+            }
+
+            if (active.Count > 0)
+            {
+                await Task.WhenAny(active.Select(slot => slot.Task)).ConfigureAwait(false);
+                continue;
+            }
+
+            if (packTask is { IsCompleted: false })
+            {
+                await Task.WhenAny(packTask, Task.Delay(200, cancellationToken)).ConfigureAwait(false);
+                continue;
+            }
+
+            break;
+        }
+        }
+        catch
+        {
+            if (packTask is not null)
+            {
+                try
+                {
+                    await packTask.ConfigureAwait(false);
+                }
+                catch
+                {
+                    // the copy error is the one to surface
+                }
+            }
+
+            throw;
+        }
+
+        if (packTask is not null)
+        {
+            await packTask.ConfigureAwait(false);
+        }
+
+        await RetryDeferredCopyAsync(
+                job, journal, deferred, budget, pause, log, name, reporter, speed, fileCount, totalBytes,
+                afterFile: false, endOfPass: true, cancellationToken, io)
+            .ConfigureAwait(false);
+        deferred.FinalizeFailures();
+    }
+
+    private static async Task<CopyWork> CopyAdaptiveFileAsync(
+        Job job,
+        FileRecord file,
+        JobJournal journal,
+        BandwidthBudget budget,
+        PauseGate pause,
+        IJobLog log,
+        string name,
+        SpeedTracker speed,
+        CancellationToken cancellationToken,
+        UnbufferedIoSession? io,
+        bool stripe,
+        long? maxNewBytes)
+    {
+        var attempts = Math.Max(1, job.Options.RetryCount + 1);
+        Exception? last = null;
+        try
+        {
+            for (var i = 0; i < attempts; i++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    var result = await FileCopier.CopyAdaptiveAsync(
+                            job, file, budget, pause, speed, cancellationToken, log, name, io,
+                            onCopied: n =>
+                            {
+                                try
+                                {
+                                    journal.SetCopiedBytes(file.RelativePath, n);
+                                }
+                                catch (Exception ex) when (JobJournal.IsJournalFault(ex))
+                                {
+                                    // progress flush must not fail the copy
+                                }
+                            },
+                            stripe: stripe,
+                            maxNewBytes: maxNewBytes)
+                        .ConfigureAwait(false);
+                    if (!result.Finished)
+                    {
+                        return new CopyWork(true, false, null, null, false, result.BytesOnDisk);
+                    }
+
+                    return new CopyWork(true, true, result.Hash, null, false, result.BytesOnDisk);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    last = ex;
+                    log.Error(job.Id, name, $"Retry {i + 1}/{attempts} {file.RelativePath}: {ex.Message}");
+                    if (i + 1 < attempts)
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(Math.Max(1, job.Options.RetryWaitSeconds)), cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                }
+            }
+
+            return new CopyWork(false, true, null, last?.Message ?? "Copy failed", last is not null && DeferredRetry.IsTransient(last), 0);
+        }
+        finally
+        {
+            pause.EndFile(file.RelativePath);
+        }
+    }
+
+    private static void RecordCopyOutcome(
+        Job job,
+        JobJournal journal,
+        DeferredRetrySession deferred,
+        IJobLog log,
+        string name,
+        FileRecord file,
+        CopyWork work,
+        bool markUnpacked)
+    {
+        if (!work.Ok)
+        {
+            var error = work.Error ?? "Copy failed after retries";
+            if (work.Transient || ProgressHeader.IsExceptionDump(error))
+            {
+                deferred.Defer(file, error);
+                return;
+            }
+
+            if (!TryJournal(journal, () =>
+                {
+                    journal.MarkFailed(file.RelativePath, error, job.Options.RetryCount);
+                    journal.AddIssue(new TransferIssue
+                    {
+                        RelativePath = file.RelativePath,
+                        Kind = IssueKind.CopyError,
+                        Message = error
+                    });
+                }, log, job.Id, name))
+            {
+                deferred.Defer(file, error);
+            }
+            else
+            {
+                log.Error(job.Id, name, $"Failed {file.RelativePath}: {error}");
+            }
+
+            return;
+        }
+
+        if (!work.Finished)
+        {
+            return;
+        }
+
+        if (!TryJournal(journal, () =>
+            {
+                journal.MarkCopied(file.RelativePath, work.Hash);
+                if (markUnpacked)
+                {
+                    journal.MarkUnpacked(file.RelativePath);
+                }
+            }, log, job.Id, name))
+        {
+            deferred.Defer(file, "Journal error after copy — deferred for retry");
+            return;
+        }
+
+        deferred.Remove(file.RelativePath);
+        log.Info(job.Id, name, $"Copied {file.RelativePath} ({ByteFormatter.ToString(file.Size)})");
+    }
+
+    private static FileRecord TakeQueued(LinkedList<FileRecord> queue, bool preferLarge)
+    {
+        if (!preferLarge || queue.First is null || queue.Count == 1)
+        {
+            var first = queue.First!.Value;
+            queue.RemoveFirst();
+            return first;
+        }
+
+        var best = queue.First;
+        for (var node = queue.First; node is not null; node = node.Next)
+        {
+            if (node.Value.Size > best!.Value.Size)
+            {
+                best = node;
+            }
+        }
+
+        var file = best!.Value;
+        queue.Remove(best);
+        return file;
+    }
+
+    private static long PackBytesRemaining(TransferPlan? plan, Task? packTask)
+    {
+        if (plan is null || packTask is { IsCompleted: true })
+        {
+            return 0;
+        }
+
+        long bytes = 0;
+        foreach (var group in plan.PackGroups)
+        {
+            foreach (var file in group.Files)
+            {
+                if (file.Status is FileCopyStatus.Pending or FileCopyStatus.Failed or FileCopyStatus.Deferred)
+                {
+                    bytes += Math.Max(0, file.Size - file.BytesCopied);
+                }
+            }
+        }
+
+        return bytes;
+    }
+
+    private static int CountUnverified(JobJournal journal, string jobId)
+    {
+        var count = 0;
+        foreach (var file in journal.GetFiles())
+        {
+            if (file.Status is FileCopyStatus.Copied or FileCopyStatus.Unpacked &&
+                !AdaptiveVerifyCache.Contains(jobId, file.RelativePath))
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    private static void VerifySpare(
+        Job job,
+        JobJournal journal,
+        IJobLog log,
+        string name,
+        int batch,
+        CancellationToken cancellationToken)
+    {
+        var only = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in journal.GetFiles())
+        {
+            if (only.Count >= batch)
+            {
+                break;
+            }
+
+            if (file.Status is not (FileCopyStatus.Copied or FileCopyStatus.Unpacked))
+            {
+                continue;
+            }
+
+            if (AdaptiveVerifyCache.Contains(job.Id, file.RelativePath))
+            {
+                continue;
+            }
+
+            only.Add(file.RelativePath);
+        }
+
+        if (only.Count == 0)
+        {
+            return;
+        }
+
+        var mapping = new CopyMapping
+        {
+            Kind = job.SourceKind,
+            SourceRoot = job.SourcePath,
+            DestRoot = job.DestinationPath
+        };
+        Verifier.Verify(job, journal, mapping, log, name, cancellationToken, onlyThese: only);
+        foreach (var relative in only)
+        {
+            AdaptiveVerifyCache.Mark(job.Id, relative);
+        }
+    }
+
     private static async Task CopyPendingListAsync(
         Job job,
         JobJournal journal,
@@ -840,8 +1335,28 @@ public sealed class CopyEngine : ICopyEngine
         FileTotals totals,
         CancellationToken cancellationToken,
         UnbufferedIoSession? io,
-        bool markUnpacked)
+        bool markUnpacked,
+        AdaptivePlan? adaptive = null,
+        TransferPlan? overlapPlan = null,
+        bool adaptiveResolved = false)
     {
+        if (!adaptiveResolved && job.Options.AdaptiveCopy)
+        {
+            var largestPending = pending.Count == 0 ? 0 : pending.Max(f => f.Size);
+            adaptive = await AdaptiveCopyPlanner.PrepareAsync(
+                    job, budget, pending, overlapPlan?.HasPacking == true, largestPending, log, name, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (adaptive is { UseBalancer: true } plan)
+        {
+            await CopyBalancedAsync(
+                    job, journal, budget, pause, log, name, reporter, cloud, speed, pending.ToList(), totals,
+                    cancellationToken, io, markUnpacked, plan, overlapPlan)
+                .ConfigureAwait(false);
+            return;
+        }
+
         var deferred = new DeferredRetrySession(job, journal, log, name);
         var fileCount = Math.Max(pending.Count, totals.Files);
         var totalBytes = totals.Bytes;

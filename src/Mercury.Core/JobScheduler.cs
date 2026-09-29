@@ -26,6 +26,7 @@ public sealed class JobScheduler : IDisposable
         Log = new FileJobLog(paths);
         Budget = new BandwidthBudget();
         Budget.Apply(AppSettingsStore.Load(paths));
+        AdaptiveCopyMemory.Use(_paths.DataRoot);
         LoadQueue();
         _ = ScheduleLoopAsync(_lifetime.Token);
     }
