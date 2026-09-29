@@ -51,16 +51,73 @@ public sealed class DirectoryCompareOptions
 
 public sealed class DirectoryCompareProgress
 {
-    public DirectoryCompareProgress(int filesVisited, int foldersVisited, string? currentRelative)
+    public DirectoryCompareProgress(int filesVisited, int foldersVisited, string? currentRelative, ComparePace? pace = null)
     {
         FilesVisited = filesVisited;
         FoldersVisited = foldersVisited;
         CurrentRelative = currentRelative;
+        Pace = pace;
     }
 
     public int FilesVisited { get; }
     public int FoldersVisited { get; }
     public string? CurrentRelative { get; }
+    public ComparePace? Pace { get; }
+}
+
+/// <summary>Bytes still to hash for the file, its folder, and the whole compare.</summary>
+public sealed class ComparePace
+{
+    public string? CurrentFolder { get; init; }
+    public long FileBytesDone { get; init; }
+    public long FileBytesTotal { get; init; }
+    public long FolderBytesDone { get; init; }
+    public long FolderBytesTotal { get; init; }
+    public long BytesDone { get; init; }
+    public long BytesTotal { get; init; }
+    public double BytesPerSecond { get; init; }
+
+    public TimeSpan? FileEta => Estimate(FileBytesDone, FileBytesTotal, BytesPerSecond);
+    public TimeSpan? FolderEta => Estimate(FolderBytesDone, FolderBytesTotal, BytesPerSecond);
+    public TimeSpan? OverallEta => Estimate(BytesDone, BytesTotal, BytesPerSecond);
+
+    public static TimeSpan? Estimate(long done, long total, double bytesPerSecond)
+    {
+        if (bytesPerSecond < 1 || total <= 0)
+        {
+            return null;
+        }
+
+        var remaining = total - Math.Max(0, done);
+        if (remaining <= 0)
+        {
+            return TimeSpan.Zero;
+        }
+
+        return TimeSpan.FromSeconds(remaining / bytesPerSecond);
+    }
+
+    public static string FileLabel(string? relative)
+    {
+        if (string.IsNullOrEmpty(relative))
+        {
+            return "—";
+        }
+
+        var slash = relative.LastIndexOf('\\');
+        return slash < 0 ? relative : relative[(slash + 1)..];
+    }
+
+    public static string FolderLabel(string? relative)
+    {
+        if (string.IsNullOrEmpty(relative))
+        {
+            return "—";
+        }
+
+        var slash = relative.LastIndexOf('\\');
+        return slash <= 0 ? "." : relative[..slash];
+    }
 }
 
 public sealed class DirectoryCompareDiff
@@ -364,7 +421,7 @@ public static class DirectoryComparer
             var lastPulse = Stopwatch.GetTimestamp();
             var left = ScanSide(leftPath, cancellationToken, pause, progress, ref filesVisited, ref foldersVisited, ref lastPulse);
             var right = ScanSide(rightPath, cancellationToken, pause, progress, ref filesVisited, ref foldersVisited, ref lastPulse);
-            Pulse(progress, filesVisited, foldersVisited, null, ref lastPulse, force: true);
+            lastPulse = Pulse(progress, filesVisited, foldersVisited, null, lastPulse, force: true);
 
             var diffs = new List<DirectoryCompareDiff>();
             var advanced = options.Advanced;
@@ -377,7 +434,7 @@ public static class DirectoryComparer
             CompareFiles(left, right, advanced, hash, tolerance, diffs, cancellationToken, pause, progress, ref filesVisited, ref foldersVisited, ref lastPulse);
 
             var result = BuildResult(leftPath, rightPath, started, DateTimeOffset.UtcNow, options, left, right, diffs, filesVisited, foldersVisited, canceled: false, error: null);
-            Pulse(progress, filesVisited, foldersVisited, null, ref lastPulse, force: true);
+            lastPulse = Pulse(progress, filesVisited, foldersVisited, null, lastPulse, force: true);
             return result;
         }
         catch (OperationCanceledException)
@@ -564,9 +621,58 @@ public static class DirectoryComparer
         ref int foldersVisited,
         ref long lastPulse)
     {
-        foreach (var (key, file) in left.Files)
+        Dictionary<string, long>? folderTotals = null;
+        long hashTotal = 0;
+        if (hash)
         {
-            WaitIfPaused(pause, cancellationToken);
+            folderTotals = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (path, entry) in left.Files)
+            {
+                if (!right.Files.TryGetValue(path, out var match) || entry.Size != match.Size)
+                {
+                    continue;
+                }
+
+                var bytes = entry.Size + match.Size;
+                hashTotal += bytes;
+                var folderKey = ParentKey(path);
+                folderTotals[folderKey] = folderTotals.GetValueOrDefault(folderKey) + bytes;
+            }
+        }
+
+        var clock = hash && hashTotal > 0 ? new HashClock() : null;
+        string? openFolder = null;
+        var folderDone = 0L;
+        var folderTotal = 0L;
+        var seenFiles = filesVisited;
+        var seenFolders = foldersVisited;
+        var pulseAt = lastPulse;
+        void EmitHash(string current, long fileDone, long fileTotal, bool force = false)
+        {
+            if (clock is null)
+            {
+                return;
+            }
+
+            pulseAt = Pulse(progress, seenFiles, seenFolders, current, pulseAt, new ComparePace
+            {
+                CurrentFolder = string.IsNullOrEmpty(openFolder) ? "." : openFolder,
+                FileBytesDone = fileDone,
+                FileBytesTotal = fileTotal,
+                FolderBytesDone = folderDone,
+                FolderBytesTotal = folderTotal,
+                BytesDone = clock.Bytes,
+                BytesTotal = hashTotal,
+                BytesPerSecond = clock.BytesPerSecond
+            }, force);
+        }
+
+        var keys = left.Files.Keys.ToList();
+        keys.Sort(StringComparer.OrdinalIgnoreCase);
+        foreach (var key in keys)
+        {
+            var file = left.Files[key];
+            WaitIfPaused(pause, cancellationToken, clock);
             cancellationToken.ThrowIfCancellationRequested();
 
             if (!right.Files.TryGetValue(key, out var other))
@@ -634,12 +740,32 @@ public static class DirectoryComparer
 
             if (hash && file.Size == other.Size)
             {
-                WaitIfPaused(pause, cancellationToken);
+                WaitIfPaused(pause, cancellationToken, clock);
                 cancellationToken.ThrowIfCancellationRequested();
+                var folder = ParentKey(key);
+                if (!string.Equals(folder, openFolder, StringComparison.OrdinalIgnoreCase))
+                {
+                    openFolder = folder;
+                    folderDone = 0;
+                    folderTotal = folderTotals?.GetValueOrDefault(folder) ?? 0;
+                }
+
+                var fileTotal = file.Size + other.Size;
+                var fileDone = 0L;
+                void OnRead(long read)
+                {
+                    WaitIfPaused(pause, cancellationToken, clock);
+                    clock?.Add(read);
+                    fileDone += read;
+                    folderDone += read;
+                    EmitHash(key, fileDone, fileTotal);
+                }
+
+                EmitHash(key, 0, fileTotal, force: true);
                 try
                 {
-                    var leftHash = HashUtil.HashFile(file.FullPath);
-                    var rightHash = HashUtil.HashFile(other.FullPath);
+                    var leftHash = HashUtil.HashFile(file.FullPath, cancellationToken, OnRead);
+                    var rightHash = HashUtil.HashFile(other.FullPath, cancellationToken, OnRead);
                     if (!string.Equals(leftHash, rightHash, StringComparison.OrdinalIgnoreCase))
                     {
                         diffs.Add(new DirectoryCompareDiff
@@ -666,7 +792,7 @@ public static class DirectoryComparer
                     });
                 }
 
-                Pulse(progress, filesVisited, foldersVisited, key, ref lastPulse);
+                EmitHash(key, fileTotal, fileTotal, force: true);
             }
         }
 
@@ -685,6 +811,8 @@ public static class DirectoryComparer
                 RightWriteUtc = file.LastWriteUtc
             });
         }
+
+        lastPulse = pulseAt;
     }
 
     private static TreeSide ScanSide(
@@ -757,7 +885,7 @@ public static class DirectoryComparer
 
             AddSubtreeFile(side, relative);
             filesVisited++;
-            Pulse(progress, filesVisited, foldersVisited, rel, ref lastPulse);
+            lastPulse = Pulse(progress, filesVisited, foldersVisited, rel, lastPulse);
         }
 
         IEnumerable<string> dirs;
@@ -798,7 +926,7 @@ public static class DirectoryComparer
             var rel = CombineRelative(relative, name);
             side.Folders[rel] = new FolderEntry(rel, name);
             foldersVisited++;
-            Pulse(progress, filesVisited, foldersVisited, rel, ref lastPulse);
+            lastPulse = Pulse(progress, filesVisited, foldersVisited, rel, lastPulse);
             Walk(info.FullName, rel, side, cancellationToken, pause, progress, ref filesVisited, ref foldersVisited, ref lastPulse);
         }
     }
@@ -830,31 +958,40 @@ public static class DirectoryComparer
         return i <= 0 ? "" : relative[..i];
     }
 
-    private static void WaitIfPaused(PauseGate? pause, CancellationToken cancellationToken)
+    private static void WaitIfPaused(PauseGate? pause, CancellationToken cancellationToken, HashClock? clock = null)
     {
-        if (pause is null)
+        if (pause is null || !pause.IsPaused)
         {
             return;
         }
 
-        while (pause.IsPaused)
+        clock?.Pause();
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            Thread.Sleep(40);
+            while (pause.IsPaused)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                Thread.Sleep(40);
+            }
+        }
+        finally
+        {
+            clock?.Resume();
         }
     }
 
-    private static void Pulse(
+    private static long Pulse(
         Action<DirectoryCompareProgress>? progress,
         int files,
         int folders,
         string? current,
-        ref long lastPulse,
+        long lastPulse,
+        ComparePace? pace = null,
         bool force = false)
     {
         if (progress is null)
         {
-            return;
+            return lastPulse;
         }
 
         if (!force && files % 50 != 0)
@@ -862,12 +999,75 @@ public static class DirectoryComparer
             var elapsed = (Stopwatch.GetTimestamp() - lastPulse) / (double)Stopwatch.Frequency;
             if (elapsed < 0.2)
             {
-                return;
+                return lastPulse;
             }
         }
 
-        lastPulse = Stopwatch.GetTimestamp();
-        progress(new DirectoryCompareProgress(files, folders, current));
+        progress(new DirectoryCompareProgress(files, folders, current, pace));
+        return Stopwatch.GetTimestamp();
+    }
+
+    private sealed class HashClock
+    {
+        private long _bytes;
+        private long _runStart;
+        private long _runTicks;
+        private bool _running;
+
+        public long Bytes => _bytes;
+
+        public void Add(long count)
+        {
+            if (count <= 0)
+            {
+                return;
+            }
+
+            if (!_running)
+            {
+                _runStart = Stopwatch.GetTimestamp();
+                _running = true;
+            }
+
+            _bytes += count;
+        }
+
+        public void Pause()
+        {
+            if (!_running)
+            {
+                return;
+            }
+
+            _runTicks += Stopwatch.GetTimestamp() - _runStart;
+            _running = false;
+        }
+
+        public void Resume()
+        {
+            if (_bytes == 0 || _running)
+            {
+                return;
+            }
+
+            _runStart = Stopwatch.GetTimestamp();
+            _running = true;
+        }
+
+        public double BytesPerSecond
+        {
+            get
+            {
+                var ticks = _runTicks;
+                if (_running)
+                {
+                    ticks += Stopwatch.GetTimestamp() - _runStart;
+                }
+
+                var seconds = ticks / (double)Stopwatch.Frequency;
+                return seconds >= 1 && _bytes > 0 ? _bytes / seconds : 0;
+            }
+        }
     }
 
     private sealed class TreeSide

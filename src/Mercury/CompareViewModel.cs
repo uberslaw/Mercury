@@ -36,6 +36,12 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
     private int _foldersVisited;
     private bool _showDestOnly = true;
     private string _progressText = "";
+    private string _fileEtaText = "File  —  —";
+    private string _folderEtaText = "Folder  —  —";
+    private string _compareEtaText = "Compare  —";
+    private bool _progressIndeterminate = true;
+    private double _progressMaximum = 1;
+    private double _progressValue;
     private string _statusText = "Pick Source and Destination folders, then Compare.";
     private string _summaryText = "";
     private string _listCaption = "Differences";
@@ -332,6 +338,42 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
         private set => SetField(ref _progressText, value);
     }
 
+    public string FileEtaText
+    {
+        get => _fileEtaText;
+        private set => SetField(ref _fileEtaText, value);
+    }
+
+    public string FolderEtaText
+    {
+        get => _folderEtaText;
+        private set => SetField(ref _folderEtaText, value);
+    }
+
+    public string CompareEtaText
+    {
+        get => _compareEtaText;
+        private set => SetField(ref _compareEtaText, value);
+    }
+
+    public bool ProgressIndeterminate
+    {
+        get => _progressIndeterminate;
+        private set => SetField(ref _progressIndeterminate, value);
+    }
+
+    public double ProgressMaximum
+    {
+        get => _progressMaximum;
+        private set => SetField(ref _progressMaximum, value);
+    }
+
+    public double ProgressValue
+    {
+        get => _progressValue;
+        private set => SetField(ref _progressValue, value);
+    }
+
     public string StatusText
     {
         get => _statusText;
@@ -444,6 +486,12 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
         FilesVisited = 0;
         FoldersVisited = 0;
         ProgressText = "Starting…";
+        FileEtaText = "File  —  —";
+        FolderEtaText = "Folder  —  —";
+        CompareEtaText = "Compare  —  (counting)";
+        ProgressIndeterminate = true;
+        ProgressMaximum = 1;
+        ProgressValue = 0;
         StatusText = "Scanning…";
         Highlights.Clear();
         ListedDifferences.Clear();
@@ -475,13 +523,7 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
                 options,
                 token,
                 _pause,
-                progress => RunOnUi(() =>
-                {
-                    FilesVisited = progress.FilesVisited;
-                    FoldersVisited = progress.FoldersVisited;
-                    var current = string.IsNullOrEmpty(progress.CurrentRelative) ? "" : "  " + progress.CurrentRelative;
-                    ProgressText = $"Visited {progress.FilesVisited:N0} files, {progress.FoldersVisited:N0} folders{current}";
-                }));
+                progress => RunOnUi(() => ApplyProgress(progress)));
             RunOnUi(() => ApplyResult(result));
         }
         catch (OperationCanceledException)
@@ -497,6 +539,34 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
                 StatusText = ex.Message;
             });
         }
+    }
+
+    private void ApplyProgress(DirectoryCompareProgress progress)
+    {
+        FilesVisited = progress.FilesVisited;
+        FoldersVisited = progress.FoldersVisited;
+        var pace = progress.Pace;
+        var file = ComparePace.FileLabel(progress.CurrentRelative);
+        var folder = pace?.CurrentFolder ?? ComparePace.FolderLabel(progress.CurrentRelative);
+        FileEtaText = $"File  {file}  {ByteFormatter.Eta(pace?.FileEta)}";
+        FolderEtaText = $"Folder  {folder}  {ByteFormatter.Eta(pace?.FolderEta)}";
+        if (pace is { BytesTotal: > 0 })
+        {
+            ProgressIndeterminate = false;
+            ProgressMaximum = pace.BytesTotal;
+            ProgressValue = Math.Min(pace.BytesDone, pace.BytesTotal);
+            CompareEtaText =
+                $"Compare  {ByteFormatter.Eta(pace.OverallEta)}  ({ByteFormatter.ToString(pace.BytesDone)} / {ByteFormatter.ToString(pace.BytesTotal)})";
+        }
+        else
+        {
+            ProgressIndeterminate = true;
+            ProgressMaximum = 1;
+            ProgressValue = 0;
+            CompareEtaText = "Compare  —  (counting)";
+        }
+
+        ProgressText = $"Visited {progress.FilesVisited:N0} files, {progress.FoldersVisited:N0} folders";
     }
 
     private void ApplyCanceled()

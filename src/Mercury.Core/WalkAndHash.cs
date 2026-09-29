@@ -9,7 +9,7 @@ public static class HashUtil
 
     public static string ToHex(byte[] hash) => Convert.ToHexString(hash);
 
-    public static string HashFile(string path)
+    public static string HashFile(string path, CancellationToken cancellationToken = default, Action<long>? onRead = null)
     {
         using var stream = new FileStream(
             path,
@@ -18,17 +18,19 @@ public static class HashUtil
             FileShare.ReadWrite,
             BufferSize,
             FileOptions.SequentialScan);
-        return HashStream(stream);
+        return HashStream(stream, cancellationToken, onRead);
     }
 
-    public static string HashStream(Stream stream)
+    public static string HashStream(Stream stream, CancellationToken cancellationToken = default, Action<long>? onRead = null)
     {
         var hasher = new XxHash64();
         var buffer = new byte[BufferSize];
         int read;
         while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             hasher.Append(buffer.AsSpan(0, read));
+            onRead?.Invoke(read);
         }
 
         return ToHex(hasher.GetCurrentHash());

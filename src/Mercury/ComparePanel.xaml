@@ -105,8 +105,13 @@
         </Border>
 
         <StackPanel DockPanel.Dock="Top" Visibility="{Binding ShowProgress, Converter={StaticResource BoolToVis}}" Margin="0,0,0,8">
-            <ProgressBar Height="{DynamicResource HeaderProgressBarHeight}" IsIndeterminate="{Binding IsScanning}"/>
-            <TextBlock Text="{Binding ProgressText}" Foreground="{DynamicResource MutedBrush}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+            <ProgressBar Height="{DynamicResource HeaderProgressBarHeight}" Minimum="0"
+                         Maximum="{Binding ProgressMaximum}" Value="{Binding ProgressValue}"
+                         IsIndeterminate="{Binding ProgressIndeterminate}"/>
+            <TextBlock Text="{Binding FileEtaText}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+            <TextBlock Text="{Binding FolderEtaText}" TextWrapping="Wrap"/>
+            <TextBlock Text="{Binding CompareEtaText}" TextWrapping="Wrap"/>
+            <TextBlock Text="{Binding ProgressText}" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0" TextWrapping="Wrap"/>
         </StackPanel>
 
         <TextBlock DockPanel.Dock="Top" Text="{Binding StatusText}" TextWrapping="Wrap" Margin="0,0,0,8"/>

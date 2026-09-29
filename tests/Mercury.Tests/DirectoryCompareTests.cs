@@ -100,6 +100,55 @@ public class DirectoryCompareTests
     }
 
     [Fact]
+    public void ComparePace_EstimatesRemainingBytes()
+    {
+        Assert.Null(ComparePace.Estimate(0, 1000, 0));
+        Assert.Equal(TimeSpan.FromSeconds(2), ComparePace.Estimate(0, 1000, 500));
+        Assert.Equal(TimeSpan.Zero, ComparePace.Estimate(1000, 1000, 500));
+        Assert.Equal("c.zip", ComparePace.FileLabel(@"pack\c.zip"));
+        Assert.Equal("pack", ComparePace.FolderLabel(@"pack\c.zip"));
+        Assert.Equal(".", ComparePace.FolderLabel("root.zip"));
+    }
+
+    [Fact]
+    public void HashCompare_ReportsFolderAndOverallBytes()
+    {
+        var (left, right) = Trees();
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(left, "pack"));
+            Directory.CreateDirectory(Path.Combine(right, "pack"));
+            File.WriteAllText(Path.Combine(left, "root.zip"), "AAAA");
+            File.WriteAllText(Path.Combine(right, "root.zip"), "AAAA");
+            File.WriteAllText(Path.Combine(left, "pack", "a.zip"), "BBBB");
+            File.WriteAllText(Path.Combine(right, "pack", "a.zip"), "BBBB");
+            File.WriteAllText(Path.Combine(left, "pack", "b.zip"), "CCCC");
+            File.WriteAllText(Path.Combine(right, "pack", "b.zip"), "DDDD");
+            File.WriteAllText(Path.Combine(left, "skip.bin"), "short");
+            File.WriteAllText(Path.Combine(right, "skip.bin"), "different-length");
+
+            var pulses = new List<DirectoryCompareProgress>();
+            var result = DirectoryComparer.Compare(
+                left,
+                right,
+                new DirectoryCompareOptions { Advanced = true, Hash = true },
+                progress: pulses.Add);
+            Assert.True(result.Completed);
+            Assert.Equal(1, result.HashMismatches);
+            Assert.Equal(1, result.SizeMismatches);
+            var hashing = pulses.Where(p => p.Pace is { BytesTotal: > 0 }).ToList();
+            Assert.NotEmpty(hashing);
+            Assert.All(hashing, p => Assert.Equal(24, p.Pace!.BytesTotal));
+            Assert.Contains(hashing, p => p.Pace!.CurrentFolder == "pack" && p.Pace.FolderBytesTotal == 16);
+            Assert.Equal(24, hashing[^1].Pace!.BytesDone);
+        }
+        finally
+        {
+            Cleanup(left, right);
+        }
+    }
+
+    [Fact]
     public void FilterHidesSizeDiffsWhenSizeFilterOff()
     {
         var (left, right) = Trees();
@@ -193,6 +242,8 @@ public class DirectoryCompareTests
         Assert.Contains("does not start", section.Body, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Skip if dest newer or equal", section.Body, StringComparison.Ordinal);
         Assert.Contains("xxHash64", section.Body, StringComparison.Ordinal);
+        Assert.Contains("current folder", section.Body, StringComparison.Ordinal);
+        Assert.Contains("does not keep a place to resume", section.Body, StringComparison.Ordinal);
         Assert.Contains("Source / Destination", section.Body, StringComparison.Ordinal);
         Assert.Contains("Source→Dest", section.Body, StringComparison.Ordinal);
         Assert.Contains("Show destination-only", section.Body, StringComparison.Ordinal);
