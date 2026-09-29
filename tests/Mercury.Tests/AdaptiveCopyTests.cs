@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text;
 
 namespace Mercury.Tests;
 
@@ -681,5 +682,427 @@ public class AdaptiveCopyTests
         Assert.True(selection.Adaptive);
         Assert.False(selection.UserPicked);
         Assert.True(job.Options.AdaptiveCopy);
+    }
+
+    [Fact]
+    public async Task ProbeWritesANewTestNameAndDoesNotTouchFinalDestOrCopiedSources()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mercury-probe-fresh-" + Guid.NewGuid().ToString("N"));
+        var source = Path.Combine(root, "source");
+        var dest = Path.Combine(root, "dest");
+        Directory.CreateDirectory(source);
+        Directory.CreateDirectory(dest);
+        FileStream? locked = null;
+        try
+        {
+            var copiedSource = Path.Combine(source, "already-copied.bin");
+            var copiedDest = Path.Combine(dest, "nested", "already-copied.bin");
+            WriteFilled(copiedSource, 2 * 1024 * 1024, 0x11);
+            Directory.CreateDirectory(Path.GetDirectoryName(copiedDest)!);
+            File.WriteAllBytes(copiedDest, "COPIED"u8.ToArray());
+
+            var pending = new (string Name, byte Fill, bool SeedDest)[]
+            {
+                ("pending-0.bin", 0x21, true),
+                ("pending-1.bin", 0x22, false),
+                ("sub/pending-2.bin", 0x23, true),
+                ("pending-3.bin", 0x24, false)
+            };
+            var records = new List<FileRecord>();
+            var job = new Job { Name = "probe-fresh", SourcePath = source, DestinationPath = dest };
+            using var journal = JobJournal.Create(Path.Combine(root, "journal"), job);
+            journal.UpsertFile(Record("already-copied.bin", copiedSource, copiedDest, new FileInfo(copiedSource).Length));
+            journal.MarkCopied("already-copied.bin", "copied-hash");
+            foreach (var item in pending)
+            {
+                var src = Path.Combine(source, item.Name.Replace('/', Path.DirectorySeparatorChar));
+                var dst = Path.Combine(dest, item.Name.Replace('/', Path.DirectorySeparatorChar));
+                Directory.CreateDirectory(Path.GetDirectoryName(src)!);
+                WriteFilled(src, 400 * 1024, item.Fill);
+                if (item.SeedDest)
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
+                    File.WriteAllBytes(dst, Encoding.ASCII.GetBytes("FINAL-" + item.Name));
+                }
+
+                journal.UpsertFile(Record(item.Name, src, dst, new FileInfo(src).Length));
+            }
+
+            var before = journal.GetFiles().OrderBy(f => f.RelativePath, StringComparer.Ordinal).ToList();
+            Assert.Contains(before, f => f.RelativePath == "already-copied.bin" && f.Status == FileCopyStatus.Copied);
+            Assert.Equal(4, before.Count(f => f.Status == FileCopyStatus.Pending));
+            locked = new FileStream(copiedSource, FileMode.Open, FileAccess.Read, FileShare.None);
+
+            var seen = new List<(string Path, byte First)>();
+            var result = await AdaptiveCopyProbe.MeasureAsync(before, CancellationToken.None, path =>
+            {
+                var buffer = new byte[1];
+                using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                if (stream.Read(buffer, 0, 1) == 1)
+                {
+                    seen.Add((path, buffer[0]));
+                }
+            });
+
+            Assert.False(result.Failed);
+            Assert.False(result.NoPending);
+            Assert.NotEmpty(result.Samples);
+            var line = AdaptiveCopyLog.ProbeLine(result.Samples, result.ElapsedSeconds, result.Mode);
+            Assert.Contains(".mercury-speed-test.tmp.", line);
+            Assert.Contains("MB/s", line);
+            Assert.Contains(" in ", line);
+
+            AssertSamplePaths(result, AdaptiveCopyMode.Sequential, 1, before);
+            AssertSamplePaths(result, AdaptiveCopyMode.Files2, 2, before);
+            AssertSamplePaths(result, AdaptiveCopyMode.Files4, 4, before);
+            Assert.DoesNotContain(result.Samples, s => s.Mode == AdaptiveCopyMode.Ranges2);
+
+            Assert.NotEmpty(seen);
+            Assert.All(seen, hit =>
+            {
+                Assert.Contains(hit.First, new byte[] { 0x21, 0x22, 0x23, 0x24 });
+                Assert.Contains(".mercury-speed-test.tmp.", hit.Path);
+                Assert.DoesNotContain("already-copied.bin.mercury-speed-test.tmp.", hit.Path.Replace('\\', '/'));
+            });
+            Assert.Equal(seen.Count, seen.Select(h => h.Path).Distinct(StringComparer.Ordinal).Count());
+
+            foreach (var file in before)
+            {
+                Assert.False(File.Exists(file.DestPath + ".mercury.tmp"));
+                if (file.Status == FileCopyStatus.Copied)
+                {
+                    Assert.Equal("COPIED"u8.ToArray(), File.ReadAllBytes(file.DestPath));
+                    continue;
+                }
+
+                var seeded = pending.First(p => p.Name == file.RelativePath);
+                if (seeded.SeedDest)
+                {
+                    Assert.Equal(Encoding.ASCII.GetBytes("FINAL-" + seeded.Name), File.ReadAllBytes(file.DestPath));
+                }
+                else
+                {
+                    Assert.False(File.Exists(file.DestPath));
+                }
+            }
+
+            Assert.DoesNotContain(
+                Directory.EnumerateFiles(dest, "*", SearchOption.AllDirectories),
+                path => path.Contains(".mercury-speed-test.tmp.", StringComparison.Ordinal));
+
+            var after = journal.GetFiles().OrderBy(f => f.RelativePath, StringComparer.Ordinal).ToList();
+            Assert.Equal(before.Count, after.Count);
+            for (var i = 0; i < before.Count; i++)
+            {
+                Assert.Equal(before[i].RelativePath, after[i].RelativePath);
+                Assert.Equal(before[i].Status, after[i].Status);
+                Assert.Equal(before[i].BytesCopied, after[i].BytesCopied);
+                Assert.Equal(before[i].Hash, after[i].Hash);
+                Assert.Equal(before[i].DestPath, after[i].DestPath);
+            }
+        }
+        finally
+        {
+            locked?.Dispose();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public async Task ProbeSkipsWhenEveryJournalFileIsAlreadyCopied()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mercury-probe-skip-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var source = Path.Combine(root, "done.bin");
+            var dest = Path.Combine(root, "out", "done.bin");
+            WriteFilled(source, 2 * 1024 * 1024, 0x44);
+            Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+            File.WriteAllBytes(dest, "KEEP"u8.ToArray());
+            var job = new Job { Name = "probe-skip", SourcePath = root, DestinationPath = Path.Combine(root, "out") };
+            using var journal = JobJournal.Create(Path.Combine(root, "journal"), job);
+            journal.UpsertFile(Record("done.bin", source, dest, new FileInfo(source).Length));
+            journal.MarkCopied("done.bin", "h");
+            var files = journal.GetFiles();
+            var seen = 0;
+            var result = await AdaptiveCopyProbe.MeasureAsync(files, CancellationToken.None, _ => seen++);
+            Assert.True(result.NoPending);
+            Assert.Empty(result.Samples);
+            Assert.Equal(AdaptiveCopyMode.Sequential, result.Mode);
+            Assert.False(result.Failed);
+            Assert.Equal(0, seen);
+            Assert.Equal("KEEP"u8.ToArray(), File.ReadAllBytes(dest));
+            Assert.DoesNotContain(
+                Directory.EnumerateFiles(Path.GetDirectoryName(dest)!, "*", SearchOption.AllDirectories),
+                path => path.Contains(".mercury-speed-test.tmp.", StringComparison.Ordinal));
+            Assert.Equal(FileCopyStatus.Copied, journal.GetFiles().Single().Status);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public async Task ProbeDeletesTheTestFileWhenTheSampleIsCancelled()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mercury-probe-cancel-" + Guid.NewGuid().ToString("N"));
+        var destDir = Path.Combine(root, "dest");
+        Directory.CreateDirectory(destDir);
+        try
+        {
+            var source = Path.Combine(root, "big.bin");
+            var dest = Path.Combine(destDir, "big.bin");
+            WriteFilled(source, 32 * 1024 * 1024, 0x55);
+            var file = Record("big.bin", source, dest, new FileInfo(source).Length);
+            using var cts = new CancellationTokenSource();
+            var seen = new List<string>();
+            var poll = Task.Run(() =>
+            {
+                var started = System.Diagnostics.Stopwatch.StartNew();
+                while (started.Elapsed.TotalSeconds < 20 && !cts.IsCancellationRequested)
+                {
+                    if (!Directory.Exists(destDir))
+                    {
+                        Thread.Sleep(1);
+                        continue;
+                    }
+
+                    foreach (var path in Directory.EnumerateFiles(destDir))
+                    {
+                        if (path.Contains(".mercury-speed-test.tmp.", StringComparison.Ordinal))
+                        {
+                            seen.Add(path);
+                            cts.Cancel();
+                            return;
+                        }
+                    }
+
+                    Thread.Sleep(1);
+                }
+            });
+
+            OperationCanceledException? cancelled = null;
+            ProbeResult? result = null;
+            try
+            {
+                result = await AdaptiveCopyProbe.MeasureAsync([file], cts.Token);
+            }
+            catch (OperationCanceledException ex)
+            {
+                cancelled = ex;
+            }
+
+            await poll;
+            Assert.True(cancelled is not null || result is { Failed: false });
+            Assert.False(File.Exists(dest));
+            Assert.DoesNotContain(
+                Directory.EnumerateFiles(destDir),
+                path => path.Contains(".mercury-speed-test.tmp.", StringComparison.Ordinal));
+            if (seen.Count > 0)
+            {
+                Assert.All(seen, path =>
+                {
+                    Assert.Contains(".mercury-speed-test.tmp.", Path.GetFileName(path));
+                    Assert.NotEqual(dest, path);
+                });
+            }
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public async Task TwoRangesWriteNewNamesForOnePendingLargeFile()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mercury-probe-ranges-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        FileStream? locked = null;
+        try
+        {
+            var sourceDir = Path.Combine(root, "source");
+            var destDir = Path.Combine(root, "dest");
+            Directory.CreateDirectory(sourceDir);
+            Directory.CreateDirectory(destDir);
+            var copiedSource = Path.Combine(sourceDir, "already-large.bin");
+            var pendingSource = Path.Combine(sourceDir, "pending-large.bin");
+            var copiedDest = Path.Combine(destDir, "already-large.bin");
+            var pendingDest = Path.Combine(destDir, "pending-large.bin");
+            WriteFilled(copiedSource, 64 * 1024, 0x11);
+            WriteFilled(pendingSource, 1024 * 1024, 0x7A);
+            File.WriteAllBytes(copiedDest, "COPIED-LARGE"u8.ToArray());
+            File.WriteAllBytes(pendingDest, "FINAL-LARGE"u8.ToArray());
+
+            var job = new Job { Name = "probe-ranges", SourcePath = sourceDir, DestinationPath = destDir };
+            using var journal = JobJournal.Create(Path.Combine(root, "journal"), job);
+            journal.UpsertFile(Record("already-large.bin", copiedSource, copiedDest, AdaptiveCopyPolicy.LargeFileBytes + (8 * 1024 * 1024)));
+            journal.MarkCopied("already-large.bin", "large-hash");
+            journal.UpsertFile(Record("pending-large.bin", pendingSource, pendingDest, AdaptiveCopyPolicy.LargeFileBytes));
+            var files = journal.GetFiles();
+            locked = new FileStream(copiedSource, FileMode.Open, FileAccess.Read, FileShare.None);
+
+            var seen = new List<string>();
+            var result = await AdaptiveCopyProbe.MeasureAsync(files, CancellationToken.None, seen.Add);
+            Assert.False(result.Failed);
+            var ranges = Assert.Single(result.Samples, sample => sample.Mode == AdaptiveCopyMode.Ranges2);
+            var paths = ranges.TestPaths.Split('|', StringSplitOptions.RemoveEmptyEntries);
+            Assert.Equal(2, paths.Length);
+            Assert.NotEqual(paths[0], paths[1]);
+            Assert.True(ranges.Bytes > 0);
+            Assert.All(paths, path => Assert.Contains(path, seen));
+            Assert.DoesNotContain(seen, path => path.Contains("already-large.bin" + AdaptiveCopyProbe.SpeedTestMarker, StringComparison.Ordinal));
+            foreach (var path in paths)
+            {
+                var leaf = Path.GetFileName(path);
+                Assert.StartsWith("pending-large.bin" + AdaptiveCopyProbe.SpeedTestMarker, leaf, StringComparison.Ordinal);
+                Assert.Contains(".mercury-speed-test.tmp.", leaf);
+                Assert.Equal(destDir, Path.GetDirectoryName(path));
+                Assert.NotEqual(Path.GetFullPath(pendingDest), path);
+                Assert.NotEqual(Path.GetFullPath(copiedDest), path);
+                Assert.False(File.Exists(path));
+            }
+
+            Assert.Equal("FINAL-LARGE"u8.ToArray(), File.ReadAllBytes(pendingDest));
+            Assert.Equal("COPIED-LARGE"u8.ToArray(), File.ReadAllBytes(copiedDest));
+            Assert.DoesNotContain(Directory.EnumerateFiles(destDir), path => path.Contains(".mercury-speed-test.tmp.", StringComparison.Ordinal));
+            Assert.Equal(FileCopyStatus.Pending, journal.GetFiles().Single(file => file.RelativePath == "pending-large.bin").Status);
+            Assert.Equal(FileCopyStatus.Copied, journal.GetFiles().Single(file => file.RelativePath == "already-large.bin").Status);
+            var line = AdaptiveCopyLog.ProbeLine(result.Samples, result.ElapsedSeconds, result.Mode);
+            Assert.Contains("pending-large.bin.mercury-speed-test.tmp.", line);
+            Assert.Contains("MB/s", line);
+            Assert.DoesNotContain("already-large.bin.mercury-speed-test.tmp.", line);
+        }
+        finally
+        {
+            locked?.Dispose();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public async Task SubSecondSampleDoesNotSwitchToTwoOrFourFiles()
+    {
+        const long bytes = 8_000_000;
+        var brief = new[]
+        {
+            new ProbeSample(AdaptiveCopyMode.Sequential, bytes, 0.20),
+            new ProbeSample(AdaptiveCopyMode.Files2, bytes, 0.12),
+            new ProbeSample(AdaptiveCopyMode.Files4, bytes, 0.08)
+        };
+        var raw = new Dictionary<AdaptiveCopyMode, double>
+        {
+            [AdaptiveCopyMode.Sequential] = AdaptiveCopyPolicy.Rate(bytes, 0.20),
+            [AdaptiveCopyMode.Files2] = AdaptiveCopyPolicy.Rate(bytes, 0.12),
+            [AdaptiveCopyMode.Files4] = AdaptiveCopyPolicy.Rate(bytes, 0.08)
+        };
+        Assert.Equal(AdaptiveCopyMode.Files4, AdaptiveCopyPolicy.Choose(raw));
+        Assert.Equal(AdaptiveCopyMode.Sequential, AdaptiveCopyPolicy.ChooseFromSamples(brief));
+        var ruled = AdaptiveCopyLog.ProbeLine(brief, 0.40, AdaptiveCopyPolicy.ChooseFromSamples(brief));
+        Assert.Contains("Chose one stream", ruled);
+        Assert.Contains("too fast to measure this destination", ruled);
+        Assert.Contains("staying on one stream", ruled);
+        Assert.Contains("is not the baseline", ruled);
+        Assert.DoesNotContain("Chose 2 files", ruled);
+        Assert.DoesNotContain("Chose 4 files", ruled);
+
+        var fastWide = new[]
+        {
+            new ProbeSample(AdaptiveCopyMode.Sequential, bytes, 2.0),
+            new ProbeSample(AdaptiveCopyMode.Files4, bytes, 0.30)
+        };
+        Assert.Equal(AdaptiveCopyMode.Sequential, AdaptiveCopyPolicy.ChooseFromSamples(fastWide));
+        Assert.Contains("too fast to measure this destination", AdaptiveCopyLog.ProbeLine(fastWide, 2.3, AdaptiveCopyMode.Sequential));
+
+        var measured = new[]
+        {
+            new ProbeSample(AdaptiveCopyMode.Sequential, bytes, 2.0),
+            new ProbeSample(AdaptiveCopyMode.Files4, bytes, 1.2)
+        };
+        Assert.Equal(AdaptiveCopyMode.Files4, AdaptiveCopyPolicy.ChooseFromSamples(measured));
+
+        var root = Path.Combine(Path.GetTempPath(), "mercury-probe-brief-" + Guid.NewGuid().ToString("N"));
+        var source = Path.Combine(root, "source");
+        var dest = Path.Combine(root, "dest");
+        Directory.CreateDirectory(source);
+        Directory.CreateDirectory(dest);
+        try
+        {
+            var files = new List<FileRecord>();
+            for (var i = 0; i < 4; i++)
+            {
+                var name = "f" + i + ".bin";
+                var src = Path.Combine(source, name);
+                var dst = Path.Combine(dest, name);
+                WriteFilled(src, 320 * 1024, (byte)(0x30 + i));
+                files.Add(Record(name, src, dst, new FileInfo(src).Length));
+            }
+
+            var result = await AdaptiveCopyProbe.MeasureAsync(files, CancellationToken.None);
+            Assert.False(result.Failed);
+            Assert.NotEmpty(result.Samples);
+            Assert.All(result.Samples, sample => Assert.True(sample.Seconds < AdaptiveCopyPolicy.ProbeMinSampleSeconds, sample.Mode + " took " + sample.Seconds.ToString("0.000") + "s"));
+            Assert.Equal(AdaptiveCopyMode.Sequential, result.Mode);
+            Assert.Equal(AdaptiveCopyMode.Sequential, AdaptiveCopyPolicy.ChooseFromSamples(result.Samples));
+            var line = AdaptiveCopyLog.ProbeLine(result.Samples, result.ElapsedSeconds, result.Mode);
+            Assert.Contains("too fast to measure this destination", line);
+            Assert.Contains("staying on one stream", line);
+            Assert.Contains("Chose one stream", line);
+            Assert.DoesNotContain("Chose 2 files", line);
+            Assert.DoesNotContain("Chose 4 files", line);
+            Assert.Empty(Directory.EnumerateFiles(dest, "*", SearchOption.AllDirectories));
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    private static void AssertSamplePaths(
+        ProbeResult result,
+        AdaptiveCopyMode mode,
+        int names,
+        IReadOnlyList<FileRecord> files)
+    {
+        var sample = Assert.Single(result.Samples, s => s.Mode == mode);
+        var paths = sample.TestPaths.Split('|', StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal(names, paths.Length);
+        Assert.Equal(names, paths.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        Assert.True(sample.Bytes > 0);
+        Assert.True(sample.Seconds >= 0);
+        var finals = new HashSet<string>(files.Select(f => Path.GetFullPath(f.DestPath)), StringComparer.OrdinalIgnoreCase);
+        var copiedLeaf = "already-copied.bin";
+        foreach (var path in paths)
+        {
+            var leaf = Path.GetFileName(path);
+            Assert.Matches(@"^.+\.mercury-speed-test\.tmp\.[0-9a-fA-F]{32}$", leaf);
+            Assert.DoesNotContain(finals, final => string.Equals(final, path, StringComparison.OrdinalIgnoreCase));
+            Assert.False(leaf.StartsWith(copiedLeaf, StringComparison.OrdinalIgnoreCase));
+            var folder = Path.GetDirectoryName(path);
+            Assert.Contains(files.Where(f => f.Status != FileCopyStatus.Copied), file =>
+                string.Equals(Path.GetDirectoryName(Path.GetFullPath(file.DestPath)), folder, StringComparison.OrdinalIgnoreCase)
+                && leaf.StartsWith(Path.GetFileName(file.DestPath) + AdaptiveCopyProbe.SpeedTestMarker, StringComparison.Ordinal));
+        }
+
+        Assert.DoesNotContain(paths, path => Path.GetFileName(path).StartsWith(copiedLeaf, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static FileRecord Record(string relative, string source, string dest, long size) => new()
+    {
+        RelativePath = relative,
+        SourcePath = source,
+        DestPath = dest,
+        Size = size,
+        LastWriteUtc = DateTime.UtcNow,
+        Status = FileCopyStatus.Pending
+    };
+
+    private static void WriteFilled(string path, int size, byte fill)
+    {
+        var data = new byte[size];
+        Array.Fill(data, fill);
+        File.WriteAllBytes(path, data);
     }
 }
