@@ -279,6 +279,22 @@ public static class ProgressHeader
         return string.IsNullOrWhiteSpace(message) ? status.ToString() : message;
     }
 
+    /// <summary>
+    /// True when the status line only restates the file already shown on the current-file bar
+    /// (for example "Copying dest\file.zip").
+    /// </summary>
+    public static bool IsCurrentFileCopyStatus(string? message, string? currentFile)
+    {
+        if (string.IsNullOrWhiteSpace(message) || string.IsNullOrWhiteSpace(currentFile))
+        {
+            return false;
+        }
+
+        var path = currentFile.Trim();
+        return message.StartsWith("Copying ", StringComparison.OrdinalIgnoreCase)
+            && message.Contains(path, StringComparison.OrdinalIgnoreCase);
+    }
+
     public static string HeaderResult(Job job) => HeaderStatus(job.ResultMessage, job.Status);
 
     public static string DescribeFileError(Exception ex)

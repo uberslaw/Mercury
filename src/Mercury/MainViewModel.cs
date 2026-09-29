@@ -717,7 +717,17 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
     }
     public Brush ResultBrush { get => _resultBrush; set => SetField(ref _resultBrush, value); }
-    public string CurrentFile { get => _currentFile; set => SetField(ref _currentFile, value); }
+    public string CurrentFile
+    {
+        get => _currentFile;
+        set
+        {
+            if (SetField(ref _currentFile, value))
+            {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowHeaderStatus)));
+            }
+        }
+    }
     public ProgressStats JobStats
     {
         get => _jobStats;
@@ -796,7 +806,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool ShowHeaderStatus =>
         ShowProgressDetail
         && !string.IsNullOrWhiteSpace(StatusText)
-        && !ProgressHeader.IsExceptionDump(StatusText);
+        && !ProgressHeader.IsExceptionDump(StatusText)
+        && !ProgressHeader.IsCurrentFileCopyStatus(StatusText, CurrentFile);
     public bool ShowHeaderRundown => false;
     public bool ShowProgressDetail =>
         IsRunning

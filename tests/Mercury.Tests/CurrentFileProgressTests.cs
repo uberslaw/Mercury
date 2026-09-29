@@ -3,6 +3,21 @@ namespace Mercury.Tests;
 public class CurrentFileProgressTests
 {
     [Fact]
+    public void HeaderStatusHidesCopyingFilenameAlreadyOnTheFileBar()
+    {
+        Assert.True(ProgressHeader.IsCurrentFileCopyStatus(
+            @"Copying Warren Truss\compressed\warren.zip",
+            @"Warren Truss\compressed\warren.zip"));
+        Assert.True(ProgressHeader.IsCurrentFileCopyStatus(
+            @"Copying clip.mkv (already compressed)",
+            "clip.mkv"));
+        Assert.False(ProgressHeader.IsCurrentFileCopyStatus("Copying…", "clip.mkv"));
+        Assert.False(ProgressHeader.IsCurrentFileCopyStatus("Unpacking…", "clip.mkv"));
+        Assert.False(ProgressHeader.IsCurrentFileCopyStatus("Paused.", "clip.mkv"));
+        Assert.False(ProgressHeader.IsCurrentFileCopyStatus(@"Copying clip.mkv", ""));
+    }
+
+    [Fact]
     public void JobProgressPercentIsFileFractionWhenSizeKnown()
     {
         var progress = new JobProgress

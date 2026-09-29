@@ -354,6 +354,8 @@ public class ProgressStatsLayoutTests
                 var vm = new MainViewModel(paths);
                 vm.JobPercent = 40;
                 vm.OverallPercent = 28;
+                vm.CurrentFile = @"Warren Truss\clip.mkv";
+                vm.StatusText = @"Copying Warren Truss\clip.mkv";
                 vm.JobStats = ProgressStats.From(new JobProgress
                 {
                     Status = JobStatus.Copying,
@@ -386,6 +388,12 @@ public class ProgressStatsLayoutTests
                 WpfSta.Flush();
 
                 Assert.True(vm.ShowOverallProgress);
+                Assert.False(vm.ShowHeaderStatus);
+                Assert.Equal(Visibility.Collapsed, window.HeaderStatusText.Visibility);
+                Assert.DoesNotContain(
+                    FindVisualChildren<TextBlock>(window.ProgressHeaderRoot)
+                        .Where(t => t.IsVisible && t.ActualHeight > 0),
+                    t => (t.Text ?? "").Contains("Copying Warren Truss", StringComparison.Ordinal));
                 Assert.True(window.HeaderFileProgressBar.ActualHeight > 0);
                 Assert.Equal(42, window.HeaderFileProgressBar.Value, 1);
                 Assert.Contains("clip.mkv", window.HeaderFileProgressText.Text, StringComparison.Ordinal);
@@ -407,6 +415,24 @@ public class ProgressStatsLayoutTests
                 Assert.True(Math.Abs(thisKeyX - etaKeyX) < 1.5, $"file clock keys must start on the same X ({thisKeyX} vs {etaKeyX})");
                 Assert.True(Math.Abs(thisColonX - etaColonX) < 1.5, $"file clock colons must share an X ({thisColonX} vs {etaColonX})");
 
+                var titleY = TopY(window.HeaderProgressTitle, window);
+                var elapsedY = TopY(window.HeaderElapsedPair, window);
+                var etaClockY = TopY(window.HeaderEtaPair, window);
+                var chipY = TopY(window.HeaderProgressChip, window);
+                Assert.True(Math.Abs(titleY - elapsedY) < 10, $"Progress and Elapsed must share a row ({titleY} vs {elapsedY})");
+                Assert.True(Math.Abs(elapsedY - etaClockY) < 10, $"Elapsed and ETA must share a row ({elapsedY} vs {etaClockY})");
+                Assert.True(Math.Abs(titleY - chipY) < 10, "the status chip sits on the Progress title row");
+                Assert.True(RightX(window.HeaderProgressTitle, window) < LeftX(window.HeaderProgressChip, window));
+                Assert.True(RightX(window.HeaderProgressChip, window) < LeftX(window.HeaderElapsedPair, window));
+                Assert.True(RightX(window.HeaderElapsedPair, window) <= LeftX(window.HeaderEtaPair, window) + 1);
+
+                var chipStyle = Assert.IsType<Style>(System.Windows.Application.Current.FindResource("QueueStatusChip"));
+                var headerChips = FindVisualChildren<Border>(window.ProgressHeaderRoot)
+                    .Where(b => Equals(b.Style, chipStyle) && b.IsVisible && b.ActualHeight > 0)
+                    .ToArray();
+                Assert.Single(headerChips);
+                Assert.Same(window.HeaderProgressChip, headerChips[0]);
+
                 var currentLeft = LeftX(window.HeaderCurrentProgressBar, window);
                 var fileLeft = LeftX(window.HeaderFileProgressBar, window);
                 var currentLabelLeft = LeftX(window.HeaderCurrentLabel, window);
@@ -414,7 +440,10 @@ public class ProgressStatsLayoutTests
                 var fileRight = RightX(window.HeaderFileProgressBar, window);
                 var overallLeft = LeftX(window.HeaderOverallProgressBar, window);
                 Assert.True(Math.Abs(currentLeft - fileLeft) < 1.5, $"file bar left {fileLeft} must match Current {currentLeft}");
-                Assert.True(Math.Abs(currentLabelLeft - clocksKeyLeft) < 10, $"file clock keys left {clocksKeyLeft} must match Current label {currentLabelLeft}");
+                Assert.True(Math.Abs(currentLeft - clocksKeyLeft) < 10, $"file clock keys left {clocksKeyLeft} must match the Current bar {currentLeft}");
+                Assert.True(currentLabelLeft + 1 >= currentLeft, "Current label sits inside the Current bar, not on a row above");
+                Assert.True(InsideVertically(window.HeaderCurrentLabel, window.HeaderCurrentProgressBar, window), "Current is an overlay on its bar");
+                Assert.True(InsideVertically(window.HeaderOverallLabel, window.HeaderOverallProgressBar, window), "Overall is an overlay on its bar");
                 Assert.True(clocksKeyLeft + 4 < overallLeft, "file clocks stay in the Current column, not under Overall");
                 Assert.True(
                     Math.Abs(window.HeaderCurrentProgressBar.ActualWidth - window.HeaderFileProgressBar.ActualWidth) < 2,
@@ -432,6 +461,7 @@ public class ProgressStatsLayoutTests
                 var fileTop = TopY(window.HeaderFileProgressBar, window);
                 Assert.True(clocksTop + 1 >= currentBottom, "This file / File ETA sit under the Current bar");
                 Assert.True(clocksBottom <= fileTop + 1, "This file / File ETA sit just above the file bar");
+                Assert.True(clocksTop + 1 >= BottomY(window.HeaderCurrentLabel, window), "Current is not a label row above the clocks");
             }
             finally
             {
@@ -703,6 +733,10 @@ public class ProgressStatsLayoutTests
 
     private static double BottomY(FrameworkElement element, Visual ancestor) =>
         element.TransformToAncestor(ancestor).Transform(new WpfPoint(0, element.ActualHeight)).Y;
+
+    private static bool InsideVertically(FrameworkElement inner, FrameworkElement outer, Visual ancestor) =>
+        TopY(inner, ancestor) + 1 >= TopY(outer, ancestor)
+        && BottomY(inner, ancestor) <= BottomY(outer, ancestor) + 1;
 
     private static IEnumerable<T> FindVisualChildren<T>(DependencyObject root)
         where T : DependencyObject

@@ -393,6 +393,10 @@ public class TransferRundownTests
         Assert.Contains("more expands the rest as aligned columns", progress.Body, StringComparison.Ordinal);
         Assert.Contains("Job n of m is which queue item", progress.Body, StringComparison.Ordinal);
         Assert.Contains("Elapsed and ETA sit in the top-right", progress.Body, StringComparison.Ordinal);
+        Assert.Contains("share one top row", progress.Body, StringComparison.Ordinal);
+        Assert.Contains("name on the left of the bar", progress.Body, StringComparison.Ordinal);
+        Assert.Contains("not repeated as a status line", progress.Body, StringComparison.Ordinal);
+        Assert.DoesNotContain("Elapsed above ETA", progress.Body, StringComparison.Ordinal);
         Assert.Contains("Keys are bold", progress.Body, StringComparison.Ordinal);
         Assert.Contains("job 2 of 2 at <1% cannot show Overall 100%", progress.Body, StringComparison.Ordinal);
         Assert.Contains("Start, Pause, Pause after this file, and Stop sit under the current-file bar", progress.Body, StringComparison.Ordinal);

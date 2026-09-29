@@ -28,40 +28,45 @@
             </StatusBar>
         </Border>
 
-        <Border DockPanel.Dock="Top" Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="HeaderBrush">
-            <Border Background="{DynamicResource HeaderBrush}" Padding="10,6" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
+        <Border x:Name="ProgressHeaderRoot" DockPanel.Dock="Top" Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="HeaderBrush">
+            <Border Background="{DynamicResource HeaderBrush}" Padding="10,4" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
                 <StackPanel>
                     <Grid Margin="0,0,0,2">
                         <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Body">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="Progress" FontWeight="SemiBold" VerticalAlignment="Center"
-                                           Foreground="{DynamicResource OnHeaderBrush}"
-                                           FontFamily="{DynamicResource BodyFontFamily}" FontSize="{DynamicResource BodyFontSize}"
-                                           Margin="0,0,10,0"/>
-                                <Border Style="{StaticResource QueueStatusChip}" Margin="0"
-                                        DataContext="{Binding HeaderStatusChip}"
-                                        Visibility="{Binding DataContext.ShowProgressDetail, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource InverseBoolToVis}}"
-                                        local:ThemeChrome.Keys="QueueStatusTransferBrush,QueueStatusVerifyBrush,QueueStatusCompleteBrush,QueueStatusErrorBrush,QueueStatusPausedBrush,QueueStatusPauseAfterBrush,QueueStatusQueuedBrush">
-                                    <TextBlock Text="{Binding TileStatus}" FontWeight="SemiBold"
-                                               Foreground="{DynamicResource TextBrush}"/>
-                                </Border>
-                            </StackPanel>
+                        <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Body"
+                                VerticalAlignment="Center">
+                            <TextBlock x:Name="HeaderProgressTitle" Text="Progress" FontWeight="SemiBold" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource OnHeaderBrush}"
+                                       FontFamily="{DynamicResource BodyFontFamily}" FontSize="{DynamicResource BodyFontSize}"
+                                       Margin="0,0,10,0"/>
                         </Border>
-                        <StackPanel Grid.Column="1" HorizontalAlignment="Right" Grid.IsSharedSizeScope="True">
+                        <Border x:Name="HeaderProgressChip" Grid.Column="1" Style="{StaticResource QueueStatusChip}"
+                                Margin="0" VerticalAlignment="Center"
+                                DataContext="{Binding HeaderStatusChip}"
+                                local:ThemeChrome.Keys="QueueStatusTransferBrush,QueueStatusVerifyBrush,QueueStatusCompleteBrush,QueueStatusErrorBrush,QueueStatusPausedBrush,QueueStatusPauseAfterBrush,QueueStatusQueuedBrush">
+                            <TextBlock Text="{Binding TileStatus}" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextBrush}"/>
+                        </Border>
+                        <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
                             <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Label,Value,Progress"
-                                    Visibility="{Binding ShowHeaderElapsed, Converter={StaticResource BoolToVis}}">
-                                <local:StatPairText DataContext="{Binding HeaderElapsed}"
-                                                    KeySizeGroup="HeaderClockKey"
+                                    Visibility="{Binding ShowHeaderElapsed, Converter={StaticResource BoolToVis}}"
+                                    Margin="0,0,16,0" VerticalAlignment="Center">
+                                <local:StatPairText x:Name="HeaderElapsedPair"
+                                                    DataContext="{Binding HeaderElapsed}"
+                                                    KeySizeGroup="HeaderClockElapsed"
                                                     Foreground="{DynamicResource OnHeaderBrush}"/>
                             </Border>
                             <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Label,Value,Progress"
-                                    Visibility="{Binding ShowHeaderEta, Converter={StaticResource BoolToVis}}">
-                                <local:StatPairText DataContext="{Binding HeaderEta}"
-                                                    KeySizeGroup="HeaderClockKey"
+                                    Visibility="{Binding ShowHeaderEta, Converter={StaticResource BoolToVis}}"
+                                    VerticalAlignment="Center">
+                                <local:StatPairText x:Name="HeaderEtaPair"
+                                                    DataContext="{Binding HeaderEta}"
+                                                    KeySizeGroup="HeaderClockEta"
                                                     Foreground="{DynamicResource OnHeaderBrush}"/>
                             </Border>
                         </StackPanel>
@@ -77,38 +82,8 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
-                            <Border local:ThemeChrome.Keys="OnHeaderBrush,Body">
-                                <Border.Style>
-                                    <Style TargetType="Border" BasedOn="{StaticResource ChromeHighlight}">
-                                        <Setter Property="Grid.ColumnSpan" Value="1"/>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding ShowOverallProgress}" Value="False">
-                                                <Setter Property="Grid.ColumnSpan" Value="3"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Border.Style>
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock x:Name="HeaderCurrentLabel" Text="Current" FontWeight="SemiBold" Margin="0,0,10,2" VerticalAlignment="Center"
-                                               Foreground="{DynamicResource OnHeaderBrush}"
-                                               FontFamily="{DynamicResource BodyFontFamily}" FontSize="{DynamicResource BodyFontSize}"/>
-                                    <Border Style="{StaticResource QueueStatusChip}" Margin="0,0,0,2"
-                                            DataContext="{Binding DataContext.HeaderStatusChip, RelativeSource={RelativeSource AncestorType=Window}}"
-                                            local:ThemeChrome.Keys="QueueStatusTransferBrush,QueueStatusVerifyBrush,QueueStatusCompleteBrush,QueueStatusErrorBrush,QueueStatusPausedBrush,QueueStatusPauseAfterBrush,QueueStatusQueuedBrush">
-                                        <TextBlock Text="{Binding TileStatus}" FontWeight="SemiBold"
-                                                   Foreground="{DynamicResource TextBrush}"/>
-                                    </Border>
-                                </StackPanel>
-                            </Border>
-                            <Border Grid.Column="2" Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Body"
-                                    Visibility="{Binding ShowOverallProgress, Converter={StaticResource BoolToVis}}">
-                                <TextBlock Text="Overall" FontWeight="SemiBold" Margin="0,0,0,2"
-                                           Foreground="{DynamicResource OnHeaderBrush}"
-                                           FontFamily="{DynamicResource BodyFontFamily}" FontSize="{DynamicResource BodyFontSize}"/>
-                            </Border>
-                            <Grid Grid.Row="1">
+                            <Grid x:Name="HeaderCurrentBarHost">
                                 <Grid.Style>
                                     <Style TargetType="Grid">
                                         <Setter Property="Grid.ColumnSpan" Value="1"/>
@@ -119,7 +94,7 @@
                                         </Style.Triggers>
                                     </Style>
                                 </Grid.Style>
-                                <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="HeaderBarFillBrush,HeaderBarTrackBrush">
+                                <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="HeaderBarFillBrush,HeaderBarTrackBrush,OnHeaderBrush">
                                     <ProgressBar x:Name="HeaderCurrentProgressBar"
                                                  Value="{Binding JobPercent, Mode=OneWay}" Maximum="100"
                                                  Height="{DynamicResource HeaderProgressBarHeight}"
@@ -127,14 +102,20 @@
                                                  Foreground="{DynamicResource HeaderBarFillBrush}"
                                                  Background="{DynamicResource HeaderBarTrackBrush}"/>
                                 </Border>
+                                <TextBlock x:Name="HeaderCurrentLabel" Text="Current" FontWeight="SemiBold"
+                                           HorizontalAlignment="Left" VerticalAlignment="Center"
+                                           Margin="8,0" IsHitTestVisible="False"
+                                           Foreground="{DynamicResource OnHeaderBrush}"
+                                           FontFamily="{DynamicResource ProgressFontFamily}"
+                                           FontSize="{DynamicResource ProgressFontSize}"/>
                                 <TextBlock Text="{Binding JobPercentText}" HorizontalAlignment="Center" VerticalAlignment="Center"
                                            FontWeight="SemiBold" IsHitTestVisible="False"
                                            Foreground="{DynamicResource OnHeaderBrush}"
                                            FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}"/>
                             </Grid>
-                            <Grid Grid.Row="1" Grid.Column="2"
+                            <Grid x:Name="HeaderOverallBarHost" Grid.Column="2"
                                   Visibility="{Binding ShowOverallProgress, Converter={StaticResource BoolToVis}}">
-                                <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="HeaderBarFillBrush,HeaderBarTrackBrush">
+                                <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="HeaderBarFillBrush,HeaderBarTrackBrush,OnHeaderBrush">
                                     <ProgressBar x:Name="HeaderOverallProgressBar"
                                                  Value="{Binding OverallPercent, Mode=OneWay}" Maximum="100"
                                                  Height="{DynamicResource HeaderProgressBarHeight}"
@@ -142,14 +123,20 @@
                                                  Foreground="{DynamicResource HeaderBarFillBrush}"
                                                  Background="{DynamicResource HeaderBarTrackBrush}"/>
                                 </Border>
+                                <TextBlock x:Name="HeaderOverallLabel" Text="Overall" FontWeight="SemiBold"
+                                           HorizontalAlignment="Left" VerticalAlignment="Center"
+                                           Margin="8,0" IsHitTestVisible="False"
+                                           Foreground="{DynamicResource OnHeaderBrush}"
+                                           FontFamily="{DynamicResource ProgressFontFamily}"
+                                           FontSize="{DynamicResource ProgressFontSize}"/>
                                 <TextBlock Text="{Binding OverallPercentText}" HorizontalAlignment="Center" VerticalAlignment="Center"
                                            FontWeight="SemiBold" IsHitTestVisible="False"
                                            Foreground="{DynamicResource OnHeaderBrush}"
                                            FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}"/>
                             </Grid>
                             <StackPanel x:Name="HeaderFileClockPanel"
-                                        Grid.Row="2"
-                                        Margin="0,6,0,0"
+                                        Grid.Row="1"
+                                        Margin="0,4,0,0"
                                         HorizontalAlignment="Left"
                                         Grid.IsSharedSizeScope="True">
                                 <StackPanel.Style>
@@ -176,7 +163,7 @@
                                 </Border>
                             </StackPanel>
                             <Grid x:Name="HeaderFileProgressHost"
-                                  Grid.Row="3"
+                                  Grid.Row="2"
                                   Margin="0,2,0,2"
                                   UseLayoutRounding="True"
                                   SnapsToDevicePixels="True"
@@ -224,7 +211,7 @@
                         </Grid>
                         <local:ProgressStatsLine DataContext="{Binding HeaderStats}" Foreground="{DynamicResource OnHeaderBrush}"/>
                         <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Progress">
-                            <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" Margin="0,2,0,0"
+                            <TextBlock x:Name="HeaderStatusText" Text="{Binding StatusText}" TextWrapping="Wrap" Margin="0,2,0,0"
                                        Foreground="{DynamicResource OnHeaderBrush}"
                                        FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}"
                                        Visibility="{Binding ShowHeaderStatus, Converter={StaticResource BoolToVis}}"/>
@@ -248,13 +235,7 @@
                                        Visibility="{Binding CloudWarning, Converter={StaticResource BoolToVis}}"/>
                         </Border>
                     </StackPanel>
-                    <WrapPanel Margin="0,8,0,0">
-                        <Border Style="{StaticResource QueueStatusChip}" Margin="0,0,12,0" VerticalAlignment="Center"
-                                DataContext="{Binding HeaderStatusChip}"
-                                local:ThemeChrome.Keys="QueueStatusTransferBrush,QueueStatusVerifyBrush,QueueStatusCompleteBrush,QueueStatusErrorBrush,QueueStatusPausedBrush,QueueStatusPauseAfterBrush,QueueStatusQueuedBrush">
-                            <TextBlock Text="{Binding TileStatus}" FontWeight="SemiBold"
-                                       Foreground="{DynamicResource TextBrush}"/>
-                        </Border>
+                    <WrapPanel x:Name="HeaderRunButtons" Margin="0,6,0,0">
                         <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="AccentBrush,AccentForegroundBrush">
                             <Button Content="{Binding StartButtonLabel}" Style="{StaticResource AccentButton}"
                                     Command="{Binding StartCommand}"
