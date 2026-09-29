@@ -391,16 +391,17 @@ public sealed class JobScheduler : IDisposable
 
             try
             {
-                if (job.Status is JobStatus.Completed or JobStatus.Incomplete or JobStatus.Failed
-                    || (job.Status == JobStatus.Cancelled && !keepHeartbeat))
+                var hb = SafeTotals(journal);
+                var percent = hb.Bytes > 0 ? 100.0 * hb.DoneBytes / hb.Bytes : 0;
+                var terminal = job.Status is JobStatus.Completed or JobStatus.Incomplete or JobStatus.Failed
+                    || (job.Status == JobStatus.Cancelled && !keepHeartbeat);
+                if (terminal || (!JobHeartbeat.HasCopyProgress(percent, null, job) && hb.DoneFiles == 0))
                 {
                     JobHeartbeat.Clear(journal);
                 }
                 else
                 {
-                    var hb = SafeTotals(journal);
-                    var percent = hb.Bytes > 0 ? 100.0 * hb.DoneBytes / hb.Bytes : 0;
-                    JobHeartbeat.Write(journal, job.Id, percent, null);
+                    JobHeartbeat.Write(journal, job, percent, null);
                 }
             }
             catch
@@ -756,17 +757,37 @@ public sealed class JobScheduler : IDisposable
         }
 
         var dir = _paths.JobDirectory(jobId);
+        JobJournal? journal = null;
         try
         {
             if (JobJournal.Exists(dir))
             {
-                using var journal = JobJournal.Open(dir);
-                JobHeartbeat.Clear(journal);
+                journal = JobJournal.Open(dir);
             }
         }
         catch
         {
-            // next launch may prompt again if the sidecar could not be cleared
+            // sidecar still has to go even if job.db is locked by another instance
+        }
+
+        try
+        {
+            if (journal is not null)
+            {
+                JobHeartbeat.Clear(journal);
+            }
+            else
+            {
+                JobHeartbeat.ClearSidecar(dir, jobId);
+            }
+        }
+        catch
+        {
+            JobHeartbeat.ClearSidecar(dir, jobId);
+        }
+        finally
+        {
+            journal?.Dispose();
         }
     }
 

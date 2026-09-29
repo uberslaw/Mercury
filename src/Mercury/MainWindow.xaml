@@ -372,67 +372,35 @@
             </TabItem>
             <TabItem x:Name="QueueTab" Header="Queue">
                 <DockPanel Margin="12">
-                    <GroupBox DockPanel.Dock="Top" Header="Add to queue" Margin="0,0,0,8">
-                        <StackPanel>
-                            <TextBlock Text="Enqueue another job without changing the running transfer’s Source/Dest. Set Job Options on this tab (independent of Transfer). Add to queue never starts the job."
-                                       TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,8"/>
-                            <local:JobPathsPanel x:Name="QueuePaths"
-                                                 SourcePath="{Binding QueueSourcePath, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}"
-                                                 DestPath="{Binding QueueDestPath, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}"
-                                                 DestKindIndex="{Binding QueueDestKindIndex, Mode=TwoWay}"
-                                                 DestIsFolder="{Binding QueueDestIsFolder}"
-                                                 DestIsCatcher="{Binding QueueDestIsCatcher}"
-                                                 HasSourceFolders="{Binding HasQueueSourceFolders}"
-                                                 IncludeSourceFolderName="{Binding QueueDraft.IncludeSourceFolderName, Mode=TwoWay}"
-                                                 LandingPreview="{Binding QueueLandingPreview}"
-                                                 ShowLandingPreview="{Binding ShowQueueLandingPreview}"
-                                                 RecentSources="{Binding RecentSources}"
-                                                 RecentDestinations="{Binding RecentDestinations}"
-                                                 SourceFolders="{Binding QueueSourceFolders}"
-                                                 CatcherTemplates="{Binding CatcherTemplates}"
-                                                 SelectedCatcherTemplate="{Binding QueueSelectedCatcherTemplate, Mode=TwoWay}"
-                                                 BrowseSourceCommand="{Binding BrowseQueueSourceCommand}"
-                                                 AddSourceCommand="{Binding AddQueueSourceCommand}"
-                                                 ClearSourcesCommand="{Binding ClearQueueSourcesCommand}"
-                                                 RemoveSourceCommand="{Binding RemoveQueueSourceCommand}"
-                                                 BrowseDestCommand="{Binding BrowseQueueDestCommand}"
-                                                 Margin="0,0,0,8"/>
-                            <ItemsControl ItemsSource="{Binding QueueDraftBadges}"
-                                          ItemTemplate="{StaticResource OptionBadgeChip}"
-                                          Visibility="{Binding HasQueueDraftBadges, Converter={StaticResource BoolToVis}}"
-                                          Margin="0,0,0,8">
-                                <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate>
-                                        <WrapPanel/>
-                                    </ItemsPanelTemplate>
-                                </ItemsControl.ItemsPanel>
-                            </ItemsControl>
-                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                <Button Content="Job Options" Style="{StaticResource ToolbarButton}"
-                                        Command="{Binding OpenQueueDraftOptionsCommand}"
-                                        ToolTip="Speed, Window, retries, overwrite, verify, Dry Run, Small Files, wrap, RoboFlags, Start After, Catcher template — stored on the job you Add."/>
-                                <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="ButtonBrush,ButtonForegroundBrush">
-                                    <Button Content="Add to queue" Style="{StaticResource ToolbarButton}"
-                                            Command="{Binding QueueAddToQueueCommand}"/>
-                                </Border>
-                            </StackPanel>
-                        </StackPanel>
-                    </GroupBox>
-                    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                    <DockPanel x:Name="QueueToolbar" DockPanel.Dock="Top" Margin="0,0,0,8">
                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                             <Button Content="Pause all" Style="{StaticResource ToolbarButton}" Command="{Binding PauseAllCommand}"/>
                             <Button Content="Resume all" Style="{StaticResource ToolbarButton}" Command="{Binding ResumeAllCommand}"/>
                             <Button Content="Resume last" Style="{StaticResource ToolbarButton}" Command="{Binding ResumeLastCommand}" Margin="0"/>
+                        </StackPanel>
+                        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Margin="0,0,12,0">
+                            <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="ButtonBrush,ButtonForegroundBrush">
+                                <Button Content="Add job" Style="{StaticResource ToolbarButton}"
+                                        Command="{Binding OpenQueueDraftOptionsCommand}"
+                                        ToolTip="Opens Source, Dest, and Job Options. Add to queue in that window stores the row and does not start it."/>
+                            </Border>
+                            <Button Content="Job Options" Style="{StaticResource ToolbarButton}"
+                                    Command="{Binding OpenSelectedQueueJobOptionsCommand}"
+                                    ToolTip="Edit the selected job’s options."/>
                         </StackPanel>
                         <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="MutedBrush">
                             <TextBlock Text="Queued, running, and finished jobs" VerticalAlignment="Center"
                                        Foreground="{DynamicResource MutedBrush}"/>
                         </Border>
                     </DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Text="Add job sets Source, Dest, and options in a window. It does not start the transfer."
+                               TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,8"/>
                     <TextBlock DockPanel.Dock="Top" Text="No jobs in the queue." Opacity="0.7" Margin="0,8,0,8"
                                Visibility="{Binding HasQueueJobs, Converter={StaticResource InverseBoolToVis}}"/>
-                    <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="QueueBackgroundBrush"
+                    <Border x:Name="QueueListHost"
+                            Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="QueueBackgroundBrush"
                             MinHeight="160"
+                            VerticalAlignment="Stretch"
                             Visibility="{Binding HasQueueJobs, Converter={StaticResource BoolToVis}}">
                     <ListBox x:Name="QueueList"
                              ItemsSource="{Binding QueueJobs}"

@@ -1222,9 +1222,22 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             return;
         }
 
-        var job = _scheduler.TryLoadJob(dirty.JobId) ?? _scheduler.TryLoadLastJob();
+        var job = _scheduler.TryLoadJob(dirty.JobId);
+        var decision = JobHeartbeat.Decide(dirty, job, _scheduler.Queue);
+        if (decision == DirtyResumeDecision.SkipKeep)
+        {
+            return;
+        }
+
+        if (decision == DirtyResumeDecision.SkipClear)
+        {
+            _scheduler.ClearDirtyHeartbeat(dirty.JobId);
+            return;
+        }
+
         if (job is null)
         {
+            _scheduler.ClearDirtyHeartbeat(dirty.JobId);
             return;
         }
 
@@ -1239,13 +1252,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         ApplyRundown(job);
         var answer = MessageBox.Show(
             owner,
-            JobHeartbeat.UnscheduledStopMessage(dirty),
+            JobHeartbeat.UnscheduledStopMessage(dirty, job),
             "Mercury",
             MessageBoxButton.YesNo,
             MessageBoxImage.Question);
         if (answer != MessageBoxResult.Yes)
         {
-            DeclineDirtyResume(job.Id);
+            DeclineDirtyResume(dirty.JobId);
             return;
         }
 

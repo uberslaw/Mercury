@@ -48,9 +48,9 @@ public partial class MainWindow : Window
             Close();
         };
         TransferPaths.SourceDrop += Source_Drop;
+        // Queue Source/Dest live in JobOptionsWindow (Add job), not on the Queue tab.
         TransferPaths.DestDrop += Dest_Drop;
         TransferPaths.PassphraseChanged += OnPanelPassphraseChanged;
-        QueuePaths.PassphraseChanged += OnPanelPassphraseChanged;
     }
 
     private MainViewModel Vm => (MainViewModel)DataContext;
@@ -85,11 +85,6 @@ public partial class MainWindow : Window
         {
             LeaveThemeSession();
             Vm.PrepareQueueForm();
-            if (QueuePaths?.PassphraseBox is not null && TransferPaths?.PassphraseBox is not null)
-            {
-                QueuePaths.PassphraseBox.Password = TransferPaths.PassphraseBox.Password;
-            }
-
             return;
         }
 
@@ -216,17 +211,39 @@ public partial class MainWindow : Window
 
     private void OpenJobOptions(JobOptionsForm form)
     {
+        var paths = form.ShowAddToQueue ? Vm : null;
         if (_jobOptions is { IsLoaded: true })
         {
+            _jobOptions.Paths = paths;
             _jobOptions.Bind(form);
+            SyncDraftPassphrase();
             _jobOptions.Activate();
             return;
         }
 
-        _jobOptions = new JobOptionsWindow(form) { Owner = this };
-        _jobOptions.Closed += (_, _) => _jobOptions = null;
+        _jobOptions = new JobOptionsWindow(form) { Owner = this, Paths = paths };
+        _jobOptions.DraftPaths.PassphraseChanged += OnPanelPassphraseChanged;
+        SyncDraftPassphrase();
+        _jobOptions.Closed += (_, _) =>
+        {
+            if (_jobOptions is { } closing)
+            {
+                closing.DraftPaths.PassphraseChanged -= OnPanelPassphraseChanged;
+            }
+
+            _jobOptions = null;
+        };
         PlaceBeside(this, _jobOptions, 12);
         _jobOptions.Show();
+    }
+
+    private void SyncDraftPassphrase()
+    {
+        if (_jobOptions?.DraftPaths.PassphraseBox is not null
+            && TransferPaths?.PassphraseBox is not null)
+        {
+            _jobOptions.DraftPaths.PassphraseBox.Password = TransferPaths.PassphraseBox.Password;
+        }
     }
 
     private static void PlaceBeside(Window owner, Window child, double gap)

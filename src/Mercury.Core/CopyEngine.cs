@@ -87,7 +87,6 @@ public sealed class CopyEngine : ICopyEngine
             reporter.Enter(CopyStageKind.PreparingDestination, JobStatus.Preparing,
                 catcher is null ? "Preparing destination…" : "Preparing Catcher send…");
             journal.SaveJob(job);
-            JobHeartbeat.Write(journal, job.Id, 0, null);
             await PreflightAsync(job, mappings, mapping, log, name, cancellationToken).ConfigureAwait(false);
 
             if (!hasJournal)
@@ -1752,7 +1751,14 @@ public sealed class CopyEngine : ICopyEngine
                 {
                     var totals = journal.Totals();
                     var percent = totals.Bytes > 0 ? 100.0 * totals.DoneBytes / totals.Bytes : 0;
-                    JobHeartbeat.Write(journal, job.Id, percent, pause.CurrentFilePath);
+                    if (!JobHeartbeat.HasCopyProgress(percent, pause.CurrentFilePath, job)
+                        && totals.DoneFiles == 0
+                        && totals.DoneBytes == 0)
+                    {
+                        continue;
+                    }
+
+                    JobHeartbeat.Write(journal, job, percent, pause.CurrentFilePath);
                 }
                 catch (OperationCanceledException)
                 {

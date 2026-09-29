@@ -4,6 +4,17 @@ namespace Mercury;
 
 public partial class JobOptionsWindow : Window
 {
+    public static readonly DependencyProperty PathsProperty = DependencyProperty.Register(
+        nameof(Paths),
+        typeof(MainViewModel),
+        typeof(JobOptionsWindow));
+
+    public MainViewModel? Paths
+    {
+        get => (MainViewModel?)GetValue(PathsProperty);
+        set => SetValue(PathsProperty, value);
+    }
+
     public JobOptionsWindow(JobOptionsForm form)
     {
         InitializeComponent();

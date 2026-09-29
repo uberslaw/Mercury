@@ -1,4 +1,5 @@
 using System.IO;
+using System.Windows;
 
 namespace Mercury.Wpf.Tests;
 
@@ -87,6 +88,66 @@ public class ResumeLastPromptTests
                 {
                     // leftover
                 }
+            }
+        });
+    }
+
+    [Fact]
+    public void OfferDirtyResume_StaleZeroPercent_ClearsWithoutPrompt()
+    {
+        WpfSta.Run(() =>
+        {
+            WpfSta.EnsureApp();
+            var root = Path.Combine(Path.GetTempPath(), "mercury-stale-zero-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(root);
+            MainWindow? window = null;
+            MainViewModel? vm = null;
+            try
+            {
+                var paths = new AppPaths(root);
+                var leftover = new Job
+                {
+                    Name = "Anchor Span",
+                    SourcePath = Path.Combine(root, "Anchor Span"),
+                    DestinationPath = Path.Combine(root, "EngA"),
+                    Status = JobStatus.Incomplete
+                };
+                using (var journal = JobJournal.Create(paths.JobDirectory(leftover.Id), leftover))
+                {
+                    JobHeartbeat.Write(journal, leftover, 0, null);
+                }
+
+                AppSettingsStore.SaveLastJobId(paths, leftover.Id);
+                QueueStore.Save(paths, [leftover]);
+                vm = new MainViewModel(paths);
+                Assert.NotNull(JobHeartbeat.FindDirty(paths));
+                window = new MainWindow(vm)
+                {
+                    Width = 900,
+                    Height = 600,
+                    WindowStartupLocation = WindowStartupLocation.Manual,
+                    Left = -4000,
+                    Top = 0
+                };
+                window.Show();
+                WpfSta.Flush();
+                Assert.Null(JobHeartbeat.FindDirty(paths));
+                Assert.Contains(
+                    leftover.SourcePath,
+                    JobHeartbeat.UnscheduledStopMessage(
+                        JobHeartbeat.Create(leftover.Id, 0, null, leftover.SourcePath, leftover.DestinationPath),
+                        leftover),
+                    StringComparison.Ordinal);
+            }
+            finally
+            {
+                try { window?.Close(); } catch { /* window already disposed the VM */ }
+                if (window is null)
+                {
+                    vm?.Dispose();
+                }
+
+                try { Directory.Delete(root, true); } catch { /* leftover */ }
             }
         });
     }

@@ -306,7 +306,7 @@ public class JobOptionBadgeTests
         Assert.Contains("Ignore Storage Limit", badges);
         Assert.Contains("Hold", badges);
         Assert.DoesNotContain("Verify Quick", badges);
-        Assert.DoesNotContain("Unlimited speed", badges, StringComparer.OrdinalIgnoreCase);
+        Assert.Contains("Unlimited speed", badges, StringComparer.OrdinalIgnoreCase);
     }
 }
 

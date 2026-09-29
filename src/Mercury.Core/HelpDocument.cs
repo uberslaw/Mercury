@@ -117,7 +117,7 @@ public static class HelpDocument
                 "MB/s or Mbps (Global) switches Speed between MB/s and Mbps (1 MB/s = 8 Mbps). " +
                 "Job n of m is which queue item (example: 3 of 3). Stage is that job’s pipeline step: enumerate, copy, verify, writing rundown. " +
                 "With no running or resumable job the header stays collapsed — no 0/0 files or empty rundown. A part-way last job still shows its last percent and counts so you can Resume last. " +
-                "If launch asks to resume an unscheduled stop and you choose No, that snapshot is cleared: Progress is idle (Not started), Current is empty, and Start is not Resume unless you later Resume last or a queue row. The finished/incomplete job can stay in the Queue. " +
+                "If launch asks to resume an unscheduled stop, the prompt names Source → Dest, the percent, and the time. Choose No to drop that leftover heartbeat so the next launch stays quiet. Yes resumes that named job — not a different catch-up already running. A 0% start that never copied, or a stopped/incomplete job with 0 files, is cleared without asking. " +
                 "When two or more jobs are in the queue, the stats table includes Overall files (example: Files: 12/400). " +
                 "Job: 2 of 5 is the running job’s place in the listed queue (omitted when there is a single job). " +
                 "Stats sit under the bars in a table (key: value), including the current File name. Other status text (Paused, Stopping, Unpacking) still lives in this header — the Transfer tab no longer repeats them. " +
@@ -156,12 +156,11 @@ public static class HelpDocument
             Id = "queue",
             Title = "Queue tab",
             Body =
-                "Jobs wait here until you Start them, or until the previous job finishes (queue drain). Add to queue never auto-starts. " +
-                "An empty queue shows one line: No jobs in the queue. Each job is a tile: order #, source → dest, status (Pending / Transferring / Verifying / Rundown / Paused / On hold / Stopped / Done), flag badges, and per-tile Start / Resume / Pause / Stop (plus Hold, Job Options, Remove, Up, Down). Resume on a row starts that stopped, incomplete, paused, or pending job (the chip switches to Preparing) — it is not a dead control; a disabled Resume explains why in its tooltip. " +
-                "Job Options on a tile pops out the same fields as Transfer (speed, Window, retries, overwrite, verify, Dry Run, Small Files, Skip Compressed, Extensions…, Ignore Storage Limit, Start After, RoboFlags, Include source folder name, Catcher template). " +
+                "This tab is the job list. Add job opens Source, Dest, and options in a window (same Job Options window as a row). Add to queue in that window stores a Pending row and never starts it. " +
+                "Select a row and Job Options (or the row’s Job Options) to edit that job. Multi-select is not available — edit one selected job at a time. " +
+                "An empty queue shows one line: No jobs in the queue. Each job is a tile: order #, source → dest, status (Pending / Transferring / Verifying / Rundown / Paused / On hold / Stopped / Done), flag badges for settings that are on (Dry Run, Ignore Storage Limit, Unlimited speed, Small Files, Skip Compressed, Window, Start After, and other non-defaults), and per-tile Start / Resume / Pause / Stop (plus Hold, Job Options, Remove, Up, Down). Resume on a row starts that stopped, incomplete, paused, or pending job (the chip switches to Preparing) — it is not a dead control; a disabled Resume explains why in its tooltip. " +
+                "Job Options pops out speed, Window, retries, overwrite, verify, Dry Run, Small Files, Skip Compressed, Extensions…, Ignore Storage Limit, Start After, RoboFlags, Include source folder name (Contents only when wrap is off), Catcher template. " +
                 "Those values are stored on the job you Add — they are not locked to the Transfer tab while a copy runs. " +
-                "Tiles show compact badges for non-default flags (Dry Run, Small Files, Ignore Storage Limit, Window, Hold, Catcher, Contents only when wrap is off). " +
-                "Source/Dest/Browse/Add on this tab stay enabled while a transfer is running — only Transfer-tab paths lock with the active job. " +
                 "One copy runs at a time, in listed order: after a job finishes copying, the first not-on-hold Pending job that is due starts next " +
                 "(a later job will not jump a not-due job ahead of it). Verifying and writing rundown for a finished copy continue in the background while the next copy starts. " +
                 "Queue status says Transferring for the job moving bytes, Verifying or Rundown for post-copy work — not a generic Running. " +

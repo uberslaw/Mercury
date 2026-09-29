@@ -317,6 +317,7 @@ public sealed class JobOptionsForm : INotifyPropertyChanged
             ? "Applies immediately to this running job."
             : "Saved on this queued job.";
         ShowAddToQueue = false;
+        ShowIncludeFolder = true;
     }
 
     public void PrepareDraft(
@@ -330,8 +331,9 @@ public sealed class JobOptionsForm : INotifyPropertyChanged
         ShowCatcherTemplate = destIsCatcher;
         CanEditCatcher = true;
         SelectedCatcherTemplate = catcher;
-        WindowTitle = "Job options — next queued job";
-        Hint = "These options are stored on the job you Add. They stay independent of the Transfer tab, so you can change them while a copy is running.";
+        WindowTitle = "Add job";
+        Hint = "Set Source, Dest, and options for the next queued job. Add to queue stores the row and does not start it. These stay independent of the Transfer tab.";
+        ShowIncludeFolder = false;
         SpeedToolTip = "Stored on the next job you Add to queue.";
         ShowAddToQueue = true;
         SetLandingPaths(sourcePath, destPath);

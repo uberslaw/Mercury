@@ -29,10 +29,12 @@ public static class JobOptionBadges
         if (o.PackAsZip)
         {
             badges.Add("Small Files");
-            if (!o.SkipCompressedWhenPacking)
-            {
-                badges.Add("Wrap compressed");
-            }
+            badges.Add(o.SkipCompressedWhenPacking ? "Skip Compressed" : "Wrap compressed");
+        }
+
+        if (o.MaxMegabytesPerSecond is null or <= 0)
+        {
+            badges.Add("Unlimited speed");
         }
 
         if (o.IgnoreFreeSpaceCheck)

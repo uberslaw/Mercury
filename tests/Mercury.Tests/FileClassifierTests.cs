@@ -229,10 +229,11 @@ public class JobHeartbeatTests
     {
         var data = Path.Combine(Path.GetTempPath(), "mercury-hb-" + Guid.NewGuid().ToString("N"));
         var paths = new AppPaths(data);
-        var job = new Job { Name = "hb" };
+        var src = Path.Combine(data, "Warren Truss");
+        var job = new Job { Name = "hb", SourcePath = src, DestinationPath = Path.Combine(data, "dest") };
         using (var journal = JobJournal.Create(paths.JobDirectory(job.Id), job))
         {
-            JobHeartbeat.Write(journal, job.Id, 42.4, "clip.mkv");
+            JobHeartbeat.Write(journal, job, 42.4, "clip.mkv");
             var read = JobHeartbeat.Read(journal, job.Id);
             Assert.NotNull(read);
             Assert.True(read!.Dirty);
@@ -243,7 +244,10 @@ public class JobHeartbeatTests
         var found = JobHeartbeat.FindDirty(paths);
         Assert.NotNull(found);
         Assert.Equal(job.Id, found!.JobId);
-        Assert.Contains("Unscheduled stop at 42%", JobHeartbeat.UnscheduledStopMessage(found), StringComparison.Ordinal);
+        var message = JobHeartbeat.UnscheduledStopMessage(found, job);
+        Assert.Contains("Unscheduled stop of", message, StringComparison.Ordinal);
+        Assert.Contains(src, message, StringComparison.Ordinal);
+        Assert.Contains("42%", message, StringComparison.Ordinal);
 
         using (var journal = JobJournal.Open(paths.JobDirectory(job.Id)))
         {
@@ -252,6 +256,119 @@ public class JobHeartbeatTests
 
         Assert.Null(JobHeartbeat.FindDirty(paths));
         try { Directory.Delete(data, true); } catch { /* leftover */ }
+    }
+
+    [Fact]
+    public void DecliningStaleZeroPercentHeartbeatDoesNotReappear()
+    {
+        var data = Path.Combine(Path.GetTempPath(), "mercury-hb-zero-" + Guid.NewGuid().ToString("N"));
+        var paths = new AppPaths(data);
+        var src = Path.Combine(data, "Anchor Span");
+        var dest = Path.Combine(data, "EngA");
+        var leftover = new Job
+        {
+            Name = "leftover",
+            SourcePath = src,
+            DestinationPath = dest,
+            Status = JobStatus.Incomplete,
+            SourceFiles = 0,
+            DestFiles = 0,
+            BytesCopied = 0
+        };
+        var catchUp = new Job
+        {
+            Name = "catch-up",
+            SourcePath = Path.Combine(data, "Warren Truss"),
+            DestinationPath = dest,
+            Status = JobStatus.Incomplete,
+            SourceFiles = 26000,
+            DestFiles = 23000,
+            BytesCopied = 1
+        };
+        try
+        {
+            using (var journal = JobJournal.Create(paths.JobDirectory(leftover.Id), leftover))
+            {
+                JobHeartbeat.Write(journal, leftover, 0, null);
+            }
+
+            var dirty = JobHeartbeat.FindDirty(paths);
+            Assert.NotNull(dirty);
+            Assert.Equal(leftover.Id, dirty!.JobId);
+            Assert.Contains(src, JobHeartbeat.UnscheduledStopMessage(dirty, leftover), StringComparison.Ordinal);
+            Assert.Equal(DirtyResumeDecision.SkipClear, JobHeartbeat.Decide(dirty, leftover, [leftover, catchUp]));
+
+            var scheduler = new JobScheduler(paths);
+            try
+            {
+                scheduler.ClearDirtyHeartbeat(leftover.Id);
+            }
+            finally
+            {
+                scheduler.Dispose();
+            }
+
+            Assert.Null(JobHeartbeat.FindDirty(paths));
+            Assert.False(File.Exists(JobHeartbeat.SidecarPath(paths.JobDirectory(leftover.Id))));
+        }
+        finally
+        {
+            try { Directory.Delete(data, true); } catch { /* leftover */ }
+        }
+    }
+
+    [Fact]
+    public void ClearSidecarWorksWithoutJournal()
+    {
+        var data = Path.Combine(Path.GetTempPath(), "mercury-hb-orphan-" + Guid.NewGuid().ToString("N"));
+        var paths = new AppPaths(data);
+        var dir = paths.JobDirectory("orphan");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(JobHeartbeat.SidecarPath(dir), """{"jobId":"orphan","dirty":true,"percent":0,"utc":"2026-09-21T07:03:00Z"}""");
+        Assert.NotNull(JobHeartbeat.FindDirty(paths));
+        JobHeartbeat.ClearSidecar(dir, "orphan");
+        Assert.Null(JobHeartbeat.FindDirty(paths));
+        try { Directory.Delete(data, true); } catch { /* leftover */ }
+    }
+
+    [Fact]
+    public void FreshPulseIsKeptNotOffered()
+    {
+        var dirty = JobHeartbeat.Create("live", 88, "clip.mkv", @"D:\Warren Truss", @"Z:\dest");
+        var job = new Job
+        {
+            Id = "live",
+            SourcePath = @"D:\Warren Truss",
+            DestinationPath = @"Z:\dest",
+            Status = JobStatus.Copying,
+            BytesCopied = 10,
+            SourceFiles = 100,
+            DestFiles = 80
+        };
+        Assert.Equal(DirtyResumeDecision.SkipKeep, JobHeartbeat.Decide(dirty, job, [job]));
+    }
+
+    [Fact]
+    public void OtherQueueJobSuppressesStaleHeartbeat()
+    {
+        var dirty = new JobHeartbeatState
+        {
+            JobId = "old",
+            Dirty = true,
+            Percent = 0,
+            Utc = DateTimeOffset.UtcNow.AddDays(-8)
+        };
+        var stale = new Job { Id = "old", Status = JobStatus.Cancelled, SourcePath = @"D:\old" };
+        var real = new Job
+        {
+            Id = "catch",
+            Status = JobStatus.Incomplete,
+            SourcePath = @"D:\Warren Truss",
+            SourceFiles = 20000,
+            DestFiles = 18000,
+            BytesCopied = 50
+        };
+        Assert.Equal(DirtyResumeDecision.SkipClear, JobHeartbeat.Decide(dirty, stale, [stale, real]));
     }
 
     [Fact]
