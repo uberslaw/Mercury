@@ -274,6 +274,11 @@ public sealed class JobProgress
     public int FilesTotal { get; init; }
     public int IssueCount { get; init; }
     public double BytesPerSecond { get; init; }
+    /// <summary>
+    /// True when <see cref="BytesPerSecond"/> is the copy-stage rate.
+    /// Zero then means no sample yet, not the whole job's bytes over elapsed time.
+    /// </summary>
+    public bool SpeedMeasured { get; init; }
     public TimeSpan? Eta { get; init; }
     public string? Message { get; init; }
     public bool CloudDestination { get; init; }

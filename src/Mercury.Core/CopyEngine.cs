@@ -787,9 +787,14 @@ public sealed class CopyEngine : ICopyEngine
             .Where(f => f.Status is FileCopyStatus.Pending or FileCopyStatus.Failed or FileCopyStatus.Deferred)
             .ToList();
         var largest = stream.Count == 0 ? 0 : stream.Max(f => f.Size);
+        speed.BeginStage();
+        reporter.Update(speed: speed);
         var adaptive = await AdaptiveCopyPlanner.PrepareAsync(
-                job, budget, stream, plan.HasPacking, largest, log, name, cancellationToken)
+                job, budget, stream, plan.HasPacking, largest, log, name,
+                (label, file) => reporter.ShowStatus(label, file),
+                cancellationToken)
             .ConfigureAwait(false);
+        speed.BeginStage();
         if (adaptive.UseBalancer)
         {
             await CopyPendingListAsync(
@@ -910,8 +915,12 @@ public sealed class CopyEngine : ICopyEngine
         var fileCount = Math.Max(pending.Count, totals.Files);
         var totalBytes = totals.Bytes;
         var mode = adaptive.Mode;
-        var baseline = adaptive.BaselineBps;
         var dropped = false;
+        var sustain = new AdaptiveSustainTracker();
+        var sustainClock = Stopwatch.StartNew();
+        var heartbeat = Stopwatch.StartNew();
+        sustain.Start(speed.Bytes, 0);
+        speed.BeginStage();
         Task? packTask = null;
         var active = new List<(FileRecord File, Task<CopyWork> Task)>();
         string? lastFinished = null;
@@ -982,16 +991,23 @@ public sealed class CopyEngine : ICopyEngine
                     .ConfigureAwait(false);
             }
 
-            if (!dropped && baseline > 1 && mode != AdaptiveCopyMode.Sequential &&
-                speed.Bytes >= AdaptiveCopyPolicy.FalloffBytes)
+            if (!dropped && mode != AdaptiveCopyMode.Sequential)
             {
-                var live = speed.EffectiveBytesPerSecond;
-                if (live > 1 && live < baseline * AdaptiveCopyPolicy.SpeedDropRatio)
+                var observed = sustain.Observe(speed.Bytes, sustainClock.Elapsed.TotalSeconds, mode);
+                if (observed.LockedBaseline)
                 {
+                    log.Info(job.Id, name, observed.LogLine ?? "Adaptive copy sustained the chosen mode.");
+                    AdaptiveCopyMemory.Remember(job.SourcePath, job.DestinationPath, mode, sustain.BaselineBps);
+                }
+
+                if (observed.DropToOneStream)
+                {
+                    var from = mode;
                     dropped = true;
                     mode = AdaptiveCopyMode.Sequential;
                     AdaptiveCopyMemory.Forget(job.SourcePath, job.DestinationPath);
-                    log.Info(job.Id, name, "Adaptive copy slowed down; one stream for the rest of this job.");
+                    log.Info(job.Id, name, AdaptiveCopyLog.WidthChange(
+                        from, mode, observed.LiveBps, observed.ComparisonBps, "parallel copy slowed down"));
                 }
             }
 
@@ -1028,6 +1044,7 @@ public sealed class CopyEngine : ICopyEngine
                 Mode = mode,
                 AdaptiveEnabled = true,
                 Capped = adaptive.Capped,
+                FellOff = dropped,
                 PendingFiles = queue.Count,
                 PendingCopyBytes = pendingBytes,
                 LargestPendingBytes = largest,
@@ -1064,7 +1081,35 @@ public sealed class CopyEngine : ICopyEngine
 
             if (active.Count > 0)
             {
-                await Task.WhenAny(active.Select(slot => slot.Task)).ConfigureAwait(false);
+                reporter.Update(step.Label, pause.CurrentFilePath, speed);
+            }
+
+            if (heartbeat.Elapsed.TotalSeconds >= AdaptiveCopyPolicy.HeartbeatSeconds)
+            {
+                heartbeat.Restart();
+                log.Info(job.Id, name, AdaptiveCopyLog.Heartbeat(
+                    step.Label, pause.InFlightPaths(), speed.WindowBytesPerSecond, speed.StageBytesPerSecond));
+            }
+
+            if (active.Count > 0)
+            {
+                using var wake = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                var delay = Task.Delay(TimeSpan.FromSeconds(AdaptiveCopyPolicy.HeartbeatSeconds), wake.Token);
+                var finished = await Task.WhenAny(active.Select(slot => slot.Task).Append(delay)).ConfigureAwait(false);
+                if (!ReferenceEquals(finished, delay))
+                {
+                    wake.Cancel();
+                }
+
+                try
+                {
+                    await delay.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    // a file finished before the next log line
+                }
+
                 continue;
             }
 
@@ -1367,9 +1412,14 @@ public sealed class CopyEngine : ICopyEngine
         if (!adaptiveResolved && job.Options.AdaptiveCopy)
         {
             var largestPending = pending.Count == 0 ? 0 : pending.Max(f => f.Size);
+            speed.BeginStage();
+            reporter.Update(speed: speed);
             adaptive = await AdaptiveCopyPlanner.PrepareAsync(
-                    job, budget, pending, overlapPlan?.HasPacking == true, largestPending, log, name, cancellationToken)
+                    job, budget, pending, overlapPlan?.HasPacking == true, largestPending, log, name,
+                    (label, file) => reporter.ShowStatus(label, file),
+                    cancellationToken)
                 .ConfigureAwait(false);
+            speed.BeginStage();
         }
 
         if (adaptive is { UseBalancer: true } plan)
@@ -1384,16 +1434,19 @@ public sealed class CopyEngine : ICopyEngine
         var deferred = new DeferredRetrySession(job, journal, log, name);
         var fileCount = Math.Max(pending.Count, totals.Files);
         var totalBytes = totals.Bytes;
+        var adaptiveOn = job.Options.AdaptiveCopy;
+        var heartbeat = Stopwatch.StartNew();
         foreach (var file in pending.ToList())
         {
             cancellationToken.ThrowIfCancellationRequested();
             await pause.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
             await WaitForHoursAsync(job, pause, log, name, reporter, cloud, cancellationToken).ConfigureAwait(false);
+            var fileStatus = adaptiveOn ? AdaptiveCopyPolicy.CopyingOneStream : $"Copying {file.RelativePath}";
             try
             {
                 if (ShouldSkip(file, job.Options))
                 {
-                    reporter.Update($"Copying {file.RelativePath}", file.RelativePath, speed);
+                    reporter.Update(fileStatus, file.RelativePath, speed);
                     TryJournal(journal, () => journal.MarkSkipped(file.RelativePath, "Destination is newer or equal"), log, job.Id, name);
                     log.Info(job.Id, name, $"Skip {file.RelativePath} (dest newer or equal)");
                     speed.Add(file.Size);
@@ -1401,7 +1454,16 @@ public sealed class CopyEngine : ICopyEngine
                 }
 
                 pause.BeginFile(file.RelativePath, file.Size);
-                reporter.Update($"Copying {file.RelativePath}", file.RelativePath, speed);
+                reporter.Update(fileStatus, file.RelativePath, speed);
+                if (adaptiveOn && heartbeat.Elapsed.TotalSeconds >= AdaptiveCopyPolicy.HeartbeatSeconds)
+                {
+                    heartbeat.Restart();
+                    log.Info(job.Id, name, AdaptiveCopyLog.Heartbeat(
+                        AdaptiveCopyPolicy.CopyingOneStream,
+                        pause.InFlightPaths(),
+                        speed.WindowBytesPerSecond,
+                        speed.StageBytesPerSecond));
+                }
                 var copied = await CopyWithRetriesAsync(job, file, journal, budget, pause, log, name, speed, cancellationToken, io)
                     .ConfigureAwait(false);
                 pause.EndFile();
@@ -2408,64 +2470,188 @@ public sealed class CopyEngine : ICopyEngine
 
 public sealed class SpeedTracker
 {
-    private readonly Stopwatch _clock = Stopwatch.StartNew();
+    public const double RecentWindowSeconds = 8;
+    public const long ThinWindowBytes = 4L * 1024 * 1024;
+
     private readonly object _lock = new();
+    private Func<long>? _now;
     private long _bytes;
+    private bool _stageOpen;
+    private long _stageBytes;
+    private long _stageStart;
     private long _windowBytes;
-    private long _windowStart = Stopwatch.GetTimestamp();
-    private double _bytesPerSecond;
+    private long _windowStart;
+    private long _lastWindowBytes;
+    private double _lastWindowBps;
+    private double _publishedBps;
+    private double _heldBps;
 
     public long Bytes => Interlocked.Read(ref _bytes);
-    public double BytesPerSecond
-    {
-        get
-        {
-            lock (_lock)
-            {
-                return _bytesPerSecond;
-            }
-        }
-        private set
-        {
-            lock (_lock)
-            {
-                _bytesPerSecond = value;
-            }
-        }
-    }
 
+    public double BytesPerSecond => EffectiveBytesPerSecond;
+
+    /// <summary>Recent window, or the stage rate when that window is only a gap between files.</summary>
     public double EffectiveBytesPerSecond
     {
         get
         {
-            var instant = BytesPerSecond;
-            if (instant >= 1)
+            lock (_lock)
             {
-                return instant;
-            }
+                if (_publishedBps >= 1)
+                {
+                    return _publishedBps;
+                }
 
-            return ByteFormatter.EffectiveRate(0, Bytes, _clock.Elapsed);
+                var stage = StageUnlocked();
+                return stage >= 1 ? stage : 0;
+            }
         }
     }
+
+    public double WindowBytesPerSecond
+    {
+        get
+        {
+            lock (_lock)
+            {
+                var elapsed = Elapsed(_windowStart, NowTicks());
+                if (elapsed >= 1 && _windowBytes > 0)
+                {
+                    return _windowBytes / elapsed;
+                }
+
+                if (_lastWindowBps >= 1)
+                {
+                    return _lastWindowBps;
+                }
+
+                return StageUnlocked();
+            }
+        }
+    }
+
+    public double StageBytesPerSecond
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return StageUnlocked();
+            }
+        }
+    }
+
+    /// <summary>Start the copy-stage clock. Probe bytes are not included. Does not run on a mode change.</summary>
+    public void BeginStage()
+    {
+        lock (_lock)
+        {
+            _stageOpen = true;
+            _stageBytes = 0;
+            _stageStart = NowTicks();
+            _windowBytes = 0;
+            _windowStart = _stageStart;
+            _lastWindowBytes = 0;
+            _lastWindowBps = 0;
+            _publishedBps = 0;
+            _heldBps = 0;
+        }
+    }
+
+    internal void SetClock(Func<long> now) => _now = now;
 
     public void Add(long count)
     {
+        if (count <= 0)
+        {
+            return;
+        }
+
         Interlocked.Add(ref _bytes, count);
         lock (_lock)
         {
-            _windowBytes += count;
-            var now = Stopwatch.GetTimestamp();
-            var elapsed = (now - _windowStart) / (double)Stopwatch.Frequency;
-            if (elapsed >= 0.5)
+            if (!_stageOpen)
             {
-                _bytesPerSecond = _windowBytes / elapsed;
+                _stageOpen = true;
+                _stageStart = NowTicks();
+                _windowStart = _stageStart;
+            }
+
+            _stageBytes += count;
+            _windowBytes += count;
+            var now = NowTicks();
+            var stageElapsed = Elapsed(_stageStart, now);
+            var windowElapsed = Elapsed(_windowStart, now);
+            var stageBps = stageElapsed >= 3 && _stageBytes > 0 ? _stageBytes / stageElapsed : 0;
+            if (windowElapsed >= RecentWindowSeconds)
+            {
+                var windowBps = _windowBytes / Math.Max(windowElapsed, 0.001);
+                _lastWindowBps = windowBps;
+                _lastWindowBytes = _windowBytes;
+                _publishedBps = ChooseDisplayedRate(windowBps, _windowBytes, stageBps, _heldBps);
+                if (_publishedBps >= 1)
+                {
+                    _heldBps = _publishedBps;
+                }
+
                 _windowBytes = 0;
                 _windowStart = now;
             }
-            else if (_clock.Elapsed.TotalSeconds > 0)
+            else if (_lastWindowBytes < ThinWindowBytes && stageBps >= 1)
             {
-                _bytesPerSecond = Bytes / _clock.Elapsed.TotalSeconds;
+                _publishedBps = stageBps;
+                _heldBps = stageBps;
             }
         }
     }
+
+    /// <summary>
+    /// A window that only caught a gap (a few MB or less) must not replace the stage rate.
+    /// A full window of a real slowdown still shows that slower rate.
+    /// </summary>
+    internal static double ChooseDisplayedRate(double windowBps, long windowBytes, double stageBps, double heldBps)
+    {
+        if (windowBytes < ThinWindowBytes)
+        {
+            if (stageBps >= 1)
+            {
+                return stageBps;
+            }
+
+            if (heldBps >= 1)
+            {
+                return heldBps;
+            }
+
+            return 0;
+        }
+
+        if (windowBps >= 1)
+        {
+            return windowBps;
+        }
+
+        if (stageBps >= 1)
+        {
+            return stageBps;
+        }
+
+        return heldBps >= 1 ? heldBps : 0;
+    }
+
+    private double StageUnlocked()
+    {
+        if (!_stageOpen || _stageBytes <= 0)
+        {
+            return 0;
+        }
+
+        var elapsed = Elapsed(_stageStart, NowTicks());
+        return elapsed < 0.001 ? 0 : _stageBytes / elapsed;
+    }
+
+    private long NowTicks() => _now?.Invoke() ?? Stopwatch.GetTimestamp();
+
+    private static double Elapsed(long start, long now) =>
+        now <= start ? 0 : (now - start) / (double)Stopwatch.Frequency;
 }

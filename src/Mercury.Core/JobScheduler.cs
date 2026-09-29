@@ -1125,7 +1125,11 @@ public sealed class JobScheduler : IDisposable
         var total = Math.Max(p.BytesTotal, totals.Bytes);
         var started = p.StartedUtc ?? job.StartedUtc;
         var elapsed = started is { } startAt ? DateTimeOffset.UtcNow - startAt : TimeSpan.Zero;
-        var rate = ByteFormatter.EffectiveRate(p.BytesPerSecond, copied, elapsed);
+        var rate = rundown
+            ? 0
+            : p.SpeedMeasured
+                ? p.BytesPerSecond
+                : ByteFormatter.EffectiveRate(p.BytesPerSecond, copied, elapsed);
         var filled = new JobProgress
         {
             JobId = p.JobId,
@@ -1142,7 +1146,8 @@ public sealed class JobScheduler : IDisposable
             FilesCopied = rundown ? p.FilesCopied : Math.Max(p.FilesCopied, totals.DoneFiles),
             FilesTotal = rundown ? p.FilesTotal : Math.Max(p.FilesTotal, totals.Files),
             IssueCount = Math.Max(p.IssueCount, totals.Failed),
-            BytesPerSecond = rundown ? 0 : rate,
+            BytesPerSecond = rate,
+            SpeedMeasured = p.SpeedMeasured,
             Eta = rundown ? p.Eta : EstimateEta(copied, total, rate),
             StageIndex = p.StageIndex,
             StageCount = p.StageCount,

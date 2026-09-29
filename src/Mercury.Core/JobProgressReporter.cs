@@ -16,6 +16,7 @@ public sealed class JobProgressReporter : IProgress<JobProgress>
     private DateTimeOffset _stageStarted = DateTimeOffset.UtcNow;
     private string? _message;
     private string? _current;
+    private string? _statusFile;
     private SpeedTracker? _speed;
     private double _reportedBps;
     private string? _typeSummary;
@@ -59,6 +60,7 @@ public sealed class JobProgressReporter : IProgress<JobProgress>
             _stageStarted = DateTimeOffset.UtcNow;
             _message = message;
             _current = null;
+            _statusFile = null;
             _job.Status = status;
         }
 
@@ -119,6 +121,17 @@ public sealed class JobProgressReporter : IProgress<JobProgress>
             {
                 _typeSummary = typeSummary;
             }
+        }
+
+        Push();
+    }
+
+    public void ShowStatus(string message, string? displayFile)
+    {
+        lock (_lock)
+        {
+            _message = message;
+            _statusFile = string.IsNullOrWhiteSpace(displayFile) ? null : displayFile;
         }
 
         Push();
@@ -198,18 +211,22 @@ public sealed class JobProgressReporter : IProgress<JobProgress>
         {
             var speed = _speed;
             var bytesCopied = speed?.Bytes > 0 ? speed.Bytes : _bytesCopied;
+            var measured = speed is not null;
             var bps = speed?.EffectiveBytesPerSecond ?? 0;
-            if (bps < 1 && _reportedBps >= 1)
+            if (!measured)
             {
-                bps = _reportedBps;
-            }
+                if (bps < 1 && _reportedBps >= 1)
+                {
+                    bps = _reportedBps;
+                }
 
-            if (bps < 1)
-            {
-                var elapsed = _job.StartedUtc is { } start
-                    ? DateTimeOffset.UtcNow - start
-                    : TimeSpan.Zero;
-                bps = ByteFormatter.EffectiveRate(0, bytesCopied, elapsed);
+                if (bps < 1)
+                {
+                    var elapsed = _job.StartedUtc is { } start
+                        ? DateTimeOffset.UtcNow - start
+                        : TimeSpan.Zero;
+                    bps = ByteFormatter.EffectiveRate(0, bytesCopied, elapsed);
+                }
             }
 
             snapshot = new JobProgress
@@ -228,6 +245,7 @@ public sealed class JobProgressReporter : IProgress<JobProgress>
                 FilesCopied = _filesCopied,
                 FilesTotal = _filesTotal,
                 BytesPerSecond = bps,
+                SpeedMeasured = measured,
                 IssueCount = _job.IssueCount,
                 StageIndex = _index,
                 StageCount = _stages.Count,
@@ -247,7 +265,15 @@ public sealed class JobProgressReporter : IProgress<JobProgress>
         var pausePath = _pause?.CurrentFilePath;
         if (!string.IsNullOrEmpty(pausePath))
         {
-            return CopyShape.ProgressRelative(_job, pausePath);
+            _statusFile = null;
+            var relative = CopyShape.ProgressRelative(_job, pausePath);
+            var others = Math.Max(0, (_pause?.InFlightCount ?? 1) - 1);
+            return AdaptiveCopyPolicy.WithOtherFiles(relative, others);
+        }
+
+        if (!string.IsNullOrWhiteSpace(_statusFile))
+        {
+            return _statusFile;
         }
 
         if (_kind is CopyStageKind.Transferring or CopyStageKind.Unpacking or CopyStageKind.Pushing)

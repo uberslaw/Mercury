@@ -77,6 +77,8 @@ public static class HelpDocument
                 "Job options → Extensions… opens that Settings window. Pack list wins over Skip Compressed; never-pack always copies as-is; other extensions keep automated classification. " +
                 "Leave Small Files off unless you want to force packing everything eligible.\n\n" +
                 "Adaptive copy (default on) times one stream against copying several files at once and against splitting one large file, and keeps a mode only when it is clearly faster. " +
+                "The progress header stays on that mode (Testing copy speed, Copying 2 files, Copying 4 files, Copying 2 ranges, or Copying one stream) and names the files in flight. " +
+                "A short probe burst is not the speed baseline. Mercury drops to one stream only when the sustained rate of the chosen mode later falls off, and the job log records the numbers. " +
                 "The winner is remembered for that source volume and destination volume. " +
                 "Packing, hashing, and verify of files already copied run in the gaps: a large file can move in slices while small files zip, unless several files at once was faster. " +
                 "A speed cap stays on one stream. Turn Adaptive copy off to force one stream. The tree rundown still follows the copy so the report includes every file.\n\n" +

@@ -130,7 +130,9 @@ public sealed class ProgressStats
             : StatPair.Empty;
 
         var walk = e.IsRundownStage || e.IsVerifyStage;
-        var rate = ByteFormatter.EffectiveRate(e.BytesPerSecond, e.BytesCopied, e.ElapsedAt(elapsedClock));
+        var rate = e.SpeedMeasured
+            ? e.BytesPerSecond
+            : ByteFormatter.EffectiveRate(e.BytesPerSecond, e.BytesCopied, e.ElapsedAt(elapsedClock));
         var eta = e.Eta;
         if (live && !walk && eta is null && rate >= 1 && e.BytesTotal > e.BytesCopied)
         {
@@ -141,6 +143,7 @@ public sealed class ProgressStats
             paused ? ByteFormatter.Speed(0, megabits)
             : !live ? "—"
             : walk ? FormatRundownSpeed(e.RundownPerSecond)
+            : e.SpeedMeasured && rate < 1 ? "—"
             : ByteFormatter.Speed(rate, megabits));
         var etaPair = new StatPair("ETA",
             !live || paused ? "—"
@@ -187,11 +190,15 @@ public sealed class ProgressStats
             ThisFile = thisFile,
             FileEta = fileEta,
             CurrentFilePercent = fileInFlight ? e.CurrentFilePercent : 0,
-            CurrentFileBarText = ProgressHeader.CurrentFileBarText(
-                e.CurrentFile,
-                e.CurrentFileBytesCopied,
-                e.CurrentFileBytesTotal,
-                fileInFlight),
+            CurrentFileBarText = fileInFlight
+                ? ProgressHeader.CurrentFileBarText(
+                    e.CurrentFile,
+                    e.CurrentFileBytesCopied,
+                    e.CurrentFileBytesTotal,
+                    fileInFlight)
+                : live && !walk && !string.IsNullOrWhiteSpace(e.CurrentFile)
+                    ? e.CurrentFile!
+                    : "—",
             Elapsed = elapsed,
             ThisStage = thisStage,
             Types = string.IsNullOrWhiteSpace(e.TypeSummary)

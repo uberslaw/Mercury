@@ -40,6 +40,33 @@ public sealed class PauseGate
         }
     }
 
+    public IReadOnlyList<string> InFlightPaths()
+    {
+        lock (_filesLock)
+        {
+            if (_inflight.Count == 0)
+            {
+                return [];
+            }
+
+            var list = new List<string>(_inflight.Count);
+            if (_filePath is not null && _inflight.ContainsKey(_filePath))
+            {
+                list.Add(_filePath);
+            }
+
+            foreach (var path in _inflight.Keys)
+            {
+                if (!list.Contains(path, StringComparer.OrdinalIgnoreCase))
+                {
+                    list.Add(path);
+                }
+            }
+
+            return list;
+        }
+    }
+
     public bool IsPaused => _paused != 0;
 
     public bool IsEffectivelyPaused => IsPaused || (Parent?.IsEffectivelyPaused ?? false);

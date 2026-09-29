@@ -38,6 +38,7 @@ internal sealed class BalanceInput
     public bool PackRunning { get; init; }
     public int CopyInFlight { get; init; }
     public int UnverifiedCopied { get; init; }
+    public bool FellOff { get; init; }
 }
 
 internal static class AdaptiveCopyPolicy
@@ -46,12 +47,25 @@ internal static class AdaptiveCopyPolicy
     public const long ProbeBytes = 128L * 1024 * 1024;
     public const long ProbeMinPendingBytes = 32L * 1024 * 1024;
     public const long PortionBytes = 64L * 1024 * 1024;
-    public const long FalloffBytes = 32L * 1024 * 1024;
+    /// <summary>Bytes of the chosen mode before its rate is the falloff baseline, and before a later chunk can drop width.</summary>
+    public const long SustainBytes = 128L * 1024 * 1024;
+    public const long FalloffBytes = SustainBytes;
     public const double WinRatio = 1.15;
     public const double SpeedDropRatio = 0.70;
     public const int MaxWorkers = 4;
     public const int VerifyBatchSize = 8;
     public const double ProbeMaxSeconds = 8;
+    public const double ProbeMinSeconds = 5;
+    /// <summary>One-stream probe rate this many times a later sample is a cache burst, not a baseline.</summary>
+    public const double ProbeBurstRatio = 2;
+    public const int HeartbeatSeconds = 30;
+
+    public const string TestingStatus = "Testing copy speed…";
+    public const string CopyingTwoFiles = "Copying 2 files";
+    public const string CopyingFourFiles = "Copying 4 files";
+    public const string CopyingTwoRanges = "Copying 2 ranges";
+    public const string CopyingOneStream = "Copying one stream";
+    public const string OneStreamSlowedDown = "One stream — parallel copy slowed down";
 
     public static bool IsCapped(Job job, BandwidthBudget budget) =>
         job.Options.MaxBytesPerSecond is > 0 || budget.GlobalMaxBytesPerSecond is > 0;
@@ -124,6 +138,93 @@ internal static class AdaptiveCopyPolicy
         }
 
         return best;
+    }
+
+    public static string ChooseWhy(IReadOnlyDictionary<AdaptiveCopyMode, double> bytesPerSecond, AdaptiveCopyMode chosen)
+    {
+        if (chosen == AdaptiveCopyMode.Sequential
+            || !bytesPerSecond.TryGetValue(AdaptiveCopyMode.Sequential, out var baseline)
+            || baseline < 1
+            || !bytesPerSecond.TryGetValue(chosen, out var rate)
+            || rate < baseline * WinRatio)
+        {
+            return "parallel was not 15% faster than one stream";
+        }
+
+        return "15% faster than one stream";
+    }
+
+    /// <summary>
+    /// A few-second probe, or a one-stream sample far above a later sample, is a cache burst.
+    /// Falloff never uses that number; it uses the sustained rate of the chosen mode.
+    /// </summary>
+    public static bool TrustProbeBaseline(double probeSeconds, double oneStreamBps, IReadOnlyList<ProbeSample> samples)
+    {
+        if (probeSeconds < ProbeMinSeconds || oneStreamBps < 1)
+        {
+            return false;
+        }
+
+        foreach (var sample in samples)
+        {
+            if (sample.Mode == AdaptiveCopyMode.Sequential || sample.BytesPerSecond < 1)
+            {
+                continue;
+            }
+
+            if (oneStreamBps > sample.BytesPerSecond * ProbeBurstRatio)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    public static string StatusFor(AdaptiveCopyMode mode, bool fellOff) => mode switch
+    {
+        AdaptiveCopyMode.Files4 => CopyingFourFiles,
+        AdaptiveCopyMode.Files2 => CopyingTwoFiles,
+        AdaptiveCopyMode.Ranges2 => CopyingTwoRanges,
+        _ => fellOff ? OneStreamSlowedDown : CopyingOneStream
+    };
+
+    public static string WithOtherFiles(string? primary, int others)
+    {
+        if (string.IsNullOrWhiteSpace(primary) || others <= 0)
+        {
+            return primary ?? "";
+        }
+
+        return others == 1
+            ? primary + " and 1 other file"
+            : primary + " and " + others.ToString(System.Globalization.CultureInfo.InvariantCulture) + " other files";
+    }
+
+    public static string ProbeFileLabel(IReadOnlyList<FileRecord> files)
+    {
+        var ranked = files.Where(f => f.Size > 0).OrderByDescending(f => f.Size).Take(MaxWorkers).ToList();
+        if (ranked.Count == 0)
+        {
+            return "";
+        }
+
+        return WithOtherFiles(ranked[0].RelativePath, ranked.Count - 1);
+    }
+
+    public static double Rate(long bytes, double seconds)
+    {
+        if (bytes <= 0)
+        {
+            return 0;
+        }
+
+        if (seconds < 0.001)
+        {
+            seconds = 0.001;
+        }
+
+        return bytes / seconds;
     }
 
     public static int Width(AdaptiveCopyMode mode) => mode switch
@@ -236,25 +337,30 @@ internal static class TransferBalancer
         }
 
         var packing = runPack || input.PackRunning;
-        var label = Label(width, stripe, packing, verify > 0 && !stripe && width <= 1);
+        var label = Label(width, stripe, packing, verify > 0 && !stripe && width <= 1, input.FellOff);
         return new BalancePlan(Math.Max(1, width), stripe, portion, runPack, verify, label);
     }
 
-    private static string Label(int width, bool stripe, bool packing, bool verifying)
+    private static string Label(int width, bool stripe, bool packing, bool verifying, bool fellOff)
     {
+        if (fellOff && !stripe)
+        {
+            return AdaptiveCopyPolicy.OneStreamSlowedDown;
+        }
+
         if (stripe)
         {
-            return packing ? "Copying 2 ranges and packing" : "Copying 2 ranges";
+            return packing ? "Copying 2 ranges and packing" : AdaptiveCopyPolicy.CopyingTwoRanges;
         }
 
         if (width >= 4)
         {
-            return "Copying 4 files";
+            return AdaptiveCopyPolicy.CopyingFourFiles;
         }
 
         if (width == 2)
         {
-            return "Copying 2 files";
+            return AdaptiveCopyPolicy.CopyingTwoFiles;
         }
 
         if (packing)
@@ -267,7 +373,7 @@ internal static class TransferBalancer
             return "Copying and verifying";
         }
 
-        return "Copying";
+        return AdaptiveCopyPolicy.CopyingOneStream;
     }
 }
 
@@ -458,6 +564,7 @@ internal static class AdaptiveCopyPlanner
         long largestPending,
         IJobLog log,
         string name,
+        Action<string, string?>? report,
         CancellationToken cancellationToken)
     {
         if (!job.Options.AdaptiveCopy)
@@ -468,24 +575,41 @@ internal static class AdaptiveCopyPlanner
         var capped = AdaptiveCopyPolicy.IsCapped(job, budget);
         var mode = AdaptiveCopyMode.Sequential;
         double baseline = 0;
+        var files = AdaptiveCopyPolicy.ProbeFileLabel(pending);
         if (capped)
         {
             log.Info(job.Id, name, "Adaptive copy: a speed cap is set, so this job stays on one stream.");
+            report?.Invoke(AdaptiveCopyPolicy.CopyingOneStream, null);
         }
         else if (AdaptiveCopyMemory.TryLookup(job.SourcePath, job.DestinationPath, out var remembered, out baseline))
         {
             mode = remembered;
             log.Info(job.Id, name, $"Adaptive copy: remembered {Describe(mode)} for this source and destination volume.");
+            report?.Invoke(AdaptiveCopyPolicy.StatusFor(mode, fellOff: false), null);
         }
         else if (AdaptiveCopyPolicy.ShouldProbe(pending))
         {
-            log.Info(job.Id, name, "Adaptive copy: testing one stream, several files, and a split large file.");
+            report?.Invoke(AdaptiveCopyPolicy.TestingStatus, string.IsNullOrEmpty(files) ? null : files);
             var measured = await AdaptiveCopyProbe.MeasureAsync(pending, cancellationToken).ConfigureAwait(false);
-            mode = measured.Mode;
-            baseline = measured.BaselineBps;
-            AdaptiveCopyMemory.Remember(job.SourcePath, job.DestinationPath, mode, baseline);
-            log.Info(job.Id, name,
-                $"Adaptive copy probe chose {Describe(mode)} (one-stream sample {ByteFormatter.ToString((long)baseline)}/s).");
+            if (measured.Failed || measured.Samples.Count == 0)
+            {
+                mode = AdaptiveCopyMode.Sequential;
+                log.Info(job.Id, name, "Adaptive copy probe failed; one stream.");
+            }
+            else
+            {
+                mode = measured.Mode;
+                // The probe rate is not the falloff baseline. The first sustained chunk of this mode is.
+                baseline = 0;
+                AdaptiveCopyMemory.Remember(job.SourcePath, job.DestinationPath, mode, 0);
+                log.Info(job.Id, name, AdaptiveCopyLog.ProbeLine(measured.Samples, measured.ElapsedSeconds, mode));
+            }
+
+            report?.Invoke(AdaptiveCopyPolicy.StatusFor(mode, fellOff: false), string.IsNullOrEmpty(files) ? null : files);
+        }
+        else
+        {
+            report?.Invoke(AdaptiveCopyPolicy.CopyingOneStream, null);
         }
 
         var use = AdaptiveCopyPolicy.UseBalancer(mode, capped, hasPack, largestPending, pending.Count);
@@ -501,50 +625,235 @@ internal static class AdaptiveCopyPlanner
     };
 }
 
+internal readonly record struct ProbeSample(AdaptiveCopyMode Mode, long Bytes, double Seconds)
+{
+    public double BytesPerSecond => AdaptiveCopyPolicy.Rate(Bytes, Seconds);
+}
+
+internal readonly record struct ProbeResult(
+    AdaptiveCopyMode Mode,
+    double OneStreamBps,
+    IReadOnlyList<ProbeSample> Samples,
+    double ElapsedSeconds,
+    bool Failed)
+{
+    public static ProbeResult Empty { get; } = new(AdaptiveCopyMode.Sequential, 0, [], 0, false);
+}
+
+internal readonly record struct SustainObservation(
+    bool LockedBaseline,
+    bool DropToOneStream,
+    double LiveBps,
+    double ComparisonBps,
+    string? LogLine);
+
+/// <summary>
+/// Falloff baseline is the first sustained chunk of the chosen mode, after the probe.
+/// A later chunk of the same size drops to one stream only when it is about 30% slower.
+/// </summary>
+internal sealed class AdaptiveSustainTracker
+{
+    private long _markBytes;
+    private double _markSeconds;
+    private bool _started;
+    private bool _locked;
+    private double _baselineBps;
+    private bool _dropped;
+
+    public bool BaselineLocked => _locked;
+    public double BaselineBps => _baselineBps;
+    public bool Dropped => _dropped;
+
+    public void Start(long sessionBytes, double elapsedSeconds)
+    {
+        _markBytes = sessionBytes;
+        _markSeconds = elapsedSeconds;
+        _started = true;
+        _locked = false;
+        _baselineBps = 0;
+        _dropped = false;
+    }
+
+    public SustainObservation Observe(long sessionBytes, double elapsedSeconds, AdaptiveCopyMode mode)
+    {
+        if (!_started || _dropped || mode == AdaptiveCopyMode.Sequential)
+        {
+            return default;
+        }
+
+        var chunkBytes = sessionBytes - _markBytes;
+        if (chunkBytes < AdaptiveCopyPolicy.SustainBytes)
+        {
+            return default;
+        }
+
+        var live = AdaptiveCopyPolicy.Rate(chunkBytes, elapsedSeconds - _markSeconds);
+        if (!_locked)
+        {
+            _locked = true;
+            _baselineBps = live;
+            _markBytes = sessionBytes;
+            _markSeconds = elapsedSeconds;
+            return new SustainObservation(
+                true,
+                false,
+                live,
+                live,
+                $"Adaptive copy sustained {AdaptiveCopyLog.Mbps(live)} over {ByteFormatter.ToString(chunkBytes)} in {AdaptiveCopyPlanner.Describe(mode)} (this is the baseline).");
+        }
+
+        var comparison = _baselineBps;
+        _markBytes = sessionBytes;
+        _markSeconds = elapsedSeconds;
+        if (live > 1 && comparison > 1 && live < comparison * AdaptiveCopyPolicy.SpeedDropRatio)
+        {
+            _dropped = true;
+            return new SustainObservation(false, true, live, comparison, null);
+        }
+
+        return new SustainObservation(false, false, live, comparison, null);
+    }
+}
+
+internal static class AdaptiveCopyLog
+{
+    public static string Mbps(double bytesPerSecond)
+    {
+        var mb = bytesPerSecond / (1024d * 1024d);
+        var format = Math.Abs(mb) >= 10 ? "0.0" : "0.00";
+        return mb.ToString(format, System.Globalization.CultureInfo.InvariantCulture) + " MB/s";
+    }
+
+    public static string ProbeLine(IReadOnlyList<ProbeSample> samples, double elapsedSeconds, AdaptiveCopyMode chosen)
+    {
+        var parts = new List<string>(samples.Count);
+        foreach (var sample in samples)
+        {
+            if (sample.Bytes <= 0 && sample.Seconds <= 0)
+            {
+                continue;
+            }
+
+            parts.Add(
+                $"{Short(sample.Mode)} {ByteFormatter.ToString(sample.Bytes)} in {Seconds(sample.Seconds)} ({Mbps(sample.BytesPerSecond)})");
+        }
+
+        var rates = new Dictionary<AdaptiveCopyMode, double>();
+        double oneStream = 0;
+        foreach (var sample in samples)
+        {
+            rates[sample.Mode] = sample.BytesPerSecond;
+            if (sample.Mode == AdaptiveCopyMode.Sequential)
+            {
+                oneStream = sample.BytesPerSecond;
+            }
+        }
+
+        var trusted = AdaptiveCopyPolicy.TrustProbeBaseline(elapsedSeconds, oneStream, samples);
+        var baseline = trusted
+            ? "Falloff uses the sustained rate of the chosen mode, not this probe."
+            : elapsedSeconds < AdaptiveCopyPolicy.ProbeMinSeconds
+                ? $"Probe {Seconds(elapsedSeconds)} is not the baseline."
+                : "One stream is well above a later sample, so the probe is not the baseline.";
+        var body = parts.Count == 0 ? "no sample" : string.Join("; ", parts);
+        return $"Adaptive copy probe: {body}. Chose {AdaptiveCopyPlanner.Describe(chosen)} ({AdaptiveCopyPolicy.ChooseWhy(rates, chosen)}). {baseline}";
+    }
+
+    public static string WidthChange(
+        AdaptiveCopyMode from,
+        AdaptiveCopyMode to,
+        double liveBps,
+        double comparisonBps,
+        string reason) =>
+        $"Adaptive copy: {AdaptiveCopyPlanner.Describe(from)} → {AdaptiveCopyPlanner.Describe(to)}, live {Mbps(liveBps)} vs {Mbps(comparisonBps)}, {reason}.";
+
+    public static string Heartbeat(
+        string modeLabel,
+        IReadOnlyList<string> paths,
+        double windowBps,
+        double averageBps)
+    {
+        string files;
+        if (paths.Count == 0)
+        {
+            files = "no file in flight";
+        }
+        else
+        {
+            var shown = paths.Count <= 4 ? paths : paths.Take(4).ToList();
+            files = string.Join(", ", shown);
+            if (paths.Count > 4)
+            {
+                files += " +" + (paths.Count - 4).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
+        }
+
+        return $"Adaptive copy: {modeLabel}, {files}, window {Mbps(windowBps)}, job {Mbps(averageBps)}.";
+    }
+
+    private static string Short(AdaptiveCopyMode mode) => mode switch
+    {
+        AdaptiveCopyMode.Files2 => "2 files",
+        AdaptiveCopyMode.Files4 => "4 files",
+        AdaptiveCopyMode.Ranges2 => "2 ranges",
+        _ => "one stream"
+    };
+
+    private static string Seconds(double seconds) =>
+        seconds.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + "s";
+}
+
 internal static class AdaptiveCopyProbe
 {
-    public static async Task<(AdaptiveCopyMode Mode, double BaselineBps)> MeasureAsync(
+    public static async Task<ProbeResult> MeasureAsync(
         IReadOnlyList<FileRecord> files,
         CancellationToken cancellationToken)
     {
         var existing = files.Where(f => f.Size > 0 && File.Exists(f.SourcePath)).ToList();
         if (existing.Count == 0)
         {
-            return (AdaptiveCopyMode.Sequential, 0);
+            return ProbeResult.Empty;
         }
 
         var sample = Math.Min(AdaptiveCopyPolicy.ProbeBytes, existing.Sum(f => f.Size));
         if (sample < 1024 * 1024)
         {
-            return (AdaptiveCopyMode.Sequential, 0);
+            return ProbeResult.Empty;
         }
 
         var dir = Path.Combine(Path.GetTempPath(), "mercury-probe-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
+        var clock = System.Diagnostics.Stopwatch.StartNew();
         try
         {
-            var measurements = new Dictionary<AdaptiveCopyMode, double>();
-            var baseline = await TimeOneStreamAsync(existing, sample, dir, cancellationToken).ConfigureAwait(false);
-            measurements[AdaptiveCopyMode.Sequential] = baseline;
+            var samples = new List<ProbeSample>();
+            var rates = new Dictionary<AdaptiveCopyMode, double>();
+            var one = await TimeOneStreamAsync(existing, sample, dir, cancellationToken).ConfigureAwait(false);
+            samples.Add(one);
+            rates[one.Mode] = one.BytesPerSecond;
             if (existing.Count >= 2)
             {
-                measurements[AdaptiveCopyMode.Files2] = await TimeFilesAsync(existing, 2, sample, dir, cancellationToken)
-                    .ConfigureAwait(false);
+                var two = await TimeFilesAsync(existing, 2, sample, dir, cancellationToken).ConfigureAwait(false);
+                samples.Add(two);
+                rates[two.Mode] = two.BytesPerSecond;
             }
 
             if (existing.Count >= 4)
             {
-                measurements[AdaptiveCopyMode.Files4] = await TimeFilesAsync(existing, 4, sample, dir, cancellationToken)
-                    .ConfigureAwait(false);
+                var four = await TimeFilesAsync(existing, 4, sample, dir, cancellationToken).ConfigureAwait(false);
+                samples.Add(four);
+                rates[four.Mode] = four.BytesPerSecond;
             }
 
             if (existing.Any(f => f.Size >= AdaptiveCopyPolicy.LargeFileBytes))
             {
-                measurements[AdaptiveCopyMode.Ranges2] = await TimeRangesAsync(existing, sample, dir, cancellationToken)
-                    .ConfigureAwait(false);
+                var ranges = await TimeRangesAsync(existing, sample, dir, cancellationToken).ConfigureAwait(false);
+                samples.Add(ranges);
+                rates[ranges.Mode] = ranges.BytesPerSecond;
             }
 
-            return (AdaptiveCopyPolicy.Choose(measurements), baseline);
+            clock.Stop();
+            return new ProbeResult(AdaptiveCopyPolicy.Choose(rates), one.BytesPerSecond, samples, clock.Elapsed.TotalSeconds, false);
         }
         catch (OperationCanceledException)
         {
@@ -552,7 +861,7 @@ internal static class AdaptiveCopyProbe
         }
         catch
         {
-            return (AdaptiveCopyMode.Sequential, 0);
+            return ProbeResult.Empty with { Failed = true };
         }
         finally
         {
@@ -567,7 +876,7 @@ internal static class AdaptiveCopyProbe
         }
     }
 
-    private static async Task<double> TimeOneStreamAsync(
+    private static async Task<ProbeSample> TimeOneStreamAsync(
         IReadOnlyList<FileRecord> files, long sample, string dir, CancellationToken cancellationToken)
     {
         var file = files.OrderByDescending(f => f.Size).First();
@@ -576,14 +885,15 @@ internal static class AdaptiveCopyProbe
         var copied = await CopySampleAsync(file.SourcePath, 0, Math.Min(sample, file.Size), dest, cancellationToken)
             .ConfigureAwait(false);
         clock.Stop();
-        return Rate(copied, clock.Elapsed.TotalSeconds);
+        return new ProbeSample(AdaptiveCopyMode.Sequential, copied, clock.Elapsed.TotalSeconds);
     }
 
-    private static async Task<double> TimeFilesAsync(
+    private static async Task<ProbeSample> TimeFilesAsync(
         IReadOnlyList<FileRecord> files, int width, long sample, string dir, CancellationToken cancellationToken)
     {
         var chosen = files.OrderByDescending(f => f.Size).Take(width).ToList();
         var each = Math.Max(1, sample / width);
+        var mode = width >= 4 ? AdaptiveCopyMode.Files4 : AdaptiveCopyMode.Files2;
         var clock = System.Diagnostics.Stopwatch.StartNew();
         var tasks = new Task<long>[chosen.Count];
         for (var i = 0; i < chosen.Count; i++)
@@ -596,10 +906,10 @@ internal static class AdaptiveCopyProbe
 
         var copied = await Task.WhenAll(tasks).ConfigureAwait(false);
         clock.Stop();
-        return Rate(copied.Sum(), clock.Elapsed.TotalSeconds);
+        return new ProbeSample(mode, copied.Sum(), clock.Elapsed.TotalSeconds);
     }
 
-    private static async Task<double> TimeRangesAsync(
+    private static async Task<ProbeSample> TimeRangesAsync(
         IReadOnlyList<FileRecord> files, long sample, string dir, CancellationToken cancellationToken)
     {
         var file = files.OrderByDescending(f => f.Size).First();
@@ -610,22 +920,7 @@ internal static class AdaptiveCopyProbe
         var second = CopySampleAsync(file.SourcePath, mid, count - mid, Path.Combine(dir, "r1.bin"), cancellationToken);
         var copied = await Task.WhenAll(first, second).ConfigureAwait(false);
         clock.Stop();
-        return Rate(copied.Sum(), clock.Elapsed.TotalSeconds);
-    }
-
-    private static double Rate(long bytes, double seconds)
-    {
-        if (bytes <= 0)
-        {
-            return 0;
-        }
-
-        if (seconds < 0.001)
-        {
-            seconds = 0.001;
-        }
-
-        return bytes / seconds;
+        return new ProbeSample(AdaptiveCopyMode.Ranges2, copied.Sum(), clock.Elapsed.TotalSeconds);
     }
 
     private static async Task<long> CopySampleAsync(
