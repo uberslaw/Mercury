@@ -82,6 +82,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private string _consoleSearch = "";
     private bool _followConsole = true;
     private string _statusText = "Pick a source and destination, then Start.";
+    private StatPair _copyModeReadout = StatPair.Empty;
     private string _resultBanner = "";
     private Brush _resultBrush = Brushes.Transparent;
     private string _currentFile = "";
@@ -768,6 +769,21 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             }
         }
     }
+
+    /// <summary>Mode actually in use. Updated only when that mode changes, not on byte or speed ticks.</summary>
+    public StatPair CopyModeReadout
+    {
+        get => _copyModeReadout;
+        private set
+        {
+            if (SetField(ref _copyModeReadout, value))
+            {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowCopyModeReadout)));
+            }
+        }
+    }
+
+    public bool ShowCopyModeReadout => _copyModeReadout.HasValue;
     public string ResultBanner
     {
         get => _resultBanner;
@@ -3276,6 +3292,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 ResultBrush = Brushes.Transparent;
             }
 
+            CopyModeReadout = StatPair.Empty;
             _progressJobId = e.JobId;
         }
 
@@ -3298,6 +3315,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         OverallPercent = ProgressHeader.ShowOverall(QueueJobs.Count) ? overall.Percent : JobPercent;
         CurrentFile = e.CurrentFile ?? CurrentFile;
         StatusText = ProgressHeader.HeaderStatus(e.Message, e.Status);
+        ApplyCopyModeReadout(e);
         OverallStats = ComposeStats(overall, includeStage: false);
         CloudWarning = e.CloudDestination;
         if (_closeAfterPause && e.Status == JobStatus.Paused)
@@ -3816,6 +3834,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         _resultLogJobId = null;
         JobPercent = 0;
         OverallPercent = 0;
+        CopyModeReadout = StatPair.Empty;
         JobStats = ProgressStats.Idle;
         OverallStats = ProgressStats.Idle;
         CurrentFile = "";
@@ -4047,6 +4066,55 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         QueueDraft.RaiseAddCanExecute();
     }
 
+    private void ApplyCopyModeReadout(JobProgress e)
+    {
+        if (HidesCopyModeReadout(e))
+        {
+            CopyModeReadout = StatPair.Empty;
+            return;
+        }
+
+        var next = CopyModeLabels.FromMessage(e.Message);
+        var forced = CopyModeLabels.ForHeader(_headerCopy.Mode);
+        if (forced is not null)
+        {
+            // 2 ranges on a file that cannot be split is one stream for that file.
+            // Other statuses stay on the width the user forced, including the
+            // moment before the copy loop applies it.
+            var tooSmall = forced == CopyModeLabels.TwoRanges
+                && e.Message is not null
+                && e.Message.Contains("too small to split", StringComparison.Ordinal);
+            CopyModeReadout = new StatPair(
+                CopyModeLabels.Label,
+                tooSmall ? CopyModeLabels.OneStream : forced);
+            return;
+        }
+
+        if (next is null)
+        {
+            return;
+        }
+
+        CopyModeReadout = new StatPair(CopyModeLabels.Label, next);
+    }
+
+    private static bool HidesCopyModeReadout(JobProgress e)
+    {
+        if (e.Status is JobStatus.Completed or JobStatus.Incomplete or JobStatus.Cancelled or JobStatus.Failed
+            or JobStatus.Preparing or JobStatus.Enumerating or JobStatus.Pending)
+        {
+            return true;
+        }
+
+        if (e.IsVerifyStage || e.IsRundownStage || e.IsBackgroundStage)
+        {
+            return true;
+        }
+
+        return e.StageName is "Unpacking" or "Sending over HTTPS" or "Packing"
+            or "Preparing destination" or "Preparing Catcher send";
+    }
+
     private void ChooseHeaderCopy(bool on, HeaderCopyMode mode)
     {
         if (_headerCopyApplying)
@@ -4070,6 +4138,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
         StatusText = line;
         _scheduler.SetHeaderCopyMode(mode, from);
+        var forced = CopyModeLabels.ForHeader(mode);
+        if (forced is not null && _lastProgress is { } live && !HidesCopyModeReadout(live))
+        {
+            CopyModeReadout = new StatPair(CopyModeLabels.Label, forced);
+        }
     }
 
     private void ResetHeaderCopyMode()

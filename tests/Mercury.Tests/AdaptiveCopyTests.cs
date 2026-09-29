@@ -440,17 +440,55 @@ public class AdaptiveCopyTests
         Assert.DoesNotContain("4 files", line);
         Assert.DoesNotContain("2 ranges", line);
 
+        Assert.StartsWith("Adaptive copy probe:", line);
+
         var beat = AdaptiveCopyLog.Heartbeat(
             "Copying 2 files",
             [@"Warren Truss\compressed\a.zip", @"Warren Truss\compressed\b.zip"],
             6.2 * 1024 * 1024,
             6.0 * 1024 * 1024);
-        Assert.Contains("Copying 2 files", beat);
+        Assert.Equal(30, AdaptiveCopyPolicy.HeartbeatSeconds);
+        Assert.StartsWith("2 files, ", beat);
+        Assert.DoesNotContain("Adaptive copy", beat);
         Assert.Contains(@"Warren Truss\compressed\a.zip", beat);
         Assert.Contains(@"Warren Truss\compressed\b.zip", beat);
         Assert.Contains("window ", beat);
         Assert.Contains("job ", beat);
         Assert.Contains("MB/s", beat);
+
+        var detailed = AdaptiveCopyLog.Heartbeat(
+            "Copying 2 files — adaptive → 2 files, adaptive turned off",
+            [@"Warren Truss\compressed\a.zip"],
+            10.1 * 1024 * 1024,
+            11.5 * 1024 * 1024);
+        Assert.StartsWith("2 files, ", detailed);
+        Assert.Contains("window 10.1 MB/s", detailed);
+        Assert.Contains("job 11.5 MB/s", detailed);
+        Assert.DoesNotContain("Adaptive copy", detailed);
+    }
+
+    [Fact]
+    public void CopyModeReadoutNamesTheModeInUseAndIgnoresOtherProgressText()
+    {
+        Assert.Equal("Copy mode", CopyModeLabels.Label);
+        Assert.Equal("Testing", CopyModeLabels.FromMessage(AdaptiveCopyPolicy.TestingStatus));
+        Assert.Equal("2 files", CopyModeLabels.FromMessage("Copying 2 files"));
+        Assert.Equal("4 files", CopyModeLabels.FromMessage("Copying 4 files — adaptive → 4 files, adaptive turned off"));
+        Assert.Equal("8 files", CopyModeLabels.FromMessage(AdaptiveCopyPolicy.CopyingEightFiles));
+        Assert.Equal("2 ranges", CopyModeLabels.FromMessage("Copying 2 ranges and packing"));
+        Assert.Equal("One stream", CopyModeLabels.FromMessage(AdaptiveCopyPolicy.CopyingOneStream));
+        Assert.Equal("One stream", CopyModeLabels.FromMessage(AdaptiveCopyPolicy.OneStreamSlowedDown));
+        Assert.Equal("One stream", CopyModeLabels.FromMessage("One stream — clip.mkv is too small to split"));
+        Assert.Null(CopyModeLabels.FromMessage(@"Copying Warren Truss\compressed\a.zip"));
+        Assert.Null(CopyModeLabels.FromMessage("Copy mode: adaptive → 2 files, adaptive turned off."));
+        Assert.Null(CopyModeLabels.FromMessage("Paused — outside hours"));
+        Assert.Null(CopyModeLabels.FromMessage(null));
+        Assert.Equal("2 files", CopyModeLabels.ForHeader(HeaderCopyMode.Files2));
+        Assert.Equal("4 files", CopyModeLabels.ForHeader(HeaderCopyMode.Files4));
+        Assert.Equal("8 files", CopyModeLabels.ForHeader(HeaderCopyMode.Files8));
+        Assert.Equal("2 ranges", CopyModeLabels.ForHeader(HeaderCopyMode.Ranges2));
+        Assert.Equal("One stream", CopyModeLabels.ForHeader(HeaderCopyMode.OneStream));
+        Assert.Null(CopyModeLabels.ForHeader(HeaderCopyMode.Adaptive));
     }
 
     [Fact]

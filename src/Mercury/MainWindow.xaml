@@ -64,6 +64,19 @@
                             <TextBlock Text="{Binding TileStatus}" FontWeight="SemiBold"
                                        Foreground="{DynamicResource TextBrush}"/>
                         </Border>
+                        <Border Grid.Column="2"
+                                Style="{StaticResource ChromeHighlight}"
+                                local:ThemeChrome.Keys="OnHeaderBrush,Label,Value,Progress"
+                                Visibility="{Binding ShowCopyModeReadout, Converter={StaticResource BoolToVis}}"
+                                Margin="16,0,12,0"
+                                HorizontalAlignment="Left"
+                                VerticalAlignment="Center"
+                                ToolTip="The mode this copy is using. Adaptive can stay checked while this shows what it chose.">
+                            <local:StatPairText x:Name="HeaderCopyModeReadout"
+                                                DataContext="{Binding CopyModeReadout}"
+                                                KeySizeGroup="HeaderCopyModeReadout"
+                                                Foreground="{DynamicResource OnHeaderBrush}"/>
+                        </Border>
                         <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
                             <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Label,Value,Progress"
                                     Visibility="{Binding ShowHeaderElapsed, Converter={StaticResource BoolToVis}}"

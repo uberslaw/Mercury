@@ -650,6 +650,77 @@ public static class HeaderCopy
         $"Copy mode: 2 ranges → one stream for {relative}, file is too small to split.";
 }
 
+/// <summary>
+/// Short label for the mode the copy is using. Separate from the Adaptive checkbox.
+/// </summary>
+public static class CopyModeLabels
+{
+    public const string Label = "Copy mode";
+    public const string Testing = "Testing";
+    public const string TwoFiles = "2 files";
+    public const string FourFiles = "4 files";
+    public const string EightFiles = "8 files";
+    public const string TwoRanges = "2 ranges";
+    public const string OneStream = "One stream";
+
+    /// <summary>
+    /// Map a progress status to the readout. Null when the message is not a mode
+    /// (a file name, a byte count, or a switch announcement), so those ticks leave the readout alone.
+    /// </summary>
+    public static string? FromMessage(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return null;
+        }
+
+        var text = message.Trim();
+        if (text.StartsWith(AdaptiveCopyPolicy.TestingStatus, StringComparison.Ordinal))
+        {
+            return Testing;
+        }
+
+        if (text.StartsWith(AdaptiveCopyPolicy.CopyingEightFiles, StringComparison.Ordinal))
+        {
+            return EightFiles;
+        }
+
+        if (text.StartsWith(AdaptiveCopyPolicy.CopyingFourFiles, StringComparison.Ordinal))
+        {
+            return FourFiles;
+        }
+
+        if (text.StartsWith(AdaptiveCopyPolicy.CopyingTwoFiles, StringComparison.Ordinal))
+        {
+            return TwoFiles;
+        }
+
+        if (text.StartsWith(AdaptiveCopyPolicy.CopyingTwoRanges, StringComparison.Ordinal))
+        {
+            return TwoRanges;
+        }
+
+        if (text.StartsWith(AdaptiveCopyPolicy.CopyingOneStream, StringComparison.Ordinal)
+            || text.StartsWith("One stream", StringComparison.Ordinal))
+        {
+            return OneStream;
+        }
+
+        return null;
+    }
+
+    /// <summary>Readout for a header checkbox. Null for Adaptive, which shows what the copy actually chose.</summary>
+    public static string? ForHeader(HeaderCopyMode mode) => mode switch
+    {
+        HeaderCopyMode.OneStream => OneStream,
+        HeaderCopyMode.Files2 => TwoFiles,
+        HeaderCopyMode.Files4 => FourFiles,
+        HeaderCopyMode.Files8 => EightFiles,
+        HeaderCopyMode.Ranges2 => TwoRanges,
+        _ => null
+    };
+}
+
 /// <summary>Mutually exclusive header choice. Checking one clears the others.</summary>
 public sealed class HeaderCopySelection
 {
@@ -961,7 +1032,8 @@ internal static class AdaptiveCopyLog
             }
         }
 
-        return $"Adaptive copy: {modeLabel}, {files}, window {Mbps(windowBps)}, job {Mbps(averageBps)}.";
+        var mode = CopyModeLabels.FromMessage(modeLabel) ?? modeLabel.Trim();
+        return $"{mode}, {files}, window {Mbps(windowBps)}, job {Mbps(averageBps)}.";
     }
 
     private static string Short(AdaptiveCopyMode mode) => mode switch

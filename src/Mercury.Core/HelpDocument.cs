@@ -78,8 +78,10 @@ public static class HelpDocument
                 "Leave Small Files off unless you want to force packing everything eligible.\n\n" +
                 "Adaptive copy (default on) times one stream against copying several files at once and against splitting one large file, and keeps a mode only when it is clearly faster. " +
                 "The progress header stays on that mode (Testing copy speed, Copying 2 files, Copying 4 files, Copying 2 ranges, or Copying one stream) and names the files in flight. " +
+                "A Copy mode readout on the top row shows the same choice in short form (Testing, 2 files, 4 files, 8 files, 2 ranges, or One stream) while the Adaptive checkbox can stay on. " +
                 "A short probe burst is not the speed baseline. Mercury drops to one stream only when the sustained rate of the chosen mode later falls off, and the job log records the numbers. " +
                 "The winner is remembered for that source volume and destination volume. " +
+                "The speed probe runs once when the copy stage starts, or is skipped when that route is already remembered. It does not run again every few files. About every 30 seconds the job log writes a status line — the mode, the files in flight, and the window and job speeds — which is not another probe. " +
                 "Packing, hashing, and verify of files already copied run in the gaps: a large file can move in slices while small files zip, unless several files at once was faster. " +
                 "A speed cap stays on one stream. Turn Adaptive copy off to force one stream. The tree rundown still follows the copy so the report includes every file.\n\n" +
                 "Ignore Storage Limit: still logs Need vs free space but does not abort on thin/growable volumes.\n\n" +
@@ -116,6 +118,7 @@ public static class HelpDocument
             Title = "Progress header",
             Body =
                 "The pink header is Progress. The Progress title, status chip, Elapsed, and ETA share one top row (Progress and the chip on the left; Elapsed and ETA sit in the top-right). " +
+                "Copy mode is a readout on that same top row, between the status chip and Elapsed. The label is Copy mode and the value is the mode actually in use: Testing, 2 files, 4 files, 8 files, 2 ranges, or One stream. It changes only when that mode changes, so bytes, speed, ETA, and the file name do not move it. " +
                 "Current and Overall bars stay on the next row for running, paused, stopped, and finished (Overall hides only when there is a single job). Each bar shows its name on the left of the bar and its percent in the middle — there is no separate Current / Overall label row. " +
                 "Below 1%, the label uses one decimal (0.1%) or <1% so a started job never shows 0%. " +
                 "Under those bars, This file (elapsed on this file) and File ETA share one line just above the current-file bar, left-aligned with the Current bar, with left-aligned keys and aligned colons. The current-file bar matches the Current bar’s width (it does not run under Overall); it fills as that file copies, and the landing-relative path (and percent when size is known) sits on the bar without a blur or glow. Between files, while idle, verifying, or writing rundown, that bar is empty, the path is —, and both file clocks are —. Overall job bar and Overall ETA are unchanged. " +
