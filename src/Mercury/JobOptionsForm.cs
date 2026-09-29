@@ -38,6 +38,14 @@ public sealed class JobOptionsForm : INotifyPropertyChanged
     private bool _excludeHiddenSystem;
     private bool _purgeExtraDestFiles;
     private bool _adaptiveCopy = true;
+    private bool _fixLongOrDuplicateNames = true;
+    private bool _scheduleMonday = true;
+    private bool _scheduleTuesday = true;
+    private bool _scheduleWednesday = true;
+    private bool _scheduleThursday = true;
+    private bool _scheduleFriday = true;
+    private bool _scheduleSaturday = true;
+    private bool _scheduleSunday = true;
     private bool _scheduleEnabled;
     private DateTime? _scheduledDate = DateTime.Today;
     private string _scheduledTime = "09:00";
@@ -185,6 +193,14 @@ public sealed class JobOptionsForm : INotifyPropertyChanged
     public int VerifyIndex { get => _verifyIndex; set => SetField(ref _verifyIndex, value); }
     public bool DryRun { get => _dryRun; set => SetField(ref _dryRun, value); }
     public bool AdaptiveCopy { get => _adaptiveCopy; set => SetField(ref _adaptiveCopy, value); }
+    public bool FixLongOrDuplicateNames { get => _fixLongOrDuplicateNames; set => SetField(ref _fixLongOrDuplicateNames, value); }
+    public bool ScheduleMonday { get => _scheduleMonday; set => SetField(ref _scheduleMonday, value); }
+    public bool ScheduleTuesday { get => _scheduleTuesday; set => SetField(ref _scheduleTuesday, value); }
+    public bool ScheduleWednesday { get => _scheduleWednesday; set => SetField(ref _scheduleWednesday, value); }
+    public bool ScheduleThursday { get => _scheduleThursday; set => SetField(ref _scheduleThursday, value); }
+    public bool ScheduleFriday { get => _scheduleFriday; set => SetField(ref _scheduleFriday, value); }
+    public bool ScheduleSaturday { get => _scheduleSaturday; set => SetField(ref _scheduleSaturday, value); }
+    public bool ScheduleSunday { get => _scheduleSunday; set => SetField(ref _scheduleSunday, value); }
     public bool PackAsZip { get => _packAsZip; set => SetField(ref _packAsZip, value); }
     public bool SkipCompressedWhenPacking { get => _skipCompressedWhenPacking; set => SetField(ref _skipCompressedWhenPacking, value); }
     public bool IgnoreFreeSpaceCheck { get => _ignoreFreeSpaceCheck; set => SetField(ref _ignoreFreeSpaceCheck, value); }
@@ -289,6 +305,15 @@ public sealed class JobOptionsForm : INotifyPropertyChanged
             ExcludeHiddenSystem = options.ExcludeHiddenSystem;
             PurgeExtraDestFiles = options.PurgeExtraDestFiles;
             AdaptiveCopy = options.AdaptiveCopy;
+            FixLongOrDuplicateNames = options.FixLongOrDuplicateNames;
+            var week = WeekSelection.From(options.ScheduleDays);
+            ScheduleSunday = week.Sunday;
+            ScheduleMonday = week.Monday;
+            ScheduleTuesday = week.Tuesday;
+            ScheduleWednesday = week.Wednesday;
+            ScheduleThursday = week.Thursday;
+            ScheduleFriday = week.Friday;
+            ScheduleSaturday = week.Saturday;
             ScheduleEnabled = scheduledStart is not null;
             if (scheduledStart is { } start)
             {
@@ -392,7 +417,16 @@ public sealed class JobOptionsForm : INotifyPropertyChanged
             FatTimestampTolerance = FatTimestampTolerance,
             ExcludeHiddenSystem = ExcludeHiddenSystem,
             PurgeExtraDestFiles = PurgeExtraDestFiles,
-            AdaptiveCopy = AdaptiveCopy
+            AdaptiveCopy = AdaptiveCopy,
+            FixLongOrDuplicateNames = FixLongOrDuplicateNames,
+            ScheduleDays = new WeekSelection(
+                ScheduleSunday,
+                ScheduleMonday,
+                ScheduleTuesday,
+                ScheduleWednesday,
+                ScheduleThursday,
+                ScheduleFriday,
+                ScheduleSaturday).ToStored()
         };
     }
 

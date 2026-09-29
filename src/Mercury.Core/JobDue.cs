@@ -9,6 +9,16 @@ public static class JobDue
             return false;
         }
 
+        if (!ScheduleWeek.Allows(job.Options, now.ToLocalTime().DayOfWeek))
+        {
+            return false;
+        }
+
+        if (!ScheduleWeek.ClockReached(job, now))
+        {
+            return false;
+        }
+
         if (!job.Options.HoursEnabled)
         {
             return true;
@@ -89,9 +99,19 @@ public static class JobDue
             };
         }
 
+        if (!ScheduleWeek.Allows(job.Options, now.ToLocalTime().DayOfWeek))
+        {
+            return "Waiting for schedule";
+        }
+
         if (job.ScheduledStart is { } scheduled && now < scheduled)
         {
             return $"Starts {scheduled.LocalDateTime:ddd d MMM HH:mm}";
+        }
+
+        if (ScheduleWeek.IsRestricted(job.Options) && job.ScheduledStart is { } clock && !ScheduleWeek.ClockReached(job, now))
+        {
+            return $"Waiting for schedule ({clock.ToLocalTime():HH:mm})";
         }
 
         if (job.Options.HoursEnabled &&

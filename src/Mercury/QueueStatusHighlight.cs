@@ -50,7 +50,14 @@ public static class QueueStatusHighlight
             return QueueStatusTone.Queued;
         }
 
-        return tileStatus.Trim() switch
+        var label = tileStatus.Trim();
+        if (label.StartsWith("Waiting for schedule", StringComparison.Ordinal)
+            || label.StartsWith("Waiting for hours", StringComparison.Ordinal))
+        {
+            return QueueStatusTone.Paused;
+        }
+
+        return label switch
         {
             "Transferring" or "Copying" or "Preparing" or "Enumerating" or "Running" => QueueStatusTone.Transfer,
             "Verifying" or "Rundown" => QueueStatusTone.Verify,

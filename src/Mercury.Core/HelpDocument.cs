@@ -56,7 +56,7 @@ public static class HelpDocument
             Id = "options",
             Title = "Job options",
             Body =
-                "Job options order: Start After + Overwrite, then Window + Verify, then Unlimited / Max / Dry Run / Small Files / Skip Compressed / Ignore Storage Limit / RoboFlags / Retries / Wait.\n\n" +
+                "Job options order: Schedule + days + Overwrite, then Window + Verify, then Unlimited / Max / Dry Run / Small Files / Skip Compressed / Ignore Storage Limit / RoboFlags / Retries / Wait.\n\n" +
                 "Max throttles this job. The unit (MB/s or Mbps) sits to the right of the box and follows Global → MB/s or Mbps (1 MB/s = 8 Mbps). Stored caps stay MB/s.\n\n" +
                 "Global bandwidth Min / Unlimited / Max / Throttle Active PC apply to all jobs immediately. Each labelled value sits next to its box, then the unit (MB/s or Mbps). Unlimited is a checkbox with no box; Max is disabled while Unlimited is on. MB/s or Mbps also switches Progress Speed.\n\n" +
                 "Throttle Active PC: while other programs are using the PC " +
@@ -82,7 +82,7 @@ public static class HelpDocument
                 "Ignore Storage Limit: still logs Need vs free space but does not abort on thin/growable volumes.\n\n" +
                 "RoboFlags (button on this tab) opens native copy checkboxes — see the RoboFlags help section. Timestamps default on so dest keeps source creation time.\n\n" +
                 "Include source folder name (default on): the selected top-level folder is created at dest. Uncheck for Contents only. Packed zips and unpacked files both follow that landing.\n\n" +
-                "Start After: calendar start; Window hours still apply if enabled."
+                "Schedule is the calendar start (date and time) plus the days the job may run. All seven days stay on unless you clear some; a cleared day waits until the next selected day, at that scheduled time if one is set, and inside the Window if Window is on. Fix long or duplicate names (default on) suffixes a destination file that would exceed Windows path limits or collide (` - file-transfer`, then ` - file-transfer (2)`) instead of overwriting; turn it off to skip those files. After a job finishes, Names on the queue tile renames destination files and sets their last-write time without copying again."
         },
         new()
         {
@@ -160,7 +160,7 @@ public static class HelpDocument
             Body =
                 "Jobs wait here until you Start them, or until the previous job finishes (queue drain). Add to queue never auto-starts. " +
                 "An empty queue shows one line: No jobs in the queue. Each job is a tile: order #, source → dest, status (Pending / Transferring / Verifying / Rundown / Paused / On hold / Stopped / Done), flag badges, and per-tile Start / Resume / Pause / Stop (plus Hold, Job Options, Remove, Up, Down). Resume on a row starts that stopped, incomplete, paused, or pending job (the chip switches to Preparing) — it is not a dead control; a disabled Resume explains why in its tooltip. " +
-                "Job Options on a tile pops out the same fields as Transfer (speed, Window, retries, overwrite, verify, Dry Run, Small Files, Skip Compressed, Extensions…, Ignore Storage Limit, Start After, RoboFlags, Include source folder name, Catcher template). " +
+                "Job Options on a tile pops out the same fields as Transfer (speed, Window, retries, overwrite, verify, Dry Run, Small Files, Skip Compressed, Extensions…, Ignore Storage Limit, Schedule, RoboFlags, Include source folder name, Catcher template). " +
                 "Those values are stored on the job you Add — they are not locked to the Transfer tab while a copy runs. " +
                 "Tiles show compact badges for non-default flags (Dry Run, Small Files, Ignore Storage Limit, Window, Hold, Catcher, Contents only when wrap is off). " +
                 "Source/Dest/Browse/Add on this tab stay enabled while a transfer is running — only Transfer-tab paths lock with the active job. " +

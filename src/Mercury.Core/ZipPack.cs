@@ -823,9 +823,13 @@ public static class ZipPack
         try
         {
             var known = files.Select(f => f.RelativePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var knownSources = files
+                .Select(f => f.SourcePath)
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
             foreach (var record in SourceWalker.Walk(mapping, ExcludePaths(mapping), job.Options))
             {
-                if (known.Contains(record.RelativePath))
+                if (known.Contains(record.RelativePath) || knownSources.Contains(record.SourcePath))
                 {
                     continue;
                 }

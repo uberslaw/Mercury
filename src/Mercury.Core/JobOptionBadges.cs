@@ -57,7 +57,12 @@ public static class JobOptionBadges
 
         if (job.ScheduledStart is { } start)
         {
-            badges.Add($"Start After {start.LocalDateTime:ddd d MMM HH:mm}");
+            badges.Add($"Schedule {start.LocalDateTime:ddd d MMM HH:mm}");
+        }
+
+        if (ScheduleWeek.Chip(o) is { } days)
+        {
+            badges.Add(days);
         }
 
         badges.AddRange(o.Overwrite switch
@@ -140,6 +145,11 @@ public static class JobOptionBadges
         if (!o.AdaptiveCopy)
         {
             badges.Add("One stream");
+        }
+
+        if (!o.FixLongOrDuplicateNames)
+        {
+            badges.Add("Don't fix names");
         }
 
         return badges;

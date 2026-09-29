@@ -89,7 +89,7 @@ public sealed class QueueJobItem : INotifyPropertyChanged
 
             return Job.Status switch
             {
-                JobStatus.Pending => "Pending",
+                JobStatus.Pending => PendingLabel(),
                 JobStatus.Paused or JobStatus.PausedOutsideHours => "Paused",
                 JobStatus.Cancelled => "Stopped",
                 JobStatus.Completed => "Done",
@@ -125,8 +125,12 @@ public sealed class QueueJobItem : INotifyPropertyChanged
             var dry = o.DryRun ? "Dry Run" : o.PackAsZip ? "Small Files" : "Copy";
             var expand = o.IgnoreFreeSpaceCheck ? "Ignore Storage Limit" : "Storage limit on";
             var start = Job.ScheduledStart is { } s
-                ? $"Start After {s.LocalDateTime:ddd d MMM HH:mm}"
+                ? $"Schedule {s.LocalDateTime:ddd d MMM HH:mm}"
                 : "Start when previous job finishes";
+            if (ScheduleWeek.Chip(o) is { } days)
+            {
+                start = start + ". " + days;
+            }
             var flags = new List<string>();
             if (!o.CopyTimestamps)
             {
@@ -166,6 +170,27 @@ public sealed class QueueJobItem : INotifyPropertyChanged
     public IReadOnlyList<string> OptionBadges => JobOptionBadges.For(Job);
 
     public bool HasOptionBadges => OptionBadges.Count > 0;
+
+    public bool HasNameNotices => Job.NameNotices is { Count: > 0 };
+
+    public string NameNoticeLabel
+    {
+        get
+        {
+            var count = Job.NameNotices?.Count ?? 0;
+            return count == 1 ? "1 name note" : count.ToString(CultureInfo.InvariantCulture) + " name notes";
+        }
+    }
+
+    public bool CanEditCopiedNames =>
+        Job.Catcher is null
+        && Job.Status is JobStatus.Completed or JobStatus.Incomplete;
+
+    private string PendingLabel()
+    {
+        var label = JobDue.StatusLabel(Job, DateTimeOffset.Now);
+        return label == "Queued" ? "Pending" : label;
+    }
 
     public double Percent
     {
@@ -346,6 +371,9 @@ public sealed class QueueJobItem : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SettingsSummary)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(OptionBadges)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasOptionBadges)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasNameNotices)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(NameNoticeLabel)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanEditCopiedNames)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanPause)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanResume)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ResumeLabel)));

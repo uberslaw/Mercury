@@ -110,6 +110,7 @@ public sealed class CopyEngine : ICopyEngine
                 var peek = new MagicPeekBudget();
                 var folders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 var uniquePrefix = mappings.Count > 1;
+                var batch = new List<FileRecord>();
                 foreach (var record in SourceWalker.WalkAll(mappings, exclude, job.Options, uniquePrefix))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -117,7 +118,7 @@ public sealed class CopyEngine : ICopyEngine
                     record.PayloadKind = kind;
                     inventory.Add(kind, record.Size);
                     ZipPack.NoteFolders(folders, record.RelativePath);
-                    journal.UpsertFile(record);
+                    batch.Add(record);
                     found++;
                     foundBytes += record.Size;
                     var elapsed = (Stopwatch.GetTimestamp() - lastPulse) / (double)Stopwatch.Frequency;
@@ -133,6 +134,15 @@ public sealed class CopyEngine : ICopyEngine
                     }
                 }
 
+                cancellationToken.ThrowIfCancellationRequested();
+                var nameNotes = DestNameAdjuster.Resolve(batch, job.Options.FixLongOrDuplicateNames);
+                foreach (var record in batch)
+                {
+                    journal.UpsertFile(record);
+                }
+
+                DestNameAdjuster.Publish(job, journal, log, name, nameNotes);
+
                 totals = journal.Totals();
                 job.SourceFiles = totals.Files;
                 job.SourceFolders = folders.Count;
@@ -144,8 +154,11 @@ public sealed class CopyEngine : ICopyEngine
                 }
 
                 log.Info(job.Id, name, FileMetadata.DescribeFlags(job.Options));
+                var enumerateMessage = nameNotes.Count == 0
+                    ? $"Enumerating source… {totals.Files} files"
+                    : $"Enumerating source… {totals.Files} files. {nameNotes.Count} long or duplicate name(s).";
                 reporter.Update(
-                    $"Enumerating source… {totals.Files} files",
+                    enumerateMessage,
                     filesTotal: totals.Files,
                     bytesTotal: totals.Bytes,
                     typeSummary: typeSummary);
@@ -191,6 +204,7 @@ public sealed class CopyEngine : ICopyEngine
                         }
                     }
 
+                    var resumeNotes = new List<DestNameAdjuster.Note>();
                     var scan = JournalReconcile.Scan(
                         mappings,
                         journal,
@@ -202,7 +216,9 @@ public sealed class CopyEngine : ICopyEngine
                             filesTotal: Math.Max(seen, totals.Files),
                             bytesTotal: totals.Bytes),
                         cancellationToken,
-                        uniquePrefix: mappings.Count > 1);
+                        uniquePrefix: mappings.Count > 1,
+                        nameNotes: resumeNotes);
+                    DestNameAdjuster.Publish(job, journal, log, name, resumeNotes);
                     log.Info(job.Id, name,
                         $"Source check: {scan.Added} new, {scan.Changed} changed, {scan.Removed} gone, {scan.Unchanged} unchanged.");
                     totals = journal.Totals();
