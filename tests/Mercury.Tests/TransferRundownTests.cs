@@ -390,7 +390,7 @@ public class TransferRundownTests
         Assert.Contains("Files: 12/400", progress.Body, StringComparison.Ordinal);
         Assert.Contains("Job: 2 of 5", progress.Body, StringComparison.Ordinal);
         Assert.Contains("Video: 40 files, 2.1 TB (82%)", progress.Body, StringComparison.Ordinal);
-        Assert.Contains("more to expand", progress.Body, StringComparison.Ordinal);
+        Assert.Contains("more expands the rest as aligned columns", progress.Body, StringComparison.Ordinal);
         Assert.Contains("Job n of m is which queue item", progress.Body, StringComparison.Ordinal);
         Assert.Contains("Elapsed and ETA sit in the top-right", progress.Body, StringComparison.Ordinal);
         Assert.Contains("Keys are bold", progress.Body, StringComparison.Ordinal);

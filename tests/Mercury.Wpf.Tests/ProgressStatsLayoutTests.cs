@@ -596,16 +596,50 @@ public class ProgressStatsLayoutTests
                 types.MoreToggle.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
                 WpfSta.Flush();
                 types.UpdateLayout();
+                types.TypesTable.UpdateLayout();
                 line.UpdateLayout();
                 WpfSta.Flush();
 
                 Assert.True(types.IsTypesExpanded);
                 Assert.Equal("less", types.MoreLabel.Text);
-                Assert.Equal(TextWrapping.Wrap, types.ValueText.TextWrapping);
-                Assert.Contains("Images:", types.ValueRun.Text, StringComparison.Ordinal);
-                Assert.Contains("Archives:", types.ValueRun.Text, StringComparison.Ordinal);
-                Assert.Contains("Other:", types.ValueRun.Text, StringComparison.Ordinal);
-                Assert.DoesNotContain("...", types.ValueRun.Text, StringComparison.Ordinal);
+                Assert.Equal(Visibility.Collapsed, types.ValueText.Visibility);
+                Assert.Equal(Visibility.Visible, types.TypesTable.Visibility);
+                Assert.Equal(TextWrapping.NoWrap, types.ValueText.TextWrapping);
+
+                var typeRows = TypeRows(types);
+                Assert.Equal(4, typeRows.Length);
+                Assert.Equal(["Video", "Images", "Archives", "Other"], typeRows.Select(r => TypeCell(r, "TypeName").Text).ToArray());
+                Assert.Equal("12,632 files", TypeCell(typeRows[0], "TypeFiles").Text);
+                Assert.Equal("126 files", TypeCell(typeRows[1], "TypeFiles").Text);
+                Assert.Equal("2.93 TB", TypeCell(typeRows[0], "TypeSize").Text);
+                Assert.Equal("451 MB", TypeCell(typeRows[1], "TypeSize").Text);
+                Assert.Equal("82%", TypeCell(typeRows[0], "TypeShare").Text);
+                Assert.Equal("<1%", TypeCell(typeRows[1], "TypeShare").Text);
+                Assert.DoesNotContain("...", TypeCell(typeRows[2], "TypeName").Text, StringComparison.Ordinal);
+
+                Assert.Equal(TextAlignment.Left, TypeCell(typeRows[0], "TypeName").TextAlignment);
+                Assert.Equal(TextAlignment.Right, TypeCell(typeRows[0], "TypeFiles").TextAlignment);
+                Assert.Equal(TextAlignment.Right, TypeCell(typeRows[0], "TypeSize").TextAlignment);
+                Assert.Equal(TextAlignment.Right, TypeCell(typeRows[0], "TypeShare").TextAlignment);
+
+                AssertAligned(typeRows.Select(r => LeftX(TypeCell(r, "TypeName"), line)), "type names left-aligned");
+                AssertAligned(typeRows.Select(r => RightX(TypeCell(r, "TypeFiles"), line)), "file counts right-aligned");
+                AssertAligned(typeRows.Select(r => RightX(TypeCell(r, "TypeSize"), line)), "sizes right-aligned");
+                AssertAligned(typeRows.Select(r => RightX(TypeCell(r, "TypeShare"), line)), "shares right-aligned");
+
+                var nameToFiles = ColumnGap(typeRows[0], "TypeName", "TypeFiles", line);
+                var filesToSize = ColumnGap(typeRows[0], "TypeFiles", "TypeSize", line);
+                var sizeToShare = ColumnGap(typeRows[0], "TypeSize", "TypeShare", line);
+                Assert.InRange(nameToFiles, 8, 24);
+                Assert.True(Math.Abs(nameToFiles - filesToSize) < 1.5, "column gutters must match");
+                Assert.True(Math.Abs(filesToSize - sizeToShare) < 1.5, "column gutters must match");
+                foreach (var row in typeRows.Skip(1))
+                {
+                    Assert.True(Math.Abs(ColumnGap(row, "TypeName", "TypeFiles", line) - nameToFiles) < 1.5);
+                    Assert.True(Math.Abs(ColumnGap(row, "TypeFiles", "TypeSize", line) - filesToSize) < 1.5);
+                    Assert.True(Math.Abs(ColumnGap(row, "TypeSize", "TypeShare", line) - sizeToShare) < 1.5);
+                }
+
                 Assert.True(types.ActualHeight > collapsedHeight + 4, "expanded Types should grow this row only");
 
                 var job = Pair(pairs, "Job");
@@ -618,6 +652,8 @@ public class ProgressStatsLayoutTests
 
                 Assert.False(types.IsTypesExpanded);
                 Assert.Equal("more", types.MoreLabel.Text);
+                Assert.Equal(Visibility.Visible, types.ValueText.Visibility);
+                Assert.Equal(Visibility.Collapsed, types.TypesTable.Visibility);
                 Assert.Equal(TextWrapping.NoWrap, types.ValueText.TextWrapping);
                 Assert.DoesNotContain("...", types.ValueRun.Text, StringComparison.Ordinal);
             }
@@ -637,6 +673,24 @@ public class ProgressStatsLayoutTests
 
     private static StatPairText Pair(IEnumerable<StatPairText> pairs, string key) =>
         Assert.Single(pairs, p => p.KeyText.Text == key);
+
+    private static Grid[] TypeRows(StatPairText types) =>
+        FindVisualChildren<Grid>(types.TypesTable)
+            .Where(g => g.Children.OfType<TextBlock>().Any(t => Equals(t.Tag, "TypeName")))
+            .ToArray();
+
+    private static TextBlock TypeCell(Grid row, string tag) =>
+        Assert.Single(row.Children.OfType<TextBlock>(), t => Equals(t.Tag, tag));
+
+    private static void AssertAligned(IEnumerable<double> xs, string because)
+    {
+        var values = xs.ToArray();
+        Assert.True(values.Length >= 2, because);
+        Assert.True(values.Max() - values.Min() < 1.5, because);
+    }
+
+    private static double ColumnGap(Grid row, string leftTag, string rightTag, Visual ancestor) =>
+        LeftX(TypeCell(row, rightTag), ancestor) - RightX(TypeCell(row, leftTag), ancestor);
 
     private static double LeftX(FrameworkElement element, Visual ancestor) =>
         element.TransformToAncestor(ancestor).Transform(new WpfPoint(0, 0)).X;

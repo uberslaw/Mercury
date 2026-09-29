@@ -19,6 +19,7 @@ public partial class StatPairText : UserControl
     private bool _expanded;
     private bool _ownsValueText;
     private bool _fitting;
+    private string[]? _tableSource;
 
     public StatPairText()
     {
@@ -93,6 +94,7 @@ public partial class StatPairText : UserControl
         }
 
         _expanded = false;
+        HideTypesTable();
         MoreToggle.Visibility = Visibility.Collapsed;
         MoreToggle.IsChecked = false;
         ValueText.TextWrapping = TextWrapping.NoWrap;
@@ -129,6 +131,7 @@ public partial class StatPairText : UserControl
             var parts = TypeSummaryFormat.SplitParts(pair.Value);
             if (parts.Count == 0)
             {
+                HideTypesTable();
                 MoreToggle.Visibility = Visibility.Collapsed;
                 ValueRun.Text = pair.Value;
                 ValueText.TextWrapping = TextWrapping.NoWrap;
@@ -142,12 +145,13 @@ public partial class StatPairText : UserControl
                 MoreLabel.Text = TypeSummaryFormat.LessLabel;
                 MoreChevron.Data = Geometry.Parse("M 0,5 L 4,1 L 8,5");
                 MoreToggle.ToolTip = "Hide extra types";
-                ValueText.TextWrapping = TextWrapping.Wrap;
+                ValueText.TextWrapping = TextWrapping.NoWrap;
                 ValueText.TextTrimming = TextTrimming.None;
-                ValueRun.Text = TypeSummaryFormat.JoinParts(parts, expanded: true);
+                ShowTypesTable(parts);
                 return;
             }
 
+            HideTypesTable();
             ValueText.TextWrapping = TextWrapping.NoWrap;
             ValueText.TextTrimming = TextTrimming.None;
             MoreToggle.IsChecked = false;
@@ -182,6 +186,36 @@ public partial class StatPairText : UserControl
         finally
         {
             _fitting = false;
+        }
+    }
+
+    private void ShowTypesTable(IReadOnlyList<string> parts)
+    {
+        ValueText.Visibility = Visibility.Collapsed;
+        TypesTable.Visibility = Visibility.Visible;
+        if (_tableSource is not null
+            && _tableSource.Length == parts.Count
+            && parts.SequenceEqual(_tableSource))
+        {
+            return;
+        }
+
+        _tableSource = parts as string[] ?? parts.ToArray();
+        TypesTable.ItemsSource = TypeSummaryFormat.ToColumns(parts);
+    }
+
+    private void HideTypesTable()
+    {
+        if (TypesTable is not null)
+        {
+            TypesTable.Visibility = Visibility.Collapsed;
+            TypesTable.ItemsSource = null;
+        }
+
+        _tableSource = null;
+        if (ValueText is not null)
+        {
+            ValueText.Visibility = Visibility.Visible;
         }
     }
 

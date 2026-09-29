@@ -2,6 +2,9 @@ using System.Globalization;
 
 namespace Mercury;
 
+/// <summary>One type row in the expanded Types table.</summary>
+public readonly record struct TypeSummaryColumns(string Label, string Files, string Size, string Share);
+
 /// <summary>
 /// Progress Types line: file counts plus each kind’s share of total bytes.
 /// Collapsed display fits one line; leftover kinds expand on demand.
@@ -50,6 +53,82 @@ public static class TypeSummaryFormat
         return summary.Split(
             PartSeparator,
             StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
+
+    public static IReadOnlyList<TypeSummaryColumns> ToColumns(IReadOnlyList<string> parts)
+    {
+        var rows = new TypeSummaryColumns[parts.Count];
+        for (var i = 0; i < parts.Count; i++)
+        {
+            rows[i] = ParseColumns(parts[i]);
+        }
+
+        return rows;
+    }
+
+    public static TypeSummaryColumns ParseColumns(string part)
+    {
+        return TryParseColumns(part, out var columns)
+            ? columns
+            : new TypeSummaryColumns(part.Trim(), "", "", "");
+    }
+
+    public static bool TryParseColumns(string part, out TypeSummaryColumns columns)
+    {
+        columns = default;
+        if (string.IsNullOrWhiteSpace(part))
+        {
+            return false;
+        }
+
+        TryHeadAndShare(part, out var head, out var share);
+        if (string.IsNullOrEmpty(head))
+        {
+            head = part;
+        }
+
+        string label;
+        string rest;
+        var colon = head.IndexOf(':');
+        if (colon > 0)
+        {
+            label = head[..colon].Trim();
+            rest = head[(colon + 1)..].Trim();
+        }
+        else
+        {
+            label = head.Trim();
+            rest = "";
+        }
+
+        if (label.Length == 0)
+        {
+            return false;
+        }
+
+        const string filesComma = " files, ";
+        const string filesSuffix = " files";
+        string files;
+        string size;
+        var split = rest.IndexOf(filesComma, StringComparison.Ordinal);
+        if (split >= 0)
+        {
+            files = rest[..split] + filesSuffix;
+            size = rest[(split + filesComma.Length)..].Trim();
+        }
+        else if (rest.EndsWith(filesSuffix, StringComparison.Ordinal))
+        {
+            files = rest;
+            size = "";
+        }
+        else
+        {
+            files = rest;
+            size = "";
+        }
+
+        columns = new TypeSummaryColumns(label, files, size, share);
+        return true;
     }
 
     public static string JoinParts(IReadOnlyList<string> parts, bool expanded)

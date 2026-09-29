@@ -75,18 +75,81 @@
                 </StackPanel>
             </ToggleButton>
             <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Value">
-                <TextBlock x:Name="ValueText"
-                           FontFamily="{DynamicResource ProgressFontFamily}"
-                           FontSize="{DynamicResource ProgressFontSize}"
-                           TextAlignment="Left"
-                           TextWrapping="NoWrap"
-                           TextTrimming="CharacterEllipsis">
-                    <Run x:Name="ValueRun"
-                         Text="{Binding Value, Mode=OneWay}"
-                         FontFamily="{DynamicResource ValueFontFamily}"
-                         FontSize="{DynamicResource ValueFontSize}"
-                         Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
-                </TextBlock>
+                <Grid>
+                    <TextBlock x:Name="ValueText"
+                               FontFamily="{DynamicResource ProgressFontFamily}"
+                               FontSize="{DynamicResource ProgressFontSize}"
+                               TextAlignment="Left"
+                               TextWrapping="NoWrap"
+                               TextTrimming="CharacterEllipsis">
+                        <Run x:Name="ValueRun"
+                             Text="{Binding Value, Mode=OneWay}"
+                             FontFamily="{DynamicResource ValueFontFamily}"
+                             FontSize="{DynamicResource ValueFontSize}"
+                             Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                    </TextBlock>
+                    <ItemsControl x:Name="TypesTable"
+                                  Focusable="False"
+                                  Visibility="Collapsed"
+                                  VerticalAlignment="Top"
+                                  Grid.IsSharedSizeScope="True">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Grid.IsSharedSizeScope="True"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="TypeName"/>
+                                        <ColumnDefinition Width="12"/>
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="TypeFiles"/>
+                                        <ColumnDefinition Width="12"/>
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="TypeSize"/>
+                                        <ColumnDefinition Width="12"/>
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="TypeShare"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Tag="TypeName"
+                                               Text="{Binding Label}"
+                                               TextAlignment="Left"
+                                               HorizontalAlignment="Stretch"
+                                               TextWrapping="NoWrap"
+                                               FontFamily="{DynamicResource ValueFontFamily}"
+                                               FontSize="{DynamicResource ValueFontSize}"
+                                               Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                                    <TextBlock Grid.Column="2"
+                                               Tag="TypeFiles"
+                                               Text="{Binding Files}"
+                                               TextAlignment="Right"
+                                               HorizontalAlignment="Stretch"
+                                               TextWrapping="NoWrap"
+                                               FontFamily="{DynamicResource ValueFontFamily}"
+                                               FontSize="{DynamicResource ValueFontSize}"
+                                               Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                                    <TextBlock Grid.Column="4"
+                                               Tag="TypeSize"
+                                               Text="{Binding Size}"
+                                               TextAlignment="Right"
+                                               HorizontalAlignment="Stretch"
+                                               TextWrapping="NoWrap"
+                                               FontFamily="{DynamicResource ValueFontFamily}"
+                                               FontSize="{DynamicResource ValueFontSize}"
+                                               Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                                    <TextBlock Grid.Column="6"
+                                               Tag="TypeShare"
+                                               Text="{Binding Share}"
+                                               TextAlignment="Right"
+                                               HorizontalAlignment="Stretch"
+                                               TextWrapping="NoWrap"
+                                               FontFamily="{DynamicResource ValueFontFamily}"
+                                               FontSize="{DynamicResource ValueFontSize}"
+                                               Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
             </Border>
         </DockPanel>
     </Grid>
