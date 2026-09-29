@@ -916,6 +916,9 @@ public sealed class CopyEngine : ICopyEngine
         var totalBytes = totals.Bytes;
         var mode = adaptive.Mode;
         var dropped = false;
+        var appliedChoice = job.HeaderCopyMode;
+        var manual = HeaderCopy.IsManual(appliedChoice);
+        string? manualSwitch = manual ? job.HeaderCopySwitchDetail : null;
         var sustain = new AdaptiveSustainTracker();
         var sustainClock = Stopwatch.StartNew();
         var heartbeat = Stopwatch.StartNew();
@@ -924,6 +927,51 @@ public sealed class CopyEngine : ICopyEngine
         Task? packTask = null;
         var active = new List<(FileRecord File, Task<CopyWork> Task)>();
         string? lastFinished = null;
+        var loggedSmall = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        async Task<bool> ApplyHeaderChoiceAsync()
+        {
+            var choice = job.HeaderCopyMode;
+            if (choice == appliedChoice)
+            {
+                return false;
+            }
+
+            var from = appliedChoice;
+            appliedChoice = choice;
+            if (HeaderCopy.UsesAdaptive(choice, job.Options.AdaptiveCopy))
+            {
+                manual = false;
+                manualSwitch = null;
+                dropped = false;
+                reporter.ShowStatus(HeaderCopy.SwitchLine(from, choice), pause.CurrentFilePath);
+                long largestPending = 0;
+                foreach (var queued in queue)
+                {
+                    if (queued.Size > largestPending)
+                    {
+                        largestPending = queued.Size;
+                    }
+                }
+
+                var plan = await AdaptiveCopyPlanner.PrepareAsync(
+                        job, budget, queue.ToList(), overlapPlan?.HasPacking == true, largestPending, log, name,
+                        (label, file) => reporter.ShowStatus(label, file),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                adaptive = plan;
+                mode = plan.Mode;
+                sustain.Start(speed.Bytes, sustainClock.Elapsed.TotalSeconds);
+                return true;
+            }
+
+            manual = true;
+            dropped = false;
+            mode = HeaderCopy.EngineMode(choice);
+            manualSwitch = job.HeaderCopySwitchDetail ?? HeaderCopy.SwitchDetail(from, choice);
+            reporter.ShowStatus(HeaderCopy.RunningStatus(mode, manualSwitch), pause.CurrentFilePath);
+            return true;
+        }
 
         try
         {
@@ -991,7 +1039,12 @@ public sealed class CopyEngine : ICopyEngine
                     .ConfigureAwait(false);
             }
 
-            if (!dropped && mode != AdaptiveCopyMode.Sequential)
+            if (await ApplyHeaderChoiceAsync().ConfigureAwait(false))
+            {
+                manualSwitch = manual ? job.HeaderCopySwitchDetail : null;
+            }
+
+            if (!manual && !dropped && mode != AdaptiveCopyMode.Sequential)
             {
                 var observed = sustain.Observe(speed.Bytes, sustainClock.Elapsed.TotalSeconds, mode);
                 if (observed.LockedBaseline)
@@ -1044,7 +1097,8 @@ public sealed class CopyEngine : ICopyEngine
                 Mode = mode,
                 AdaptiveEnabled = true,
                 Capped = adaptive.Capped,
-                FellOff = dropped,
+                Manual = manual,
+                FellOff = dropped && !manual,
                 PendingFiles = queue.Count,
                 PendingCopyBytes = pendingBytes,
                 LargestPendingBytes = largest,
@@ -1053,8 +1107,18 @@ public sealed class CopyEngine : ICopyEngine
                 CopyInFlight = active.Count,
                 UnverifiedCopied = CountUnverified(journal, job.Id)
             });
-            pause.CopyModeLabel = step.Label;
-            reporter.Update(step.Label, pause.CurrentFilePath, speed);
+            var statusLabel = manual
+                ? HeaderCopy.RunningStatus(mode, manualSwitch, fellOff: false)
+                : step.Label;
+            if (mode == AdaptiveCopyMode.Ranges2
+                && pause.CurrentFilePath is { Length: > 0 } smallPath
+                && HeaderCopy.TooSmallToSplit(pause.CurrentFileSize))
+            {
+                statusLabel = HeaderCopy.TooSmallStatus(smallPath);
+            }
+
+            pause.CopyModeLabel = statusLabel;
+            reporter.Update(statusLabel, pause.CurrentFilePath, speed);
 
             if (step.RunPack && packTask is null && overlapPlan is not null)
             {
@@ -1073,7 +1137,18 @@ public sealed class CopyEngine : ICopyEngine
                 var file = TakeQueued(queue, preferLarge);
                 var remaining = Math.Max(0, file.Size - file.BytesCopied);
                 long? portion = step.PortionBytes is long cap && remaining > cap ? cap : null;
-                var stripe = step.Stripe && file.Size >= AdaptiveCopyPolicy.LargeFileBytes;
+                var tooSmall = mode == AdaptiveCopyMode.Ranges2 && HeaderCopy.TooSmallToSplit(file.Size);
+                var stripe = step.Stripe && !tooSmall && file.Size >= AdaptiveCopyPolicy.LargeFileBytes;
+                if (tooSmall)
+                {
+                    if (loggedSmall.Add(file.RelativePath))
+                    {
+                        log.Info(job.Id, name, HeaderCopy.TooSmallLog(file.RelativePath));
+                    }
+
+                    statusLabel = HeaderCopy.TooSmallStatus(file.RelativePath);
+                }
+
                 pause.BeginFile(file.RelativePath, file.Size);
                 active.Add((file, CopyAdaptiveFileAsync(
                     job, file, journal, budget, pause, log, name, speed, cancellationToken, io, stripe, portion)));
@@ -1081,20 +1156,20 @@ public sealed class CopyEngine : ICopyEngine
 
             if (active.Count > 0)
             {
-                reporter.Update(step.Label, pause.CurrentFilePath, speed);
+                reporter.Update(statusLabel, pause.CurrentFilePath, speed);
             }
 
             if (heartbeat.Elapsed.TotalSeconds >= AdaptiveCopyPolicy.HeartbeatSeconds)
             {
                 heartbeat.Restart();
                 log.Info(job.Id, name, AdaptiveCopyLog.Heartbeat(
-                    step.Label, pause.InFlightPaths(), speed.WindowBytesPerSecond, speed.StageBytesPerSecond));
+                    statusLabel, pause.InFlightPaths(), speed.WindowBytesPerSecond, speed.StageBytesPerSecond));
             }
 
             if (active.Count > 0)
             {
                 using var wake = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                var delay = Task.Delay(TimeSpan.FromSeconds(AdaptiveCopyPolicy.HeartbeatSeconds), wake.Token);
+                var delay = Task.Delay(TimeSpan.FromSeconds(AdaptiveCopyPolicy.CopyModePollSeconds), wake.Token);
                 var finished = await Task.WhenAny(active.Select(slot => slot.Task).Append(delay)).ConfigureAwait(false);
                 if (!ReferenceEquals(finished, delay))
                 {
@@ -1409,7 +1484,10 @@ public sealed class CopyEngine : ICopyEngine
         TransferPlan? overlapPlan = null,
         bool adaptiveResolved = false)
     {
-        if (!adaptiveResolved && job.Options.AdaptiveCopy)
+        var manageCopy = job.Options.AdaptiveCopy
+            || HeaderCopy.IsManual(job.HeaderCopyMode)
+            || job.HeaderCopyMode == HeaderCopyMode.Adaptive;
+        if (!adaptiveResolved && manageCopy)
         {
             var largestPending = pending.Count == 0 ? 0 : pending.Max(f => f.Size);
             speed.BeginStage();
@@ -1422,7 +1500,7 @@ public sealed class CopyEngine : ICopyEngine
             speed.BeginStage();
         }
 
-        if (adaptive is { UseBalancer: true } plan)
+        if (adaptive is { } plan && (plan.UseBalancer || job.Options.AdaptiveCopy || HeaderCopy.IsManual(job.HeaderCopyMode) || job.HeaderCopyMode == HeaderCopyMode.Adaptive))
         {
             await CopyBalancedAsync(
                     job, journal, budget, pause, log, name, reporter, cloud, speed, pending.ToList(), totals,
@@ -1436,11 +1514,29 @@ public sealed class CopyEngine : ICopyEngine
         var totalBytes = totals.Bytes;
         var adaptiveOn = job.Options.AdaptiveCopy;
         var heartbeat = Stopwatch.StartNew();
-        foreach (var file in pending.ToList())
+        var list = pending.ToList();
+        for (var index = 0; index < list.Count; index++)
         {
+            var file = list[index];
             cancellationToken.ThrowIfCancellationRequested();
             await pause.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
             await WaitForHoursAsync(job, pause, log, name, reporter, cloud, cancellationToken).ConfigureAwait(false);
+            if (job.HeaderCopyModeChosen && job.HeaderCopyMode is not (HeaderCopyMode.FollowSaved or HeaderCopyMode.OneStream))
+            {
+                var rest = list.Skip(index).ToList();
+                var largestPending = rest.Count == 0 ? 0 : rest.Max(f => f.Size);
+                var switched = await AdaptiveCopyPlanner.PrepareAsync(
+                        job, budget, rest, overlapPlan?.HasPacking == true, largestPending, log, name,
+                        (label, current) => reporter.ShowStatus(label, current),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                await CopyBalancedAsync(
+                        job, journal, budget, pause, log, name, reporter, cloud, speed, rest, totals,
+                        cancellationToken, io, markUnpacked, switched, overlapPlan)
+                    .ConfigureAwait(false);
+                return;
+            }
+
             var fileStatus = adaptiveOn ? AdaptiveCopyPolicy.CopyingOneStream : $"Copying {file.RelativePath}";
             try
             {

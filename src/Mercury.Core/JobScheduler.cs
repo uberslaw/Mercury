@@ -37,6 +37,32 @@ public sealed class JobScheduler : IDisposable
     public PauseGate GlobalPause { get; } = new();
     public FileJobLog Log { get; }
     public AppPaths Paths => _paths;
+    private HeaderCopyMode _pendingHeaderCopy = HeaderCopyMode.FollowSaved;
+    private HeaderCopyMode _pendingHeaderFrom = HeaderCopyMode.Adaptive;
+
+    /// <summary>
+    /// Header checkbox for the current copy. Does not change the saved Adaptive copy option.
+    /// Cleared when the copy ends so the next job follows its own saved option.
+    /// </summary>
+    public void SetHeaderCopyMode(HeaderCopyMode mode, HeaderCopyMode fromShown, bool logChange = true)
+    {
+        _pendingHeaderCopy = mode;
+        _pendingHeaderFrom = fromShown;
+        var chosen = mode != HeaderCopyMode.FollowSaved;
+        var detail = mode == HeaderCopyMode.FollowSaved ? null : HeaderCopy.SwitchDetail(fromShown, mode);
+        foreach (var running in _running.Values)
+        {
+            var changed = running.Job.HeaderCopyMode != mode;
+            running.Job.HeaderCopyMode = mode;
+            running.Job.HeaderCopyModeChosen = chosen;
+            running.Job.HeaderCopySwitchDetail = detail;
+            if (logChange && changed && mode != HeaderCopyMode.FollowSaved)
+            {
+                var jobName = string.IsNullOrWhiteSpace(running.Job.Name) ? running.Job.Id[..8] : running.Job.Name;
+                Log.Info(running.Job.Id, jobName, HeaderCopy.SwitchLine(fromShown, mode));
+            }
+        }
+    }
 
     public event EventHandler<JobProgress>? ProgressChanged;
     public event EventHandler? QueueChanged;
@@ -350,6 +376,15 @@ public sealed class JobScheduler : IDisposable
             throw new InvalidOperationException("That job is already running.");
         }
 
+        if (_pendingHeaderCopy != HeaderCopyMode.FollowSaved)
+        {
+            job.HeaderCopyMode = _pendingHeaderCopy;
+            job.HeaderCopyModeChosen = true;
+            job.HeaderCopySwitchDetail = HeaderCopy.SwitchDetail(_pendingHeaderFrom, _pendingHeaderCopy);
+            var jobName = string.IsNullOrWhiteSpace(job.Name) ? job.Id[..8] : job.Name;
+            Log.Info(job.Id, jobName, HeaderCopy.SwitchLine(_pendingHeaderFrom, _pendingHeaderCopy));
+        }
+
         PruneFinishedProgress();
         if (job.StartedUtc is null)
         {
@@ -430,6 +465,12 @@ public sealed class JobScheduler : IDisposable
         {
             journal.Dispose();
         }
+
+        job.HeaderCopyMode = HeaderCopyMode.FollowSaved;
+        job.HeaderCopyModeChosen = false;
+        job.HeaderCopySwitchDetail = null;
+        _pendingHeaderCopy = HeaderCopyMode.FollowSaved;
+        _pendingHeaderFrom = HeaderCopyMode.Adaptive;
     }
 
     private async Task WaitForRundownAsync(string jobId)

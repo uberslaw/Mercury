@@ -24,6 +24,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private readonly AppPaths _paths;
     private readonly JobScheduler _scheduler;
     private string? _runningJobId;
+    private readonly HeaderCopySelection _headerCopy = new();
+    private bool _headerCopyApplying;
     private Job? _lastJob;
     private JobProgress? _lastProgress;
     private string? _progressJobId;
@@ -566,6 +568,36 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public int VerifyIndex { get => _verifyIndex; set => SetField(ref _verifyIndex, value); }
     public bool DryRun { get => _dryRun; set => SetField(ref _dryRun, value); }
     public bool AdaptiveCopy { get => _adaptiveCopy; set => SetField(ref _adaptiveCopy, value); }
+
+    public bool CopyModeAdaptive
+    {
+        get => _headerCopy.Adaptive;
+        set => ChooseHeaderCopy(value, HeaderCopyMode.Adaptive);
+    }
+
+    public bool CopyModeOneStream
+    {
+        get => _headerCopy.OneStream;
+        set => ChooseHeaderCopy(value, HeaderCopyMode.OneStream);
+    }
+
+    public bool CopyModeTwoFiles
+    {
+        get => _headerCopy.Files2;
+        set => ChooseHeaderCopy(value, HeaderCopyMode.Files2);
+    }
+
+    public bool CopyModeFourFiles
+    {
+        get => _headerCopy.Files4;
+        set => ChooseHeaderCopy(value, HeaderCopyMode.Files4);
+    }
+
+    public bool CopyModeTwoRanges
+    {
+        get => _headerCopy.Ranges2;
+        set => ChooseHeaderCopy(value, HeaderCopyMode.Ranges2);
+    }
     public bool FixLongOrDuplicateNames { get => _fixLongOrDuplicateNames; set => SetField(ref _fixLongOrDuplicateNames, value); }
     public bool ScheduleMonday { get => _scheduleMonday; set => SetField(ref _scheduleMonday, value); }
     public bool ScheduleTuesday { get => _scheduleTuesday; set => SetField(ref _scheduleTuesday, value); }
@@ -3293,6 +3325,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
             RefreshResume();
             ReloadHistory();
+            ResetHeaderCopyMode();
         }
         else
         {
@@ -3300,6 +3333,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             if (running is not null)
             {
                 Rundown = TransferRundown.From(running);
+                if (_headerCopy.ReflectSaved(running.Options.AdaptiveCopy))
+                {
+                    NotifyHeaderCopy();
+                }
             }
 
             EnsureElapsedTimer();
@@ -4002,6 +4039,54 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         (BrowseQueueDestCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (OpenSelectedQueueJobOptionsCommand as RelayCommand)?.RaiseCanExecuteChanged();
         QueueDraft.RaiseAddCanExecute();
+    }
+
+    private void ChooseHeaderCopy(bool on, HeaderCopyMode mode)
+    {
+        if (_headerCopyApplying)
+        {
+            return;
+        }
+
+        if (!on)
+        {
+            NotifyHeaderCopy();
+            return;
+        }
+
+        var from = _headerCopy.Mode;
+        var line = _headerCopy.Select(mode);
+        NotifyHeaderCopy();
+        if (line is null)
+        {
+            return;
+        }
+
+        StatusText = line;
+        _scheduler.SetHeaderCopyMode(mode, from);
+    }
+
+    private void ResetHeaderCopyMode()
+    {
+        if (!_headerCopy.UserPicked && _headerCopy.Adaptive)
+        {
+            return;
+        }
+
+        _headerCopy.Reset();
+        _scheduler.SetHeaderCopyMode(HeaderCopyMode.FollowSaved, HeaderCopyMode.Adaptive, logChange: false);
+        NotifyHeaderCopy();
+    }
+
+    private void NotifyHeaderCopy()
+    {
+        _headerCopyApplying = true;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CopyModeAdaptive)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CopyModeOneStream)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CopyModeTwoFiles)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CopyModeFourFiles)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CopyModeTwoRanges)));
+        _headerCopyApplying = false;
     }
 
     private bool SetField<T>(ref T field, T value, [CallerMemberName] string? name = null)

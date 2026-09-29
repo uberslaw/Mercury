@@ -39,6 +39,8 @@ internal sealed class BalanceInput
     public int CopyInFlight { get; init; }
     public int UnverifiedCopied { get; init; }
     public bool FellOff { get; init; }
+    /// <summary>User picked a width in the header. Do not let a speed cap collapse it.</summary>
+    public bool Manual { get; init; }
 }
 
 internal static class AdaptiveCopyPolicy
@@ -59,6 +61,7 @@ internal static class AdaptiveCopyPolicy
     /// <summary>One-stream probe rate this many times a later sample is a cache burst, not a baseline.</summary>
     public const double ProbeBurstRatio = 2;
     public const int HeartbeatSeconds = 30;
+    public const int CopyModePollSeconds = 1;
 
     public const string TestingStatus = "Testing copy speed…";
     public const string CopyingTwoFiles = "Copying 2 files";
@@ -289,9 +292,10 @@ internal static class TransferBalancer
     public static BalancePlan Next(BalanceInput input)
     {
         var threadsWon = input.Mode is AdaptiveCopyMode.Files2 or AdaptiveCopyMode.Files4;
-        var width = input.Capped ? 1 : AdaptiveCopyPolicy.Width(input.Mode);
+        var honorCap = input.Capped && !input.Manual;
+        var width = honorCap ? 1 : AdaptiveCopyPolicy.Width(input.Mode);
         var packLeft = input.PackBytesRemaining > 0;
-        var stripe = !input.Capped
+        var stripe = !honorCap
             && input.Mode == AdaptiveCopyMode.Ranges2
             && input.LargestPendingBytes >= AdaptiveCopyPolicy.LargeFileBytes;
         long? portion = null;
@@ -304,7 +308,7 @@ internal static class TransferBalancer
             return new BalancePlan(1, false, null, runPack, 0, plain);
         }
 
-        if (input.Capped)
+        if (honorCap)
         {
             width = 1;
             stripe = false;
@@ -554,6 +558,143 @@ internal static class AdaptiveCopyMemory
     }
 }
 
+public enum HeaderCopyMode
+{
+    FollowSaved = 0,
+    Adaptive = 1,
+    OneStream = 2,
+    Files2 = 3,
+    Files4 = 4,
+    Ranges2 = 5
+}
+
+/// <summary>Header checkboxes next to Speed. One mode is on. Not the saved job option.</summary>
+public static class HeaderCopy
+{
+    public static bool IsManual(HeaderCopyMode mode) =>
+        mode is HeaderCopyMode.OneStream or HeaderCopyMode.Files2 or HeaderCopyMode.Files4 or HeaderCopyMode.Ranges2;
+
+    public static bool UsesAdaptive(HeaderCopyMode mode, bool savedAdaptive) => mode switch
+    {
+        HeaderCopyMode.Adaptive => true,
+        HeaderCopyMode.FollowSaved => savedAdaptive,
+        _ => false
+    };
+
+    public static bool ShouldProbe(HeaderCopyMode mode, bool savedAdaptive, bool pendingLargeEnough, bool remembered)
+    {
+        if (!UsesAdaptive(mode, savedAdaptive) || remembered || !pendingLargeEnough)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    internal static AdaptiveCopyMode EngineMode(HeaderCopyMode mode) => mode switch
+    {
+        HeaderCopyMode.Files2 => AdaptiveCopyMode.Files2,
+        HeaderCopyMode.Files4 => AdaptiveCopyMode.Files4,
+        HeaderCopyMode.Ranges2 => AdaptiveCopyMode.Ranges2,
+        _ => AdaptiveCopyMode.Sequential
+    };
+
+    public static string Name(HeaderCopyMode mode) => mode switch
+    {
+        HeaderCopyMode.OneStream => "one stream",
+        HeaderCopyMode.Files2 => "2 files",
+        HeaderCopyMode.Files4 => "4 files",
+        HeaderCopyMode.Ranges2 => "2 ranges",
+        _ => "adaptive"
+    };
+
+    public static string SwitchDetail(HeaderCopyMode from, HeaderCopyMode to)
+    {
+        if (IsManual(to))
+        {
+            return $"{Name(from)} → {Name(to)}, adaptive turned off";
+        }
+
+        return $"{Name(from)} → adaptive";
+    }
+
+    public static string SwitchLine(HeaderCopyMode from, HeaderCopyMode to) =>
+        "Copy mode: " + SwitchDetail(from, to) + ".";
+
+    internal static string RunningStatus(AdaptiveCopyMode mode, string? switchDetail, bool fellOff = false)
+    {
+        var label = AdaptiveCopyPolicy.StatusFor(mode, fellOff);
+        return string.IsNullOrEmpty(switchDetail) ? label : label + " — " + switchDetail;
+    }
+
+    public static bool TooSmallToSplit(long size) => size < AdaptiveCopyPolicy.LargeFileBytes;
+
+    public static string TooSmallStatus(string relative) =>
+        $"One stream — {relative} is too small to split";
+
+    public static string TooSmallLog(string relative) =>
+        $"Copy mode: 2 ranges → one stream for {relative}, file is too small to split.";
+}
+
+/// <summary>Mutually exclusive header choice. Checking one clears the others.</summary>
+public sealed class HeaderCopySelection
+{
+    private HeaderCopyMode _mode = HeaderCopyMode.Adaptive;
+
+    public HeaderCopyMode Mode => _mode;
+    public bool UserPicked { get; private set; }
+    public bool Adaptive => _mode == HeaderCopyMode.Adaptive;
+    public bool OneStream => _mode == HeaderCopyMode.OneStream;
+    public bool Files2 => _mode == HeaderCopyMode.Files2;
+    public bool Files4 => _mode == HeaderCopyMode.Files4;
+    public bool Ranges2 => _mode == HeaderCopyMode.Ranges2;
+
+    public int OnCount =>
+        (Adaptive ? 1 : 0) + (OneStream ? 1 : 0) + (Files2 ? 1 : 0) + (Files4 ? 1 : 0) + (Ranges2 ? 1 : 0);
+
+    public string? Select(HeaderCopyMode next)
+    {
+        if (next == HeaderCopyMode.FollowSaved)
+        {
+            next = HeaderCopyMode.Adaptive;
+        }
+
+        if (next == _mode)
+        {
+            UserPicked = true;
+            return null;
+        }
+
+        var from = _mode;
+        _mode = next;
+        UserPicked = true;
+        return HeaderCopy.SwitchLine(from, next);
+    }
+
+    public bool ReflectSaved(bool savedAdaptive)
+    {
+        if (UserPicked)
+        {
+            return false;
+        }
+
+        var next = savedAdaptive ? HeaderCopyMode.Adaptive : HeaderCopyMode.OneStream;
+        if (_mode == next)
+        {
+            return false;
+        }
+
+        _mode = next;
+        return true;
+    }
+
+    public void Reset()
+    {
+        _mode = HeaderCopyMode.Adaptive;
+        UserPicked = false;
+    }
+}
+
 internal static class AdaptiveCopyPlanner
 {
     public static async Task<AdaptivePlan> PrepareAsync(
@@ -567,7 +708,16 @@ internal static class AdaptiveCopyPlanner
         Action<string, string?>? report,
         CancellationToken cancellationToken)
     {
-        if (!job.Options.AdaptiveCopy)
+        if (HeaderCopy.IsManual(job.HeaderCopyMode))
+        {
+            var forced = HeaderCopy.EngineMode(job.HeaderCopyMode);
+            var detail = job.HeaderCopySwitchDetail;
+            report?.Invoke(HeaderCopy.RunningStatus(forced, detail), string.IsNullOrEmpty(AdaptiveCopyPolicy.ProbeFileLabel(pending)) ? null : AdaptiveCopyPolicy.ProbeFileLabel(pending));
+            var manualUse = true;
+            return new AdaptivePlan(forced, 0, manualUse, AdaptiveCopyPolicy.IsCapped(job, budget));
+        }
+
+        if (!job.Options.AdaptiveCopy && job.HeaderCopyMode != HeaderCopyMode.Adaptive)
         {
             return new AdaptivePlan(AdaptiveCopyMode.Sequential, 0, false, false);
         }
@@ -591,6 +741,13 @@ internal static class AdaptiveCopyPlanner
         {
             report?.Invoke(AdaptiveCopyPolicy.TestingStatus, string.IsNullOrEmpty(files) ? null : files);
             var measured = await AdaptiveCopyProbe.MeasureAsync(pending, cancellationToken).ConfigureAwait(false);
+            if (HeaderCopy.IsManual(job.HeaderCopyMode))
+            {
+                var forced = HeaderCopy.EngineMode(job.HeaderCopyMode);
+                report?.Invoke(HeaderCopy.RunningStatus(forced, job.HeaderCopySwitchDetail), string.IsNullOrEmpty(files) ? null : files);
+                return new AdaptivePlan(forced, 0, true, capped);
+            }
+
             if (measured.Failed || measured.Samples.Count == 0)
             {
                 mode = AdaptiveCopyMode.Sequential;

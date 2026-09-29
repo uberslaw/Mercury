@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Mercury;
 
 public enum JobStatus
@@ -257,6 +259,31 @@ public sealed class Job
 
     /// <summary>Long or duplicate destination names found before copy. Empty when there were none.</summary>
     public List<string> NameNotices { get; set; } = [];
+
+    private int _headerCopyMode = (int)HeaderCopyMode.FollowSaved;
+
+    /// <summary>
+    /// Header checkbox for this copy only. Not saved with the job, and not the Adaptive copy option.
+    /// </summary>
+    [JsonIgnore]
+    public HeaderCopyMode HeaderCopyMode
+    {
+        get => (HeaderCopyMode)Volatile.Read(ref _headerCopyMode);
+        set => Volatile.Write(ref _headerCopyMode, (int)value);
+    }
+
+    private int _headerCopyModeChosen;
+
+    /// <summary>True after the user checks a header copy mode. Follow-saved stays false.</summary>
+    [JsonIgnore]
+    public bool HeaderCopyModeChosen
+    {
+        get => Volatile.Read(ref _headerCopyModeChosen) != 0;
+        set => Volatile.Write(ref _headerCopyModeChosen, value ? 1 : 0);
+    }
+
+    [JsonIgnore]
+    public string? HeaderCopySwitchDetail { get; set; }
 }
 
 public sealed class JobProgress

@@ -545,4 +545,93 @@ public class AdaptiveCopyTests
         Assert.Equal(@"Warren Truss\compressed\a.zip and 1 other file", copying.CurrentFileBarText);
         Assert.Equal("—", copying.ThisFile.Value);
     }
+
+    [Fact]
+    public void ManualModeForcesThatWidthAndDoesNotProbe()
+    {
+        var selection = new HeaderCopySelection();
+        var line = selection.Select(HeaderCopyMode.Files2);
+        Assert.False(HeaderCopy.ShouldProbe(selection.Mode, savedAdaptive: true, pendingLargeEnough: true, remembered: false));
+        Assert.Equal(AdaptiveCopyMode.Files2, HeaderCopy.EngineMode(selection.Mode));
+        Assert.Equal(2, AdaptiveCopyPolicy.Width(HeaderCopy.EngineMode(selection.Mode)));
+        Assert.Equal(4, AdaptiveCopyPolicy.Width(HeaderCopy.EngineMode(HeaderCopyMode.Files4)));
+        Assert.Equal(AdaptiveCopyMode.Ranges2, HeaderCopy.EngineMode(HeaderCopyMode.Ranges2));
+        Assert.Equal(AdaptiveCopyMode.Sequential, HeaderCopy.EngineMode(HeaderCopyMode.OneStream));
+        Assert.NotNull(line);
+        Assert.Contains("adaptive → 2 files", line);
+        Assert.Contains("adaptive turned off", line);
+
+        selection.Select(HeaderCopyMode.Files4);
+        Assert.False(HeaderCopy.ShouldProbe(selection.Mode, savedAdaptive: true, pendingLargeEnough: true, remembered: false));
+        Assert.Equal(4, AdaptiveCopyPolicy.Width(HeaderCopy.EngineMode(selection.Mode)));
+    }
+
+    [Fact]
+    public void ChoosingAdaptiveAgainAllowsProbeOrRememberedPath()
+    {
+        var selection = new HeaderCopySelection();
+        selection.Select(HeaderCopyMode.OneStream);
+        var back = selection.Select(HeaderCopyMode.Adaptive);
+        Assert.True(selection.Adaptive);
+        Assert.False(selection.OneStream);
+        Assert.NotNull(back);
+        Assert.Contains("one stream → adaptive", back);
+        Assert.DoesNotContain("turned off", back);
+        Assert.True(HeaderCopy.ShouldProbe(selection.Mode, savedAdaptive: true, pendingLargeEnough: true, remembered: false));
+        Assert.False(HeaderCopy.ShouldProbe(selection.Mode, savedAdaptive: true, pendingLargeEnough: true, remembered: true));
+        Assert.True(HeaderCopy.UsesAdaptive(HeaderCopyMode.Adaptive, savedAdaptive: false));
+        Assert.True(HeaderCopy.UsesAdaptive(HeaderCopyMode.FollowSaved, savedAdaptive: true));
+        Assert.False(HeaderCopy.UsesAdaptive(HeaderCopyMode.FollowSaved, savedAdaptive: false));
+    }
+
+    [Fact]
+    public void OnlyOneHeaderCopyModeCanBeOn()
+    {
+        var selection = new HeaderCopySelection();
+        Assert.True(selection.Adaptive);
+        Assert.Equal(1, selection.OnCount);
+        selection.Select(HeaderCopyMode.Files4);
+        Assert.True(selection.Files4);
+        Assert.False(selection.Adaptive);
+        Assert.False(selection.OneStream);
+        Assert.False(selection.Files2);
+        Assert.False(selection.Ranges2);
+        Assert.Equal(1, selection.OnCount);
+        selection.Select(HeaderCopyMode.Ranges2);
+        Assert.True(selection.Ranges2);
+        Assert.False(selection.Files4);
+        Assert.Equal(1, selection.OnCount);
+        Assert.Null(selection.Select(HeaderCopyMode.Ranges2));
+        Assert.Equal(1, selection.OnCount);
+    }
+
+    [Fact]
+    public void FileTooSmallToSplitStaysOnOneStreamAndSaysSo()
+    {
+        Assert.True(HeaderCopy.TooSmallToSplit(AdaptiveCopyPolicy.LargeFileBytes - 1));
+        Assert.False(HeaderCopy.TooSmallToSplit(AdaptiveCopyPolicy.LargeFileBytes));
+        var status = HeaderCopy.TooSmallStatus(@"Warren Truss\compressed\a.zip");
+        var log = HeaderCopy.TooSmallLog(@"Warren Truss\compressed\a.zip");
+        Assert.Contains("One stream", status);
+        Assert.Contains("too small to split", status);
+        Assert.Contains(@"Warren Truss\compressed\a.zip", status);
+        Assert.Contains("2 ranges → one stream", log);
+        Assert.Contains("too small to split", log);
+    }
+
+    [Fact]
+    public void ManualChoiceDoesNotChangeTheSavedAdaptiveOption()
+    {
+        var job = new Job { Options = new JobOptions { AdaptiveCopy = true } };
+        var selection = new HeaderCopySelection();
+        selection.Select(HeaderCopyMode.Files2);
+        job.HeaderCopyMode = selection.Mode;
+        job.HeaderCopyModeChosen = selection.UserPicked;
+        Assert.True(job.Options.AdaptiveCopy);
+        Assert.False(HeaderCopy.ShouldProbe(job.HeaderCopyMode, job.Options.AdaptiveCopy, pendingLargeEnough: true, remembered: false));
+        selection.Reset();
+        Assert.True(selection.Adaptive);
+        Assert.False(selection.UserPicked);
+        Assert.True(job.Options.AdaptiveCopy);
+    }
 }
