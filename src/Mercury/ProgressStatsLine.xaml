@@ -4,20 +4,43 @@
              xmlns:local="clr-namespace:Mercury"
              Foreground="{DynamicResource TextBrush}">
     <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Progress">
-        <ItemsControl ItemsSource="{Binding TableCells}" Margin="0,4,0,0"
-                      Grid.IsSharedSizeScope="True">
-            <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate>
-                    <UniformGrid Columns="4"/>
-                </ItemsPanelTemplate>
-            </ItemsControl.ItemsPanel>
-            <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                    <local:StatPairText Margin="0,0,10,2"
-                                        KeySizeGroup="{Binding KeySizeGroup}"
-                                        Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=local:ProgressStatsLine}}"/>
-                </DataTemplate>
-            </ItemsControl.ItemTemplate>
-        </ItemsControl>
+        <Grid Margin="0,4,0,0" Grid.IsSharedSizeScope="True">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <ItemsControl ItemsSource="{Binding GridCells}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <UniformGrid Columns="4"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <local:StatPairText Margin="0,0,10,2"
+                                            KeySizeGroup="{Binding KeySizeGroup}"
+                                            Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=local:ProgressStatsLine}}"/>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <!-- Types is on its own row: grow through the empty cells under Overall files, not over those stats. -->
+            <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <local:StatPairText x:Name="TypesPair"
+                                    Grid.Column="0"
+                                    Grid.ColumnSpan="2"
+                                    ClipToBounds="True"
+                                    Margin="0,0,10,2"
+                                    DataContext="{Binding Types}"
+                                    Visibility="{Binding HasValue, Converter={StaticResource BoolToVis}}"
+                                    KeySizeGroup="ProgressStatKey0"
+                                    Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=local:ProgressStatsLine}}"/>
+            </Grid>
+        </Grid>
     </Border>
 </UserControl>

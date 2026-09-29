@@ -56,7 +56,37 @@ public class FileClassifierTests
         var summary = inventory.FormatSummary();
         Assert.Contains("Video: 2 files", summary, StringComparison.Ordinal);
         Assert.Contains("Other: 1 files", summary, StringComparison.Ordinal);
+        Assert.Contains("(100%)", summary, StringComparison.Ordinal);
+        Assert.Contains("(<1%)", summary, StringComparison.Ordinal);
         Assert.True(inventory.ShouldProbeUnbuffered(UnbufferedIoPolicy.Default));
+    }
+
+    [Fact]
+    public void InventoryFormatsByteShareNotFileShare()
+    {
+        var inventory = new PayloadInventory();
+        inventory.Add(PayloadKind.Video, 82);
+        for (var i = 1; i < 12632; i++)
+        {
+            inventory.Add(PayloadKind.Video, 0);
+        }
+
+        inventory.Add(PayloadKind.Image, 1);
+        for (var i = 1; i < 126; i++)
+        {
+            inventory.Add(PayloadKind.Image, 0);
+        }
+
+        inventory.Add(PayloadKind.Archive, 17);
+        for (var i = 1; i < 515; i++)
+        {
+            inventory.Add(PayloadKind.Archive, 0);
+        }
+
+        var summary = inventory.FormatSummary();
+        Assert.Equal(
+            "Video: 12,632 files, 82 B (82%); Images: 126 files, 1 B (1%); Archives: 515 files, 17 B (17%)",
+            summary);
     }
 
     [Fact]

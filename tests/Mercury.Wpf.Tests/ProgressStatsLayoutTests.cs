@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using WpfPoint = System.Windows.Point;
 
@@ -466,6 +467,123 @@ public class ProgressStatsLayoutTests
                 catch
                 {
                     // leftover
+                }
+            }
+        });
+    }
+
+    [Fact]
+    public void TypesFitsToOverallColumn_ExpandRevealsRestWithoutEllipsis()
+    {
+        WpfSta.Run(() =>
+        {
+            WpfSta.EnsureApp();
+            Window? window = null;
+            try
+            {
+                var typeSummary =
+                    "Video: 12,632 files, 2.93 TB (82%); Images: 126 files, 451 MB (<1%); Archives: 515 files, 120 GB (3%); Other: 51,102 files, 80.0 GB (14%)";
+                var stats = ProgressStats.From(
+                    new JobProgress
+                    {
+                        Status = JobStatus.Copying,
+                        StageName = "Copying",
+                        StageIndex = 2,
+                        StageCount = 4,
+                        CurrentFile = @"Warren Truss\compressed\warren.zip",
+                        FilesCopied = 43631,
+                        FilesTotal = 64375,
+                        BytesCopied = 43L * 1024 * 1024 * 1024,
+                        BytesTotal = 811L * 1024 * 1024 * 1024,
+                        BytesPerSecond = 6 * 1024 * 1024,
+                        StartedUtc = DateTimeOffset.UtcNow.AddHours(-3),
+                        StageStartedUtc = DateTimeOffset.UtcNow.AddMinutes(-25),
+                        TypeSummary = typeSummary
+                    },
+                    jobIndex: 5,
+                    jobCount: 5,
+                    overall: new JobProgress { FilesCopied = 46346, FilesTotal = 142498 });
+
+                var line = new ProgressStatsLine
+                {
+                    DataContext = stats,
+                    Width = 980
+                };
+                window = new Window
+                {
+                    Width = 1000,
+                    Height = 280,
+                    Content = line
+                };
+                window.Show();
+                WpfSta.Flush();
+                line.UpdateLayout();
+                WpfSta.Flush();
+
+                var types = line.TypesPair;
+                Assert.Equal(Visibility.Visible, types.Visibility);
+                Assert.Equal(TextTrimming.None, types.ValueText.TextTrimming);
+                Assert.Equal(TextWrapping.NoWrap, types.ValueText.TextWrapping);
+                Assert.DoesNotContain("...", types.ValueRun.Text, StringComparison.Ordinal);
+                Assert.Contains("Video", types.ValueRun.Text, StringComparison.Ordinal);
+                Assert.Contains("82%", types.ValueRun.Text, StringComparison.Ordinal);
+                Assert.Equal(Visibility.Visible, types.MoreToggle.Visibility);
+                Assert.Equal("more", types.MoreLabel.Text);
+                Assert.False(types.IsTypesExpanded);
+
+                var pairs = FindVisualChildren<StatPairText>(line).ToArray();
+                var overall = Pair(pairs, "Overall files");
+                var file = Pair(pairs, "File");
+                var typesRight = RightX(types, line);
+                var fileLeft = LeftX(file, line);
+                var overallBottom = overall.TransformToAncestor(line)
+                    .Transform(new WpfPoint(0, overall.ActualHeight)).Y;
+                var typesTop = types.TransformToAncestor(line).Transform(new WpfPoint(0, 0)).Y;
+                Assert.True(
+                    typesTop + 1 >= overallBottom,
+                    "Types sits on the next row so it does not paint over Overall files");
+                Assert.True(
+                    typesRight <= fileLeft + 1.5,
+                    $"Types (right {typesRight}) must stop before the File column (left {fileLeft}), not overlap later stats");
+
+                var collapsedHeight = types.ActualHeight;
+                types.MoreToggle.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                WpfSta.Flush();
+                types.UpdateLayout();
+                line.UpdateLayout();
+                WpfSta.Flush();
+
+                Assert.True(types.IsTypesExpanded);
+                Assert.Equal("less", types.MoreLabel.Text);
+                Assert.Equal(TextWrapping.Wrap, types.ValueText.TextWrapping);
+                Assert.Contains("Images:", types.ValueRun.Text, StringComparison.Ordinal);
+                Assert.Contains("Archives:", types.ValueRun.Text, StringComparison.Ordinal);
+                Assert.Contains("Other:", types.ValueRun.Text, StringComparison.Ordinal);
+                Assert.DoesNotContain("...", types.ValueRun.Text, StringComparison.Ordinal);
+                Assert.True(types.ActualHeight > collapsedHeight + 4, "expanded Types should grow this row only");
+
+                var job = Pair(pairs, "Job");
+                Assert.True(job.ActualHeight < types.ActualHeight, "UniformGrid rows must not stretch with Types expand");
+
+                types.MoreToggle.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                WpfSta.Flush();
+                types.UpdateLayout();
+                WpfSta.Flush();
+
+                Assert.False(types.IsTypesExpanded);
+                Assert.Equal("more", types.MoreLabel.Text);
+                Assert.Equal(TextWrapping.NoWrap, types.ValueText.TextWrapping);
+                Assert.DoesNotContain("...", types.ValueRun.Text, StringComparison.Ordinal);
+            }
+            finally
+            {
+                try
+                {
+                    window?.Close();
+                }
+                catch
+                {
+                    // test cleanup
                 }
             }
         });

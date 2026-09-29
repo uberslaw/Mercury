@@ -260,7 +260,7 @@ public sealed class JobProgress
     public string? StageName { get; init; }
     public DateTimeOffset? StartedUtc { get; init; }
     public DateTimeOffset? StageStartedUtc { get; init; }
-    /// <summary>Enumerate type mix, e.g. "Video: 40 files, 2.1 TB".</summary>
+    /// <summary>Enumerate type mix, e.g. "Video: 12,632 files, 2.93 TB (82%)".</summary>
     public string? TypeSummary { get; init; }
     /// <summary>Rundown walk units done (dest+source files counted).</summary>
     public int RundownDone { get; init; }

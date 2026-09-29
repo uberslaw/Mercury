@@ -10,6 +10,9 @@ public readonly record struct StatPair(string Key, string Value)
 
     public string Display => HasValue ? $"{Key}: {Value}" : "";
 
+    /// <summary>Types: one line by default, expand instead of ellipsis.</summary>
+    public bool Expandable { get; init; }
+
     /// <summary>Visual column in the Progress stats UniformGrid (0-based).</summary>
     public int ColumnIndex { get; init; }
 
@@ -69,6 +72,10 @@ public sealed class ProgressStats
                 .ToArray();
         }
     }
+
+    /// <summary>UniformGrid cells without Types (Types sits on its own row).</summary>
+    public IReadOnlyList<StatPair> GridCells =>
+        TableCells.Where(p => p.Key != "Types").ToArray();
 
     public IReadOnlyList<string> LayoutKeys =>
         TableCells.Select(p => p.Key).Where(k => ProgressHeader.LayoutKeys.Contains(k)).ToArray();
@@ -189,7 +196,7 @@ public sealed class ProgressStats
             ThisStage = thisStage,
             Types = string.IsNullOrWhiteSpace(e.TypeSummary)
                 ? StatPair.Empty
-                : new StatPair("Types", e.TypeSummary)
+                : new StatPair("Types", e.TypeSummary) { Expandable = true }
         };
     }
 

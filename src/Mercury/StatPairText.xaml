@@ -33,18 +33,61 @@
                        Text=":"
                        Foreground="{DynamicResource MutedBrush}"/>
         </Border>
-        <Border Grid.Column="2" Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Value" Margin="8,0,0,0">
-            <TextBlock x:Name="ValueText"
-                       FontFamily="{DynamicResource ProgressFontFamily}"
-                       FontSize="{DynamicResource ProgressFontSize}"
-                       TextAlignment="Left"
-                       TextWrapping="NoWrap"
-                       TextTrimming="CharacterEllipsis">
-                <Run Text="{Binding Value, Mode=OneWay}"
-                     FontFamily="{DynamicResource ValueFontFamily}"
-                     FontSize="{DynamicResource ValueFontSize}"
-                     Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
-            </TextBlock>
-        </Border>
+        <DockPanel Grid.Column="2" x:Name="ValueHost" Margin="8,0,0,0">
+            <ToggleButton x:Name="MoreToggle"
+                          DockPanel.Dock="Right"
+                          Focusable="False"
+                          Cursor="Hand"
+                          VerticalAlignment="Top"
+                          Margin="6,0,0,0"
+                          Padding="0"
+                          Background="Transparent"
+                          BorderThickness="0"
+                          Visibility="Collapsed"
+                          Click="MoreToggle_Click"
+                          ToolTip="Show the rest of the type mix">
+                <ToggleButton.Template>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border Background="Transparent" Padding="{TemplateBinding Padding}" Cursor="Hand">
+                            <ContentPresenter/>
+                        </Border>
+                    </ControlTemplate>
+                </ToggleButton.Template>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock x:Name="MoreLabel"
+                               Text="more"
+                               FontFamily="{DynamicResource LabelFontFamily}"
+                               FontSize="{DynamicResource LabelFontSize}"
+                               Foreground="{DynamicResource MutedBrush}"
+                               VerticalAlignment="Center"/>
+                    <Path x:Name="MoreChevron"
+                          Data="M 0,1 L 4,5 L 8,1"
+                          Stroke="{DynamicResource MutedBrush}"
+                          StrokeThickness="1.4"
+                          StrokeStartLineCap="Round"
+                          StrokeEndLineCap="Round"
+                          StrokeLineJoin="Round"
+                          Margin="4,1,0,0"
+                          Width="9"
+                          Height="7"
+                          Stretch="Uniform"
+                          VerticalAlignment="Center"/>
+                </StackPanel>
+            </ToggleButton>
+            <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Value">
+                <TextBlock x:Name="ValueText"
+                           FontFamily="{DynamicResource ProgressFontFamily}"
+                           FontSize="{DynamicResource ProgressFontSize}"
+                           TextAlignment="Left"
+                           TextWrapping="NoWrap"
+                           TextTrimming="CharacterEllipsis">
+                    <Run x:Name="ValueRun"
+                         Text="{Binding Value, Mode=OneWay}"
+                         FontFamily="{DynamicResource ValueFontFamily}"
+                         FontSize="{DynamicResource ValueFontSize}"
+                         Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                </TextBlock>
+            </Border>
+        </DockPanel>
     </Grid>
 </UserControl>

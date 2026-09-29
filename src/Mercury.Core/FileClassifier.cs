@@ -385,9 +385,13 @@ public sealed class PayloadInventory
             }
 
             parts.Add(
-                $"{FileClassifier.Label(kind)}: {_files[(int)kind]} files, {ByteFormatter.ToString(_bytes[(int)kind])}");
+                TypeSummaryFormat.FormatPart(
+                    FileClassifier.Label(kind),
+                    _files[(int)kind],
+                    _bytes[(int)kind],
+                    TotalBytes));
         }
 
-        return string.Join("; ", parts);
+        return string.Join(TypeSummaryFormat.PartSeparator, parts);
     }
 }

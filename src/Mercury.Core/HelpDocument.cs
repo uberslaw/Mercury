@@ -122,7 +122,7 @@ public static class HelpDocument
                 "Stats sit under the bars in a table (key: value), including the current File name. Status text lives in this header — the Transfer tab no longer repeats them. " +
                 "Start, Pause, Pause after this file, and Stop sit under the current-file bar at the bottom of this header. Start reads Resume when paused or when Source/Dest match a stopped job you can continue. " +
                 "When a job finishes incomplete, Open log on this header (and Job log on the Console tab) shows that job’s text log in the Console pane. " +
-                "During enumerate, Types shows a mix such as Video: 40 files, 2.1 TB. " +
+                "During enumerate, Types shows a mix such as Video: 40 files, 2.1 TB (82%). Each type includes its file count and share of total bytes. If that line would wrap, a one-line summary is shown with more to expand the rest. " +
                 "Writing rundown and Verifying run in the background after copy so the next queued job can start transferring. " +
                 "The copier stays one job at a time; Start is enabled when that copy slot is free. Stop during rundown or verify is immediate. " +
                 "ETA appears on copy, verify, and rundown once there are enough samples; until then it shows —."
