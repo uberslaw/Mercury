@@ -17,7 +17,7 @@
     </UserControl.Resources>
     <DockPanel Margin="12">
         <TextBlock DockPanel.Dock="Top" TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,8"
-                   Text="Compare two folders. Compare is a queue job, so it can pause and resume after you close Mercury. It waits if a copy is already running. Source is the catch-up origin; Destination is the other tree. Missing-on-dest is red; dest-only is purple. Default is a recursive count. Advanced adds size, time, name, and per-folder file counts; hash (xxHash64) stays off unless you tick it."/>
+                   Text="Compare two folders. Compare is a queue job on its own lane, so it can run, pause, and resume while a transfer is copying. Stopping one does not stop the other. Source is the catch-up origin; Destination is the other tree. Missing-on-dest is red; dest-only is purple. Default is a recursive count. Advanced adds size, time, name, and per-folder file counts; hash (xxHash64) stays off unless you tick it."/>
 
         <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
             <Grid.ColumnDefinitions>
@@ -75,7 +75,10 @@
             <CheckBox Style="{StaticResource OptionsCheckBox}" Content="Hash (xxHash64)"
                       IsChecked="{Binding HashFiles}"
                       IsEnabled="{Binding ShowAdvancedOptions}"
-                      ToolTip="Expensive. Off unless ticked. Reuses Thorough verify’s xxHash64."/>
+                      ToolTip="Expensive. Off unless ticked. Reuses Thorough verify’s xxHash64. Hashes source and destination."/>
+            <CheckBox Style="{StaticResource OptionsCheckBox}" Content="Hash source for Compare"
+                      IsChecked="{Binding HashSourceForCompare}"
+                      ToolTip="Off by default. This compare writes the file list and source hashes into its manifest, and keeps running if a transfer is copying. If Hash is also on, destination hashes still run. Pause or Stop keeps the hashes already written."/>
         </WrapPanel>
 
         <TextBlock DockPanel.Dock="Top" Text="Include in summary, highlights, list, and TXT" FontWeight="SemiBold" Margin="0,0,0,4"/>

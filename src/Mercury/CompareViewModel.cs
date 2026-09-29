@@ -25,6 +25,7 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
     private string _rightPath = "";
     private bool _advanced;
     private bool _hashFiles;
+    private bool _hashSourceForCompare;
     private bool _fatTimestampTolerance;
     private bool _filterFolders = true;
     private bool _filterFiles = true;
@@ -181,6 +182,13 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
                 FilterHash = false;
             }
         }
+    }
+
+    /// <summary>Compare tab: write the file list and source hashes. Destination hashes still run when Hash is on.</summary>
+    public bool HashSourceForCompare
+    {
+        get => _hashSourceForCompare;
+        set => SetField(ref _hashSourceForCompare, value);
     }
 
     public bool FatTimestampTolerance
@@ -1004,23 +1012,19 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
     private void StartQueuedCompare()
     {
         var existing = FindOpenCompare();
-        var busy = _scheduler!.HasRunningJob && existing?.Id != _scheduler.TryGetRunningJob()?.Id;
         Job job;
         if (existing is not null)
         {
             job = existing;
             _activeJobId = job.Id;
-            _hashRun = job.Options.CompareHash;
+            _hashRun = job.Options.CompareHash || job.Options.HashSourceForCompare;
             PrepareScanUi(resuming: true);
-            StatusText = busy && _scheduler.TryGetRunningJob(job.Id) is null
-                ? "Compare is in the queue. It starts when the current job finishes."
-                : "Continuing saved compare…";
-            _scheduler.ResumeOrRetry(job.Id);
+            StatusText = "Comparing…";
+            _scheduler!.ResumeOrRetry(job.Id);
             return;
         }
 
         var leaf = Path.GetFileName(LeftPath.TrimEnd('\\', '/'));
-        busy = _scheduler.HasRunningJob;
         job = new Job
         {
             Kind = JobKind.Compare,
@@ -1033,19 +1037,18 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
             {
                 CompareAdvanced = Advanced,
                 CompareHash = Advanced && HashFiles,
+                HashSourceForCompare = HashSourceForCompare,
                 FatTimestampTolerance = FatTimestampTolerance,
                 IncludeSourceFolderName = false
             }
         };
         _activeJobId = job.Id;
-        _hashRun = job.Options.CompareHash;
+        _hashRun = job.Options.CompareHash || job.Options.HashSourceForCompare;
         PrepareScanUi(resuming: false);
-        StatusText = busy
-            ? "Compare is in the queue. It starts when the current job finishes."
-            : "Comparing…";
+        StatusText = "Comparing…";
         Remember(isLeft: true, LeftPath);
         Remember(isLeft: false, RightPath);
-        _scheduler.Enqueue(job, startNow: true);
+        _scheduler!.Enqueue(job, startNow: true);
     }
 
     private Job? FindOpenCompare()
@@ -1070,6 +1073,11 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
                 Hash = job.Options.CompareHash,
                 FatTimestampTolerance = job.Options.FatTimestampTolerance
             };
+            if (job.Options.HashSourceForCompare != HashSourceForCompare)
+            {
+                continue;
+            }
+
             if (CompareManifestStore.SameJob(marker, LeftPath, RightPath, Advanced, Advanced && HashFiles, FatTimestampTolerance))
             {
                 return job;
@@ -1151,6 +1159,7 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
             {
                 Advanced = pending.Options.CompareAdvanced;
                 HashFiles = pending.Options.CompareHash;
+                HashSourceForCompare = pending.Options.HashSourceForCompare;
                 FatTimestampTolerance = pending.Options.FatTimestampTolerance;
                 LeftPath = pending.SourcePath;
                 RightPath = pending.DestinationPath;

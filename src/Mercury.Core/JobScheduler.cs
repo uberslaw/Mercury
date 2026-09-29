@@ -8,6 +8,7 @@ public sealed class JobScheduler : IDisposable
     private readonly ICopyEngine _engine;
     private readonly IRundownCapture _rundownCapture;
     private readonly ConcurrentDictionary<string, Running> _running = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, Running> _compares = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, RundownWork> _rundowns = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, JobProgress> _progress = new(StringComparer.Ordinal);
     private readonly object _queueLock = new();
@@ -16,7 +17,11 @@ public sealed class JobScheduler : IDisposable
     private int _pumping;
     private int _drain;
     private int _kickAgain;
+    private int _comparePumping;
+    private int _compareDrain;
+    private int _compareKickAgain;
     private string? _forceStartId;
+    private string? _forceCompareId;
 
     public JobScheduler(AppPaths paths, ICopyEngine? engine = null, IRundownCapture? rundown = null)
     {
@@ -35,6 +40,8 @@ public sealed class JobScheduler : IDisposable
     public int MaxConcurrentJobs { get; set; } = 1;
     public BandwidthBudget Budget { get; }
     public PauseGate GlobalPause { get; } = new();
+    /// <summary>Pause for the compare lane only. A transfer pause does not block a compare.</summary>
+    public PauseGate CompareLanePause { get; } = new();
     public FileJobLog Log { get; }
     public AppPaths Paths => _paths;
     private HeaderCopyMode _pendingHeaderCopy = HeaderCopyMode.FollowSaved;
@@ -97,6 +104,8 @@ public sealed class JobScheduler : IDisposable
 
     public bool HasRunningJob => !_running.IsEmpty;
 
+    public bool HasRunningCompare => !_compares.IsEmpty;
+
     public bool HasBackgroundRundown => !_rundowns.IsEmpty;
 
     /// <summary>True while a copy is running. Rundown in the background does not block Start.</summary>
@@ -105,12 +114,39 @@ public sealed class JobScheduler : IDisposable
 
     public Job? TryGetRunningJob(string? jobId = null)
     {
-        if (jobId is not null && _running.TryGetValue(jobId, out var named))
+        if (jobId is not null)
         {
-            return named.Job;
+            if (_running.TryGetValue(jobId, out var named))
+            {
+                return named.Job;
+            }
+
+            if (_compares.TryGetValue(jobId, out var compare))
+            {
+                return compare.Job;
+            }
         }
 
         return _running.Values.Select(r => r.Job).FirstOrDefault();
+    }
+
+    public Job? TryGetRunningCompare() =>
+        _compares.Values.Select(r => r.Job).FirstOrDefault();
+
+    private bool TryGetActive(string jobId, out Running running)
+    {
+        if (_running.TryGetValue(jobId, out running!))
+        {
+            return true;
+        }
+
+        if (_compares.TryGetValue(jobId, out running!))
+        {
+            return true;
+        }
+
+        running = null!;
+        return false;
     }
 
     public Job? TryGetRundownJob(string? jobId = null)
@@ -133,7 +169,7 @@ public sealed class JobScheduler : IDisposable
 
         lock (_queueLock)
         {
-            if (_running.ContainsKey(job.Id) || _rundowns.ContainsKey(job.Id))
+            if (_running.ContainsKey(job.Id) || _compares.ContainsKey(job.Id) || _rundowns.ContainsKey(job.Id))
             {
                 return;
             }
@@ -151,7 +187,14 @@ public sealed class JobScheduler : IDisposable
             if (startNow)
             {
                 job.OnHold = false;
-                _forceStartId = job.Id;
+                if (job.Kind == JobKind.Compare)
+                {
+                    _forceCompareId = job.Id;
+                }
+                else
+                {
+                    _forceStartId = job.Id;
+                }
             }
 
             SaveQueue();
@@ -160,13 +203,20 @@ public sealed class JobScheduler : IDisposable
         RaiseQueueChanged();
         if (startNow)
         {
-            Kick();
+            if (job.Kind == JobKind.Compare)
+            {
+                KickCompare();
+            }
+            else
+            {
+                Kick();
+            }
         }
     }
 
     public void Remove(string jobId)
     {
-        if (_running.ContainsKey(jobId) || _rundowns.ContainsKey(jobId))
+        if (_running.ContainsKey(jobId) || _compares.ContainsKey(jobId) || _rundowns.ContainsKey(jobId))
         {
             Stop(jobId);
         }
@@ -200,7 +250,7 @@ public sealed class JobScheduler : IDisposable
 
     public void ResumeOrRetry(string jobId)
     {
-        if (_running.ContainsKey(jobId))
+        if (_compares.ContainsKey(jobId) || _running.ContainsKey(jobId))
         {
             ResumePaused(jobId);
             return;
@@ -213,17 +263,19 @@ public sealed class JobScheduler : IDisposable
 
         _progress.TryRemove(jobId, out _);
 
-        if (_running.IsEmpty && GlobalPause.IsPaused)
-        {
-            GlobalPause.Resume();
-        }
-
+        var compare = false;
         lock (_queueLock)
         {
             var job = _queue.FirstOrDefault(j => j.Id == jobId);
             if (job is null)
             {
                 return;
+            }
+
+            compare = job.Kind == JobKind.Compare;
+            if (!compare && _running.IsEmpty && GlobalPause.IsPaused)
+            {
+                GlobalPause.Resume();
             }
 
             job.OnHold = false;
@@ -235,18 +287,33 @@ public sealed class JobScheduler : IDisposable
 
             if (job.Status == JobStatus.Pending)
             {
-                _forceStartId = job.Id;
+                if (compare)
+                {
+                    _forceCompareId = job.Id;
+                }
+                else
+                {
+                    _forceStartId = job.Id;
+                }
             }
 
             SaveQueue();
         }
 
         RaiseQueueChanged();
-        Kick(drain: true);
+        if (compare)
+        {
+            KickCompare(drain: true);
+        }
+        else
+        {
+            Kick(drain: true);
+        }
     }
 
     public void SetHold(string jobId, bool hold)
     {
+        var compare = false;
         lock (_queueLock)
         {
             var job = _queue.FirstOrDefault(j => j.Id == jobId);
@@ -260,10 +327,16 @@ public sealed class JobScheduler : IDisposable
                 return;
             }
 
+            compare = job.Kind == JobKind.Compare;
             job.OnHold = hold;
             if (hold && _forceStartId == jobId)
             {
                 _forceStartId = null;
+            }
+
+            if (hold && _forceCompareId == jobId)
+            {
+                _forceCompareId = null;
             }
 
             SaveQueue();
@@ -272,7 +345,14 @@ public sealed class JobScheduler : IDisposable
         RaiseQueueChanged();
         if (!hold)
         {
-            Kick();
+            if (compare)
+            {
+                KickCompare();
+            }
+            else
+            {
+                Kick();
+            }
         }
     }
 
@@ -310,7 +390,7 @@ public sealed class JobScheduler : IDisposable
 
     public void PersistJob(Job job)
     {
-        if (_running.TryGetValue(job.Id, out var running))
+        if (TryGetActive(job.Id, out var running))
         {
             running.Journal.SaveJob(running.Job);
         }
@@ -341,6 +421,23 @@ public sealed class JobScheduler : IDisposable
         _ = PumpAsync();
     }
 
+    /// <summary>Start the compare lane. A running transfer does not block it, and it does not take the copy slot.</summary>
+    public void KickCompare(bool drain = false)
+    {
+        if (drain)
+        {
+            Interlocked.Exchange(ref _compareDrain, 1);
+        }
+
+        Interlocked.Exchange(ref _compareKickAgain, 1);
+        if (Interlocked.CompareExchange(ref _comparePumping, 1, 0) != 0)
+        {
+            return;
+        }
+
+        _ = PumpCompareAsync();
+    }
+
     public async Task StartAsync(Job job, bool resumeJournal, CancellationToken cancellationToken)
     {
         await RunCopyCoreAsync(job, resumeJournal, cancellationToken).ConfigureAwait(false);
@@ -349,7 +446,16 @@ public sealed class JobScheduler : IDisposable
 
     private async Task RunCopyCoreAsync(Job job, bool resumeJournal, CancellationToken cancellationToken)
     {
-        if (_running.Count >= MaxConcurrentJobs)
+        var compare = job.Kind == JobKind.Compare;
+        var lane = compare ? _compares : _running;
+        if (compare)
+        {
+            if (!_compares.IsEmpty)
+            {
+                throw new InvalidOperationException("A compare is already running.");
+            }
+        }
+        else if (_running.Count >= MaxConcurrentJobs)
         {
             throw new InvalidOperationException(
                 $"v1 runs one copy at a time ({MaxConcurrentJobs} concurrent). Stop the current copy or wait for it to finish.");
@@ -378,11 +484,15 @@ public sealed class JobScheduler : IDisposable
             journal = JobJournal.Create(jobDir, job);
         }
 
-        AppSettingsStore.SaveLastJobId(_paths, job.Id);
-        var pause = new PauseGate { Parent = GlobalPause };
+        if (!compare)
+        {
+            AppSettingsStore.SaveLastJobId(_paths, job.Id);
+        }
+
+        var pause = new PauseGate { Parent = compare ? CompareLanePause : GlobalPause };
         var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var running = new Running(job, journal, pause, cts);
-        if (!_running.TryAdd(job.Id, running))
+        if (!lane.TryAdd(job.Id, running))
         {
             journal.Dispose();
             throw new InvalidOperationException("That job is already running.");
@@ -447,7 +557,7 @@ public sealed class JobScheduler : IDisposable
         }
         finally
         {
-            if (_running.TryRemove(job.Id, out var finished))
+            if (lane.TryRemove(job.Id, out var finished))
             {
                 keepHeartbeat = finished.KeepHeartbeatOnCancel;
             }
@@ -536,14 +646,17 @@ public sealed class JobScheduler : IDisposable
             journal.Dispose();
         }
 
-        job.HeaderCopyMode = HeaderCopyMode.FollowSaved;
-        job.HeaderCopyModeChosen = false;
-        job.HeaderCopySwitchDetail = null;
-        job.ManualFileWidth = 0;
-        _pendingHeaderCopy = HeaderCopyMode.FollowSaved;
-        _pendingHeaderFrom = HeaderCopyMode.Adaptive;
-        _pendingManualWidth = 0;
-        _pendingManualFromWidth = 0;
+        if (!compare)
+        {
+            job.HeaderCopyMode = HeaderCopyMode.FollowSaved;
+            job.HeaderCopyModeChosen = false;
+            job.HeaderCopySwitchDetail = null;
+            job.ManualFileWidth = 0;
+            _pendingHeaderCopy = HeaderCopyMode.FollowSaved;
+            _pendingHeaderFrom = HeaderCopyMode.Adaptive;
+            _pendingManualWidth = 0;
+            _pendingManualFromWidth = 0;
+        }
     }
 
     private async Task WaitForRundownAsync(string jobId)
@@ -556,7 +669,7 @@ public sealed class JobScheduler : IDisposable
 
     public void Pause(string jobId)
     {
-        if (_running.TryGetValue(jobId, out var running))
+        if (TryGetActive(jobId, out var running))
         {
             running.Pause.Pause();
             running.Job.Status = JobStatus.Paused;
@@ -569,7 +682,7 @@ public sealed class JobScheduler : IDisposable
 
     public void RequestPauseAfterFile(string jobId)
     {
-        if (_running.TryGetValue(jobId, out var running))
+        if (TryGetActive(jobId, out var running))
         {
             running.Pause.RequestPauseAfterFile();
             Log.Info(jobId, running.Job.Name, "Pause after this file requested.");
@@ -578,7 +691,7 @@ public sealed class JobScheduler : IDisposable
 
     public void CancelPauseAfterFile(string jobId)
     {
-        if (_running.TryGetValue(jobId, out var running) && running.Pause.PauseAfterFileRequested)
+        if (TryGetActive(jobId, out var running) && running.Pause.PauseAfterFileRequested)
         {
             running.Pause.CancelPauseAfterFile();
             Log.Info(jobId, running.Job.Name, "Pause after this file cancelled.");
@@ -587,7 +700,7 @@ public sealed class JobScheduler : IDisposable
 
     public bool IsPauseAfterFilePending(string? jobId)
     {
-        if (string.IsNullOrWhiteSpace(jobId) || !_running.TryGetValue(jobId, out var running))
+        if (string.IsNullOrWhiteSpace(jobId) || !TryGetActive(jobId, out var running))
         {
             return false;
         }
@@ -597,7 +710,7 @@ public sealed class JobScheduler : IDisposable
 
     public TimeSpan? EstimateCurrentFileEta(string jobId)
     {
-        if (!_running.TryGetValue(jobId, out var running))
+        if (!TryGetActive(jobId, out var running))
         {
             return TimeSpan.Zero;
         }
@@ -620,14 +733,16 @@ public sealed class JobScheduler : IDisposable
     }
 
     public bool CanPauseAfterFile(string jobId) =>
-        _running.TryGetValue(jobId, out var running)
+        TryGetActive(jobId, out var running)
+        && running.Job.Kind != JobKind.Compare
         && running.Job.Status == JobStatus.Copying
         && !running.Pause.IsEffectivelyPaused;
 
     public void PauseAll()
     {
         GlobalPause.Pause();
-        foreach (var running in _running.Values)
+        CompareLanePause.Pause();
+        foreach (var running in _running.Values.Concat(_compares.Values))
         {
             running.Job.Status = JobStatus.Paused;
             TransferRundown.MarkPaused(running.Job);
@@ -640,7 +755,8 @@ public sealed class JobScheduler : IDisposable
     public void ResumeAll()
     {
         GlobalPause.Resume();
-        foreach (var running in _running.Values)
+        CompareLanePause.Resume();
+        foreach (var running in _running.Values.Concat(_compares.Values))
         {
             if (running.Pause.IsPaused)
             {
@@ -659,12 +775,18 @@ public sealed class JobScheduler : IDisposable
 
     public void ResumePaused(string jobId)
     {
-        if (!_running.TryGetValue(jobId, out var running))
+        var compareLane = _compares.TryGetValue(jobId, out var running);
+        if (!compareLane && !_running.TryGetValue(jobId, out running))
         {
             return;
         }
 
-        if (GlobalPause.IsPaused)
+        if (running is null)
+        {
+            return;
+        }
+
+        if (!compareLane && GlobalPause.IsPaused)
         {
             foreach (var other in _running.Values)
             {
@@ -682,6 +804,11 @@ public sealed class JobScheduler : IDisposable
             GlobalPause.Resume();
         }
 
+        if (compareLane && CompareLanePause.IsPaused)
+        {
+            CompareLanePause.Resume();
+        }
+
         running.Job.Status = JobStatus.Copying;
         TransferRundown.MarkUnpaused(running.Job);
         running.Journal.SaveJob(running.Job);
@@ -692,6 +819,27 @@ public sealed class JobScheduler : IDisposable
 
     public void Stop(string jobId, bool clearHeartbeat = true)
     {
+        if (_compares.TryGetValue(jobId, out var compareRun))
+        {
+            compareRun.KeepHeartbeatOnCancel = !clearHeartbeat;
+            compareRun.Pause.Resume();
+            if (_compares.Count <= 1)
+            {
+                CompareLanePause.Resume();
+            }
+
+            compareRun.Cts.Cancel();
+            if (compareRun.Job.Status is not JobStatus.Completed and not JobStatus.Failed
+                and not JobStatus.Incomplete and not JobStatus.Cancelled)
+            {
+                compareRun.Job.Status = JobStatus.Cancelled;
+                compareRun.Job.ResultMessage = "Stopping…";
+            }
+
+            ReportFinal(compareRun.Job);
+            return;
+        }
+
         if (_running.TryGetValue(jobId, out var running))
         {
             running.KeepHeartbeatOnCancel = !clearHeartbeat;
@@ -722,6 +870,11 @@ public sealed class JobScheduler : IDisposable
     public void StopAll(bool clearHeartbeat = true)
     {
         foreach (var id in _running.Keys.ToList())
+        {
+            Stop(id, clearHeartbeat);
+        }
+
+        foreach (var id in _compares.Keys.ToList())
         {
             Stop(id, clearHeartbeat);
         }
@@ -814,7 +967,7 @@ public sealed class JobScheduler : IDisposable
     /// <summary>Journal file rows for the folder tree (running job first, else last job on disk).</summary>
     public IReadOnlyList<FileRecord> LoadJournalFiles(string? jobId)
     {
-        if (!string.IsNullOrEmpty(jobId) && _running.TryGetValue(jobId, out var running))
+        if (!string.IsNullOrEmpty(jobId) && TryGetActive(jobId, out var running))
         {
             try
             {
@@ -940,6 +1093,7 @@ public sealed class JobScheduler : IDisposable
             jobs = _queue.ToList();
         }
 
+        jobs = jobs.Where(j => j.Kind != JobKind.Compare).ToList();
         if (jobs.Count == 0)
         {
             var runningOnly = _running.Values.Select(r => r.Job).ToList();
@@ -953,7 +1107,11 @@ public sealed class JobScheduler : IDisposable
 
         if (!ProgressHeader.ShowOverall(jobs.Count) && _progress.Count == 1)
         {
-            return _progress.Values.First();
+            var only = _progress.Values.First();
+            if (jobs.Any(j => j.Id == only.JobId))
+            {
+                return only;
+            }
         }
 
         long bytes = 0, total = 0;
@@ -1040,7 +1198,7 @@ public sealed class JobScheduler : IDisposable
                     if (_forceStartId is not null)
                     {
                         var forced = _queue.FirstOrDefault(j => j.Id == _forceStartId);
-                        if (forced is null || forced.OnHold || forced.Status != JobStatus.Pending)
+                        if (forced is null || forced.OnHold || forced.Status != JobStatus.Pending || forced.Kind == JobKind.Compare)
                         {
                             _forceStartId = null;
                         }
@@ -1048,7 +1206,7 @@ public sealed class JobScheduler : IDisposable
 
                     var forceId = _forceStartId;
                     next = JobDue.FindNext(
-                        _queue,
+                        _queue.Where(j => j.Kind != JobKind.Compare),
                         DateTimeOffset.Now,
                         forceId,
                         includeUnscheduled: allowUnscheduled || forceId is not null);
@@ -1115,7 +1273,7 @@ public sealed class JobScheduler : IDisposable
                             && _running.Count < MaxConcurrentJobs
                             && !GlobalPause.IsPaused
                             && JobDue.FindNext(
-                                _queue,
+                                _queue.Where(j => j.Kind != JobKind.Compare),
                                 DateTimeOffset.Now,
                                 _forceStartId,
                                 includeUnscheduled: allowUnscheduled || _forceStartId is not null) is not null;
@@ -1125,6 +1283,82 @@ public sealed class JobScheduler : IDisposable
                 {
                     Kick(drain: allowUnscheduled);
                 }
+            }
+        }
+    }
+
+    private async Task PumpCompareAsync()
+    {
+        var allowUnscheduled = Interlocked.Exchange(ref _compareDrain, 0) == 1;
+        try
+        {
+            while (!_lifetime.IsCancellationRequested)
+            {
+                Interlocked.Exchange(ref _compareKickAgain, 0);
+                Job? next;
+                lock (_queueLock)
+                {
+                    if (!_compares.IsEmpty || CompareLanePause.IsPaused)
+                    {
+                        break;
+                    }
+
+                    if (_forceCompareId is not null)
+                    {
+                        var forced = _queue.FirstOrDefault(j => j.Id == _forceCompareId);
+                        if (forced is null || forced.OnHold || forced.Status != JobStatus.Pending || forced.Kind != JobKind.Compare)
+                        {
+                            _forceCompareId = null;
+                        }
+                    }
+
+                    var forceId = _forceCompareId;
+                    next = JobDue.FindNext(
+                        _queue.Where(j => j.Kind == JobKind.Compare),
+                        DateTimeOffset.Now,
+                        forceId,
+                        includeUnscheduled: allowUnscheduled || forceId is not null);
+                    if (next is not null && forceId == next.Id)
+                    {
+                        _forceCompareId = null;
+                    }
+
+                    if (next is null)
+                    {
+                        if (Volatile.Read(ref _compareKickAgain) == 1)
+                        {
+                            continue;
+                        }
+
+                        break;
+                    }
+                }
+
+                var resume = JobJournal.Exists(_paths.JobDirectory(next.Id));
+                try
+                {
+                    await RunCopyCoreAsync(next, resume, _lifetime.Token).ConfigureAwait(false);
+                    allowUnscheduled = true;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    next.Status = JobStatus.Failed;
+                    next.ResultMessage = ex.Message;
+                    lock (_queueLock)
+                    {
+                        SaveQueue();
+                    }
+
+                    RaiseQueueChanged();
+                }
+            }
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _comparePumping, 0);
+            if (Interlocked.CompareExchange(ref _compareKickAgain, 0, 1) == 1)
+            {
+                KickCompare(drain: allowUnscheduled);
             }
         }
     }
@@ -1179,12 +1413,14 @@ public sealed class JobScheduler : IDisposable
         CompareBeat beat)
     {
         var advanced = job.Options.CompareAdvanced;
-        var hash = advanced && job.Options.CompareHash;
-        var manifestPath = hash ? CompareManifestStore.JobFile(journal.Directory) : null;
+        var hashDest = advanced && job.Options.CompareHash;
+        var hashSource = job.Options.HashSourceForCompare || hashDest;
+        var manifestPath = hashSource ? CompareManifestStore.JobFile(journal.Directory) : null;
         var options = new DirectoryCompareOptions
         {
             Advanced = advanced,
-            Hash = hash,
+            Hash = hashDest,
+            HashSource = job.Options.HashSourceForCompare,
             FatTimestampTolerance = job.Options.FatTimestampTolerance
         };
         job.Status = JobStatus.Enumerating;
@@ -1378,7 +1614,7 @@ public sealed class JobScheduler : IDisposable
     {
         foreach (var key in _progress.Keys.ToList())
         {
-            if (!_running.ContainsKey(key) && !_rundowns.ContainsKey(key))
+            if (!_running.ContainsKey(key) && !_compares.ContainsKey(key) && !_rundowns.ContainsKey(key))
             {
                 _progress.TryRemove(key, out _);
             }

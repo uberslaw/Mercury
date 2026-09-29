@@ -46,7 +46,7 @@ public class CompareQueueTests
             Assert.Equal(JobKind.Copy, new Job().Kind);
 
             var badges = JobOptionBadges.For(loaded);
-            Assert.Equal(["Compare", "Advanced", "Hash", "FAT 2s"], badges);
+            Assert.Equal(["Compare", "Advanced", "Hash", "Hash source", "FAT 2s"], badges);
             Assert.DoesNotContain("Unlimited speed", badges);
             Assert.Contains("Hash source", JobOptionBadges.For(new Job { Options = new JobOptions { HashSourceForCompare = true } }));
         }
@@ -171,7 +171,7 @@ public class CompareQueueTests
                 await WaitUntil(() =>
                 {
                     var stored = QueueStore.Load(paths);
-                    return !scheduler.HasRunningJob
+                    return !scheduler.HasRunningCompare
                         && stored.Any(row => row.Id == jobId && row.Status == JobStatus.Cancelled);
                 }, TimeSpan.FromSeconds(20));
             }
@@ -192,8 +192,9 @@ public class CompareQueueTests
                 Assert.True(queued.Options.CompareHash);
                 Assert.NotEqual(JobStatus.Completed, queued.Status);
                 again.Kick();
+                again.KickCompare();
                 await Task.Delay(200);
-                Assert.False(again.HasRunningJob);
+                Assert.False(again.HasRunningCompare);
 
                 var starts = new List<string>();
                 var finished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -214,7 +215,7 @@ public class CompareQueueTests
                 };
                 again.ResumeOrRetry(jobId);
                 await finished.Task.WaitAsync(TimeSpan.FromSeconds(20));
-                await WaitUntil(() => !again.HasRunningJob, TimeSpan.FromSeconds(20));
+                await WaitUntil(() => !again.HasRunningCompare, TimeSpan.FromSeconds(20));
                 Assert.Equal(["b.txt", "a.txt", "b.txt"], starts);
                 Assert.Equal(JobStatus.Completed, Assert.Single(again.Queue).Status);
             }
@@ -224,6 +225,164 @@ public class CompareQueueTests
         finally
         {
             TryDelete(root);
+        }
+    }
+
+    [Fact]
+    public void HashSourceCheckboxWritesSourceHashesWithoutDestination()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mercury-hash-source-" + Guid.NewGuid().ToString("N"));
+        var left = Path.Combine(root, "left");
+        var right = Path.Combine(root, "right");
+        Directory.CreateDirectory(left);
+        Directory.CreateDirectory(right);
+        try
+        {
+            File.WriteAllText(Path.Combine(left, "a.txt"), "AAAA");
+            File.WriteAllText(Path.Combine(right, "a.txt"), "AAAA");
+            File.WriteAllText(Path.Combine(left, "b.txt"), "BBBB");
+            File.WriteAllText(Path.Combine(right, "b.txt"), "BBBB");
+            var manifest = Path.Combine(root, "compare-manifest.jsonl");
+            var sourceOnly = DirectoryComparer.Compare(
+                left,
+                right,
+                new DirectoryCompareOptions { Advanced = true, HashSource = true },
+                manifestPath: manifest);
+            Assert.True(sourceOnly.Completed);
+            Assert.False(sourceOnly.Hashed);
+            var saved = CompareManifestStore.Load(manifest);
+            Assert.NotNull(saved);
+            Assert.True(saved!.InventoryComplete);
+            Assert.Equal(2, saved.SourceHashCount);
+            Assert.Equal(0, saved.DestHashCount);
+
+            var starts = new List<string>();
+            var hashed = DirectoryComparer.Compare(
+                left,
+                right,
+                new DirectoryCompareOptions { Advanced = true, Hash = true },
+                progress: progress =>
+                {
+                    if (progress.Pace is { FileBytesDone: 0, FileBytesTotal: > 0 })
+                    {
+                        starts.Add(progress.CurrentRelative ?? "");
+                    }
+                },
+                manifestPath: manifest);
+            Assert.True(hashed.Completed);
+            Assert.Equal(0, hashed.HashMismatches);
+            Assert.Equal(["a.txt", "b.txt"], starts);
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
+    public async Task CompareRunsBesideTransferAndStopDoesNotCancelTheOther()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mercury-lanes-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var paths = new AppPaths(root);
+            var left = Path.Combine(root, "left");
+            var right = Path.Combine(root, "right");
+            var src = Path.Combine(root, "src");
+            var dest = Path.Combine(root, "dest");
+            Directory.CreateDirectory(left);
+            Directory.CreateDirectory(right);
+            Directory.CreateDirectory(src);
+            Directory.CreateDirectory(dest);
+            for (var i = 0; i < 60; i++)
+            {
+                File.WriteAllText(Path.Combine(left, "f" + i.ToString("00") + ".txt"), new string('x', 1024));
+                File.WriteAllText(Path.Combine(right, "f" + i.ToString("00") + ".txt"), new string('x', 1024));
+            }
+
+            File.WriteAllText(Path.Combine(src, "a.txt"), "a");
+            var engine = new HoldingEngine();
+            using var scheduler = new JobScheduler(paths, engine, new QuietRundown());
+            var compare = new Job
+            {
+                Kind = JobKind.Compare,
+                Name = "Compare left",
+                SourcePath = left,
+                DestinationPath = right,
+                Options = new JobOptions { CompareAdvanced = true, CompareHash = true }
+            };
+            var transfer = new Job
+            {
+                Name = "copy",
+                SourcePath = src,
+                DestinationPath = dest
+            };
+            var comparePaused = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            scheduler.CompareActivity += (_, activity) =>
+            {
+                if (activity.Progress is { FilesVisited: > 0 } && comparePaused.TrySetResult())
+                {
+                    scheduler.Pause(compare.Id);
+                }
+            };
+            scheduler.Enqueue(compare, startNow: true);
+            await comparePaused.Task.WaitAsync(TimeSpan.FromSeconds(20));
+            await WaitUntil(() => scheduler.HasRunningCompare, TimeSpan.FromSeconds(10));
+
+            scheduler.Enqueue(transfer, startNow: true);
+            await engine.Started.Task.WaitAsync(TimeSpan.FromSeconds(20));
+            Assert.True(scheduler.HasRunningJob);
+            Assert.True(scheduler.HasRunningCompare);
+            Assert.Contains(transfer.Id, scheduler.RunningJobIds);
+            Assert.DoesNotContain(compare.Id, scheduler.RunningJobIds);
+
+            scheduler.Stop(transfer.Id);
+            await WaitUntil(() => !scheduler.HasRunningJob, TimeSpan.FromSeconds(20));
+            Assert.True(scheduler.HasRunningCompare);
+
+            scheduler.Stop(compare.Id);
+            await WaitUntil(() => !scheduler.HasRunningCompare, TimeSpan.FromSeconds(20));
+            Assert.False(engine.Release.Task.IsCompleted);
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    private sealed class HoldingEngine : ICopyEngine
+    {
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task RunAsync(
+            Job job,
+            JobJournal journal,
+            BandwidthBudget budget,
+            PauseGate pause,
+            IJobLog log,
+            IProgress<JobProgress>? progress,
+            CancellationToken cancellationToken)
+        {
+            job.Status = JobStatus.Copying;
+            Started.TrySetResult();
+            await Release.Task.WaitAsync(cancellationToken);
+            job.Status = JobStatus.Completed;
+        }
+    }
+
+    private sealed class QuietRundown : IRundownCapture
+    {
+        public void Capture(
+            Job job,
+            JobJournal journal,
+            CopyMapping? mapping,
+            IJobLog? log,
+            string name,
+            CancellationToken cancellationToken,
+            Action<RundownProgress>? progress)
+        {
         }
     }
 

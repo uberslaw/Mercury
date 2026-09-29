@@ -43,6 +43,8 @@ public sealed class DirectoryCompareOptions
 
     public bool Advanced { get; init; }
     public bool Hash { get; init; }
+    /// <summary>Write the file list and source hashes. Destination hashes still run when <see cref="Hash"/> is on.</summary>
+    public bool HashSource { get; init; }
     public bool FatTimestampTolerance { get; init; }
     public CompareFilter Filter { get; init; } = CompareFilter.FolderCounts | CompareFilter.FileCounts;
     public int MaxListedDifferences { get; init; } = 2_000;
@@ -420,15 +422,16 @@ public static class DirectoryComparer
             }
 
             var advanced = options.Advanced;
-            var hash = options.Hash && advanced;
-            if (hash && !string.IsNullOrWhiteSpace(manifestPath))
+            var hashDest = options.Hash && advanced;
+            var hashSource = options.HashSource || hashDest;
+            if (hashSource && !string.IsNullOrWhiteSpace(manifestPath))
             {
                 manifest = CompareManifestWriter.Open(
                     manifestPath,
                     leftPath,
                     rightPath,
                     advanced,
-                    hash,
+                    hash: true,
                     options.FatTimestampTolerance);
             }
 
@@ -451,7 +454,7 @@ public static class DirectoryComparer
                 manifest?.WriteInventory(Snapshot(left, right));
             }
 
-            if (hash && manifest is not null && !string.IsNullOrWhiteSpace(seedJobsRoot))
+            if (hashSource && manifest is not null && !string.IsNullOrWhiteSpace(seedJobsRoot))
             {
                 foreach (var seed in CompareManifestStore.FindSourceHashSeeds(seedJobsRoot, leftPath, rightPath, manifestPath))
                 {
@@ -467,7 +470,7 @@ public static class DirectoryComparer
                 : TimeSpan.Zero;
 
             CompareFolders(left, right, advanced, diffs);
-            CompareFiles(left, right, advanced, hash, tolerance, diffs, cancellationToken, pause, progress, ref filesVisited, ref foldersVisited, ref lastPulse, manifest);
+            CompareFiles(left, right, advanced, hashDest, hashSource, tolerance, diffs, cancellationToken, pause, progress, ref filesVisited, ref foldersVisited, ref lastPulse, manifest);
 
             var result = BuildResult(leftPath, rightPath, started, DateTimeOffset.UtcNow, options, left, right, diffs, filesVisited, foldersVisited, canceled: false, error: null);
             lastPulse = Pulse(progress, filesVisited, foldersVisited, null, lastPulse, force: true);
@@ -728,7 +731,8 @@ public static class DirectoryComparer
         TreeSide left,
         TreeSide right,
         bool advanced,
-        bool hash,
+        bool hashDest,
+        bool hashSource,
         TimeSpan tolerance,
         List<DirectoryCompareDiff> diffs,
         CancellationToken cancellationToken,
@@ -828,7 +832,7 @@ public static class DirectoryComparer
             });
         }
 
-        if (hash)
+        if (hashDest)
         {
             lastPulse = HashContents(
                 left,
@@ -842,6 +846,97 @@ public static class DirectoryComparer
                 lastPulse,
                 manifest);
         }
+        else if (hashSource)
+        {
+            lastPulse = HashSourceOnly(
+                left,
+                cancellationToken,
+                pause,
+                progress,
+                filesVisited,
+                foldersVisited,
+                lastPulse,
+                manifest);
+        }
+    }
+
+    /// <summary>
+    /// Hash source files only. The file list and each finished source hash stay in the manifest
+    /// so a later content compare can skip them and hash the destination.
+    /// </summary>
+    private static long HashSourceOnly(
+        TreeSide left,
+        CancellationToken cancellationToken,
+        PauseGate? pause,
+        Action<DirectoryCompareProgress>? progress,
+        int filesVisited,
+        int foldersVisited,
+        long lastPulse,
+        CompareManifestWriter? manifest)
+    {
+        var files = left.Files.Values.OrderBy(file => file.Relative, StringComparer.OrdinalIgnoreCase).ToList();
+        long total = 0;
+        foreach (var file in files)
+        {
+            total += file.Size;
+        }
+
+        var clock = new HashClock();
+        var credited = 0L;
+        var pulseAt = lastPulse;
+        void Emit(string current, long fileDone, long fileTotal, bool force = false)
+        {
+            pulseAt = Pulse(progress, filesVisited, foldersVisited, current, pulseAt, new ComparePace
+            {
+                CurrentFolder = string.IsNullOrEmpty(current) ? "." : ParentKey(current),
+                FileBytesDone = fileDone,
+                FileBytesTotal = fileTotal,
+                BytesDone = credited + clock.Bytes,
+                BytesTotal = Math.Max(total, 1),
+                BytesPerSecond = clock.BytesPerSecond
+            }, force);
+        }
+
+        foreach (var file in files)
+        {
+            WaitIfPaused(pause, cancellationToken, clock);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (SavedHash(manifest, leftSide: true, file, out _))
+            {
+                credited += file.Size;
+                continue;
+            }
+
+            var fileDone = 0L;
+            void OnRead(long read)
+            {
+                WaitIfPaused(pause, cancellationToken, clock);
+                clock.Add(read);
+                fileDone += read;
+                Emit(file.Relative, fileDone, file.Size);
+            }
+
+            Emit(file.Relative, 0, file.Size, force: true);
+            try
+            {
+                var value = HashUtil.HashFile(file.FullPath, cancellationToken, OnRead);
+                manifest?.WriteHash(true, file.Relative, value, file.Size, file.LastWriteUtc.Ticks);
+                credited += file.Size;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // a source file that cannot be read is left unhashed; the compare still finishes
+                _ = ex;
+            }
+
+            Emit(file.Relative, file.Size, file.Size, force: true);
+        }
+
+        return pulseAt;
     }
 
     /// <summary>

@@ -22,6 +22,11 @@ public static class JobOptionBadges
                 compare.Add("Hash");
             }
 
+            if (o.HashSourceForCompare)
+            {
+                compare.Add("Hash source");
+            }
+
             if (o.FatTimestampTolerance)
             {
                 compare.Add("FAT 2s");

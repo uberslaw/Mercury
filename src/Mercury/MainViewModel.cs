@@ -50,7 +50,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private int _verifyIndex;
     private bool _dryRun;
     private bool _adaptiveCopy = true;
-    private bool _hashSourceForCompare;
     private bool _fixLongOrDuplicateNames = true;
     private bool _scheduleMonday = true;
     private bool _scheduleTuesday = true;
@@ -572,7 +571,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public int VerifyIndex { get => _verifyIndex; set => SetField(ref _verifyIndex, value); }
     public bool DryRun { get => _dryRun; set => SetField(ref _dryRun, value); }
     public bool AdaptiveCopy { get => _adaptiveCopy; set => SetField(ref _adaptiveCopy, value); }
-    public bool HashSourceForCompare { get => _hashSourceForCompare; set => SetField(ref _hashSourceForCompare, value); }
 
     public bool CopyModeAdaptive
     {
@@ -1432,14 +1430,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public bool ConfirmClose(Window owner)
     {
+        var compare = _scheduler.TryGetRunningCompare();
         if (!_scheduler.HasRunningJob)
         {
-            return true;
-        }
+            if (compare is null)
+            {
+                return true;
+            }
 
-        var compare = _scheduler.TryGetRunningJob();
-        if (compare?.Kind == JobKind.Compare)
-        {
             var compareChoice = ChoiceWindow.Show(
                 owner,
                 "Compare in progress",
@@ -1476,6 +1474,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             if (choice == ChoiceResult.Secondary)
             {
                 _scheduler.Stop(jobId, clearHeartbeat: false);
+                StopCompareForClose(compare);
                 _keepHeartbeatOnClose = true;
                 return true;
             }
@@ -1510,8 +1509,19 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             _scheduler.Stop(jobId, clearHeartbeat: false);
         }
 
+        StopCompareForClose(compare);
         _keepHeartbeatOnClose = true;
         return true;
+    }
+
+    private void StopCompareForClose(Job? compare)
+    {
+        if (compare is null)
+        {
+            return;
+        }
+
+        _scheduler.Stop(compare.Id, clearHeartbeat: false);
     }
 
     public void Dispose()
@@ -2228,7 +2238,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             ExcludeHiddenSystem = ExcludeHiddenSystem,
             PurgeExtraDestFiles = PurgeExtraDestFiles,
             AdaptiveCopy = AdaptiveCopy,
-            HashSourceForCompare = HashSourceForCompare,
             FixLongOrDuplicateNames = FixLongOrDuplicateNames,
             ScheduleDays = new WeekSelection(
                 ScheduleSunday,
@@ -2301,7 +2310,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             ExcludeHiddenSystem = options.ExcludeHiddenSystem;
             PurgeExtraDestFiles = options.PurgeExtraDestFiles;
             AdaptiveCopy = options.AdaptiveCopy;
-            HashSourceForCompare = options.HashSourceForCompare;
             FixLongOrDuplicateNames = options.FixLongOrDuplicateNames;
             var week = WeekSelection.From(options.ScheduleDays);
             ScheduleSunday = week.Sunday;
