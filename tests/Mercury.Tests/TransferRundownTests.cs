@@ -416,7 +416,7 @@ public class TransferRundownTests
 
         var options = HelpDocument.Sections.Single(s => s.Id == "options");
         Assert.Contains("Throttle Active PC", options.Body, StringComparison.Ordinal);
-        Assert.Contains("MB/s or Mbps", options.Body, StringComparison.Ordinal);
+        Assert.Contains("labeled with the unit you are not using", options.Body, StringComparison.Ordinal);
 
         var queue = HelpDocument.Sections.Single(s => s.Id == "queue");
         Assert.Contains("On hold", queue.Body, StringComparison.OrdinalIgnoreCase);

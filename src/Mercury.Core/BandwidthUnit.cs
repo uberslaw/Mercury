@@ -12,6 +12,9 @@ public static class BandwidthUnit
 
     public static string Label(bool megabits) => megabits ? "Mbps" : "MB/s";
 
+    /// <summary>The unit a click would switch to. Mbps while the boxes show MB/s, and MB/s while they show Mbps.</summary>
+    public static string SwitchToLabel(bool showingMegabits) => Label(!showingMegabits);
+
     public static double ToDisplay(double megabytesPerSecond, bool megabits) =>
         megabits ? megabytesPerSecond * MegabitsPerMegabyte : megabytesPerSecond;
 

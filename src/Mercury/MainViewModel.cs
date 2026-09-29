@@ -1075,6 +1075,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public string SpeedToolTip => "Applies immediately to the running job.";
     public string SpeedUnitLabel => BandwidthUnit.Label(ShowSpeedInMegabits);
 
+    /// <summary>Checkbox caption is the unit a click would switch to, not the unit on screen.</summary>
+    public string SpeedUnitToggleLabel => BandwidthUnit.SwitchToLabel(ShowSpeedInMegabits);
+
     public bool ShowSpeedInMegabits
     {
         get => _showSpeedInMegabits;
@@ -1093,6 +1096,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             _maxMBpsText = BandwidthUnit.ConvertDisplayText(_maxMBpsText, from, value);
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowSpeedInMegabits)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SpeedUnitLabel)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SpeedUnitToggleLabel)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(GlobalMinText)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(GlobalMaxText)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IdleThrottleText)));

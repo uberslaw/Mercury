@@ -7,6 +7,8 @@ public class BandwidthUnitTests
     {
         Assert.Equal("MB/s", BandwidthUnit.Label(false));
         Assert.Equal("Mbps", BandwidthUnit.Label(true));
+        Assert.Equal("Mbps", BandwidthUnit.SwitchToLabel(showingMegabits: false));
+        Assert.Equal("MB/s", BandwidthUnit.SwitchToLabel(showingMegabits: true));
         Assert.Equal(80, BandwidthUnit.ToDisplay(10, megabits: true));
         Assert.Equal(10, BandwidthUnit.FromDisplay(80, megabits: true));
         Assert.Equal("80", BandwidthUnit.FormatMegabytes(10, megabits: true));

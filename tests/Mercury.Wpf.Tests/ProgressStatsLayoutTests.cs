@@ -537,14 +537,21 @@ public class ProgressStatsLayoutTests
                 WpfSta.Flush();
 
                 var group = window.GlobalGroup;
-                var minGap = LeftX(window.GlobalMinBox, group) - RightX(window.GlobalMinLabel, group);
-                var maxGap = LeftX(window.GlobalMaxBox, group) - RightX(window.GlobalMaxLabel, group);
-                var idleGap = LeftX(window.GlobalIdleBox, group) - RightX(window.GlobalIdleCheck, group);
-                Assert.True(minGap >= -1 && minGap < 20, $"Min label must sit beside its box (gap {minGap})");
-                Assert.True(maxGap >= -1 && maxGap < 20, $"Max label must sit beside its box (gap {maxGap})");
-                Assert.True(idleGap >= -1 && idleGap < 20, $"Throttle Active PC must sit beside its box (gap {idleGap})");
+                var minX = LeftX(window.GlobalMinBox, group);
+                var maxX = LeftX(window.GlobalMaxBox, group);
+                var idleX = LeftX(window.GlobalIdleBox, group);
+                Assert.Equal(minX, maxX, 1);
+                Assert.Equal(minX, idleX, 1);
+                Assert.Equal(LeftX(window.GlobalMinUnit, group), LeftX(window.GlobalMaxUnit, group), 1);
+                Assert.Equal(LeftX(window.GlobalMinUnit, group), LeftX(window.GlobalIdleUnit, group), 1);
+                Assert.Equal("Mbps", window.GlobalUnitCheck.Content as string);
+                vm.ShowSpeedInMegabits = true;
+                WpfSta.Flush();
+                window.UpdateLayout();
+                Assert.Equal("MB/s", window.GlobalUnitCheck.Content as string);
                 Assert.True(window.GlobalMinBox.ActualWidth >= 70);
                 Assert.Equal(window.GlobalMinBox.ActualWidth, window.GlobalMaxBox.ActualWidth, 1);
+                Assert.Equal(window.GlobalMinBox.ActualWidth, window.GlobalIdleBox.ActualWidth, 1);
                 Assert.True(window.GlobalUnlimitedCheck.ActualWidth > 40);
                 Assert.True(
                     window.GlobalUnlimitedCheck.TranslatePoint(new WpfPoint(0, 0), group).Y
