@@ -61,6 +61,11 @@ internal static class AdaptiveCopyPolicy
     public const int VerifyBatchSize = 8;
     public const double ProbeMaxSeconds = 8;
     public const double ProbeMinSeconds = 5;
+    /// <summary>
+    /// A fresh destination write shorter than this is not a measurement of this job's destination.
+    /// It cannot select 2 files, 4 files, or 2 ranges.
+    /// </summary>
+    public const double ProbeMinSampleSeconds = 1;
     /// <summary>One-stream probe rate this many times a later sample is a cache burst, not a baseline.</summary>
     public const double ProbeBurstRatio = 2;
     public const int HeartbeatSeconds = 30;
@@ -77,11 +82,21 @@ internal static class AdaptiveCopyPolicy
     public static bool IsCapped(Job job, BandwidthBudget budget) =>
         job.Options.MaxBytesPerSecond is > 0 || budget.GlobalMaxBytesPerSecond is > 0;
 
+    /// <summary>Still to be copied. Journal rows already marked copied are not a speed sample.</summary>
+    public static bool IsPendingSample(FileRecord file) =>
+        file.Status is FileCopyStatus.Pending or FileCopyStatus.Failed or FileCopyStatus.Deferred
+        && file.Size > 0;
+
     public static bool ShouldProbe(IReadOnlyList<FileRecord> pending)
     {
         long bytes = 0;
         foreach (var file in pending)
         {
+            if (!IsPendingSample(file))
+            {
+                continue;
+            }
+
             if (file.Size >= LargeFileBytes)
             {
                 return true;
@@ -159,6 +174,67 @@ internal static class AdaptiveCopyPolicy
         }
 
         return "15% faster than one stream";
+    }
+
+    /// <summary>
+    /// Keep a wider mode only when one stream and that mode each wrote for at least a second.
+    /// A sub-second fresh write is not a destination measurement.
+    /// </summary>
+    public static AdaptiveCopyMode ChooseFromSamples(IReadOnlyList<ProbeSample> samples)
+    {
+        ProbeSample? one = null;
+        foreach (var sample in samples)
+        {
+            if (sample.Mode == AdaptiveCopyMode.Sequential)
+            {
+                one = sample;
+                break;
+            }
+        }
+
+        if (one is not { } baseline || baseline.Bytes <= 0 || baseline.Seconds < ProbeMinSampleSeconds)
+        {
+            return AdaptiveCopyMode.Sequential;
+        }
+
+        var rates = new Dictionary<AdaptiveCopyMode, double> { [AdaptiveCopyMode.Sequential] = baseline.BytesPerSecond };
+        foreach (var sample in samples)
+        {
+            if (sample.Mode == AdaptiveCopyMode.Sequential || sample.Bytes <= 0 || sample.Seconds < ProbeMinSampleSeconds)
+            {
+                continue;
+            }
+
+            rates[sample.Mode] = sample.BytesPerSecond;
+        }
+
+        return Choose(rates);
+    }
+
+    /// <summary>
+    /// True when the chosen sample lasted long enough to remember for this volume pair.
+    /// A sub-second write is not remembered.
+    /// </summary>
+    public static bool ChoiceIsDestinationMeasurement(IReadOnlyList<ProbeSample> samples)
+    {
+        var chosen = ChooseFromSamples(samples);
+        ProbeSample? one = null;
+        ProbeSample? pick = null;
+        foreach (var sample in samples)
+        {
+            if (sample.Mode == AdaptiveCopyMode.Sequential)
+            {
+                one = sample;
+            }
+
+            if (sample.Mode == chosen)
+            {
+                pick = sample;
+            }
+        }
+
+        return one is { Bytes: > 0, Seconds: >= ProbeMinSampleSeconds }
+            && pick is { Bytes: > 0, Seconds: >= ProbeMinSampleSeconds };
     }
 
     /// <summary>
@@ -763,17 +839,28 @@ internal static class AdaptiveCopyPlanner
                 return new AdaptivePlan(forced, 0, true, capped);
             }
 
-            if (measured.Failed || measured.Samples.Count == 0)
+            if (measured.Failed)
             {
                 mode = AdaptiveCopyMode.Sequential;
                 log.Info(job.Id, name, "Adaptive copy probe failed; one stream.");
+            }
+            else if (measured.Samples.Count == 0)
+            {
+                mode = AdaptiveCopyMode.Sequential;
+                log.Info(job.Id, name, measured.NoPending
+                    ? "Adaptive copy: no pending file to sample, so this job stays on one stream."
+                    : "Adaptive copy probe skipped; one stream.");
             }
             else
             {
                 mode = measured.Mode;
                 // The probe rate is not the falloff baseline. The first sustained chunk of this mode is.
                 baseline = 0;
-                AdaptiveCopyMemory.Remember(job.SourcePath, job.DestinationPath, mode, 0);
+                if (AdaptiveCopyPolicy.ChoiceIsDestinationMeasurement(measured.Samples))
+                {
+                    AdaptiveCopyMemory.Remember(job.SourcePath, job.DestinationPath, mode, 0);
+                }
+
                 log.Info(job.Id, name, AdaptiveCopyLog.ProbeLine(measured.Samples, measured.ElapsedSeconds, mode));
             }
 
@@ -798,7 +885,7 @@ internal static class AdaptiveCopyPlanner
     };
 }
 
-internal readonly record struct ProbeSample(AdaptiveCopyMode Mode, long Bytes, double Seconds)
+internal readonly record struct ProbeSample(AdaptiveCopyMode Mode, long Bytes, double Seconds, string TestPaths = "")
 {
     public double BytesPerSecond => AdaptiveCopyPolicy.Rate(Bytes, Seconds);
 }
@@ -808,9 +895,11 @@ internal readonly record struct ProbeResult(
     double OneStreamBps,
     IReadOnlyList<ProbeSample> Samples,
     double ElapsedSeconds,
-    bool Failed)
+    bool Failed,
+    bool NoPending = false)
 {
     public static ProbeResult Empty { get; } = new(AdaptiveCopyMode.Sequential, 0, [], 0, false);
+    public static ProbeResult NothingPending { get; } = new(AdaptiveCopyMode.Sequential, 0, [], 0, false, true);
 }
 
 internal readonly record struct SustainObservation(
@@ -907,8 +996,11 @@ internal static class AdaptiveCopyLog
                 continue;
             }
 
-            parts.Add(
-                $"{Short(sample.Mode)} {ByteFormatter.ToString(sample.Bytes)} in {Seconds(sample.Seconds)} ({Mbps(sample.BytesPerSecond)})");
+            var names = FormatTestNames(sample.TestPaths);
+            var measured = $"{ByteFormatter.ToString(sample.Bytes)} in {Seconds(sample.Seconds)} ({Mbps(sample.BytesPerSecond)})";
+            parts.Add(string.IsNullOrEmpty(names)
+                ? $"{Short(sample.Mode)} {measured}"
+                : $"{Short(sample.Mode)} {names} {measured}");
         }
 
         var rates = new Dictionary<AdaptiveCopyMode, double>();
@@ -929,7 +1021,61 @@ internal static class AdaptiveCopyLog
                 ? $"Probe {Seconds(elapsedSeconds)} is not the baseline."
                 : "One stream is well above a later sample, so the probe is not the baseline.";
         var body = parts.Count == 0 ? "no sample" : string.Join("; ", parts);
-        return $"Adaptive copy probe: {body}. Chose {AdaptiveCopyPlanner.Describe(chosen)} ({AdaptiveCopyPolicy.ChooseWhy(rates, chosen)}). {baseline}";
+        var why = TooFastReason(samples) ?? AdaptiveCopyPolicy.ChooseWhy(rates, chosen);
+        return $"Adaptive copy probe: {body}. Chose {AdaptiveCopyPlanner.Describe(chosen)} ({why}). {baseline}";
+    }
+
+    private static string? TooFastReason(IReadOnlyList<ProbeSample> samples)
+    {
+        if (AdaptiveCopyPolicy.ChooseFromSamples(samples) != AdaptiveCopyMode.Sequential)
+        {
+            return null;
+        }
+
+        foreach (var sample in samples)
+        {
+            if (sample.Mode == AdaptiveCopyMode.Sequential && sample.Bytes > 0 && sample.Seconds < AdaptiveCopyPolicy.ProbeMinSampleSeconds)
+            {
+                return TooFast(sample.Seconds);
+            }
+        }
+
+        var rates = new Dictionary<AdaptiveCopyMode, double>();
+        foreach (var sample in samples)
+        {
+            rates[sample.Mode] = sample.BytesPerSecond;
+        }
+
+        var raw = AdaptiveCopyPolicy.Choose(rates);
+        if (raw == AdaptiveCopyMode.Sequential)
+        {
+            return null;
+        }
+
+        foreach (var sample in samples)
+        {
+            if (sample.Mode == raw && sample.Seconds < AdaptiveCopyPolicy.ProbeMinSampleSeconds)
+            {
+                return TooFast(sample.Seconds);
+            }
+        }
+
+        return null;
+    }
+
+    private static string TooFast(double seconds) =>
+        "sample finished in " + seconds.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)
+        + "s, too fast to measure this destination; staying on one stream";
+
+    private static string FormatTestNames(string testPaths)
+    {
+        if (string.IsNullOrEmpty(testPaths))
+        {
+            return "";
+        }
+
+        var parts = testPaths.Split('|', StringSplitOptions.RemoveEmptyEntries);
+        return string.Join(", ", parts);
     }
 
     public static string WidthChange(
@@ -979,130 +1125,278 @@ internal static class AdaptiveCopyLog
 
 internal static class AdaptiveCopyProbe
 {
+    /// <summary>Test leaf ends with this plus a unique token, in the destination folder. Not the final file.</summary>
+    internal const string SpeedTestMarker = ".mercury-speed-test.tmp.";
+
     public static async Task<ProbeResult> MeasureAsync(
         IReadOnlyList<FileRecord> files,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<string>? onTestFile = null)
     {
-        var existing = files.Where(f => f.Size > 0 && File.Exists(f.SourcePath)).ToList();
-        if (existing.Count == 0)
+        var pending = new List<FileRecord>();
+        foreach (var file in files)
         {
-            return ProbeResult.Empty;
+            if (CanSample(file))
+            {
+                pending.Add(file);
+            }
         }
 
-        var sample = Math.Min(AdaptiveCopyPolicy.ProbeBytes, existing.Sum(f => f.Size));
+        if (pending.Count == 0)
+        {
+            return ProbeResult.NothingPending;
+        }
+
+        var sample = Math.Min(AdaptiveCopyPolicy.ProbeBytes, pending.Sum(f => f.Size));
         if (sample < 1024 * 1024)
         {
             return ProbeResult.Empty;
         }
 
-        var dir = Path.Combine(Path.GetTempPath(), "mercury-probe-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
         var clock = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             var samples = new List<ProbeSample>();
-            var rates = new Dictionary<AdaptiveCopyMode, double>();
-            var one = await TimeOneStreamAsync(existing, sample, dir, cancellationToken).ConfigureAwait(false);
+            var one = await TimeOneStreamAsync(pending, files, sample, onTestFile, cancellationToken).ConfigureAwait(false);
             samples.Add(one);
-            rates[one.Mode] = one.BytesPerSecond;
-            if (existing.Count >= 2)
+            if (pending.Count >= 2)
             {
-                var two = await TimeFilesAsync(existing, 2, sample, dir, cancellationToken).ConfigureAwait(false);
+                var two = await TimeFilesAsync(pending, files, 2, sample, onTestFile, cancellationToken).ConfigureAwait(false);
                 samples.Add(two);
-                rates[two.Mode] = two.BytesPerSecond;
             }
 
-            if (existing.Count >= 4)
+            if (pending.Count >= 4)
             {
-                var four = await TimeFilesAsync(existing, 4, sample, dir, cancellationToken).ConfigureAwait(false);
+                var four = await TimeFilesAsync(pending, files, 4, sample, onTestFile, cancellationToken).ConfigureAwait(false);
                 samples.Add(four);
-                rates[four.Mode] = four.BytesPerSecond;
             }
 
-            if (existing.Any(f => f.Size >= AdaptiveCopyPolicy.LargeFileBytes))
+            if (pending.Any(f => f.Size >= AdaptiveCopyPolicy.LargeFileBytes))
             {
-                var ranges = await TimeRangesAsync(existing, sample, dir, cancellationToken).ConfigureAwait(false);
+                var ranges = await TimeRangesAsync(pending, files, sample, onTestFile, cancellationToken).ConfigureAwait(false);
                 samples.Add(ranges);
-                rates[ranges.Mode] = ranges.BytesPerSecond;
             }
 
             clock.Stop();
-            return new ProbeResult(AdaptiveCopyPolicy.Choose(rates), one.BytesPerSecond, samples, clock.Elapsed.TotalSeconds, false);
+            var mode = AdaptiveCopyPolicy.ChooseFromSamples(samples);
+            return new ProbeResult(mode, one.BytesPerSecond, samples, clock.Elapsed.TotalSeconds, false);
         }
         catch (OperationCanceledException)
         {
             throw;
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return ProbeResult.Empty with { Failed = true };
         }
-        finally
+    }
+
+    private static bool CanSample(FileRecord file)
+    {
+        if (!AdaptiveCopyPolicy.IsPendingSample(file)
+            || string.IsNullOrWhiteSpace(file.SourcePath)
+            || string.IsNullOrWhiteSpace(file.DestPath))
         {
-            try
-            {
-                Directory.Delete(dir, true);
-            }
-            catch
-            {
-                // probe temps are disposable
-            }
+            return false;
+        }
+
+        try
+        {
+            return File.Exists(file.SourcePath);
+        }
+        catch
+        {
+            return false;
         }
     }
 
     private static async Task<ProbeSample> TimeOneStreamAsync(
-        IReadOnlyList<FileRecord> files, long sample, string dir, CancellationToken cancellationToken)
+        IReadOnlyList<FileRecord> pending,
+        IReadOnlyList<FileRecord> protectedDestinations,
+        long sample,
+        Action<string>? onTestFile,
+        CancellationToken cancellationToken)
     {
-        var file = files.OrderByDescending(f => f.Size).First();
-        var dest = Path.Combine(dir, "one.bin");
+        var file = pending.OrderByDescending(f => f.Size).First();
+        var path = TestFilePath(file.DestPath, NewToken(), protectedDestinations);
+        var created = new bool[1];
         var clock = System.Diagnostics.Stopwatch.StartNew();
-        var copied = await CopySampleAsync(file.SourcePath, 0, Math.Min(sample, file.Size), dest, cancellationToken)
-            .ConfigureAwait(false);
-        clock.Stop();
-        return new ProbeSample(AdaptiveCopyMode.Sequential, copied, clock.Elapsed.TotalSeconds);
+        try
+        {
+            var copied = await CopySampleAsync(
+                    file.SourcePath, 0, Math.Min(sample, file.Size), path, () => created[0] = true, cancellationToken)
+                .ConfigureAwait(false);
+            clock.Stop();
+            return new ProbeSample(AdaptiveCopyMode.Sequential, copied, clock.Elapsed.TotalSeconds, path);
+        }
+        finally
+        {
+            if (clock.IsRunning)
+            {
+                clock.Stop();
+            }
+
+            ReleaseTestFiles(created, [path], onTestFile);
+        }
     }
 
     private static async Task<ProbeSample> TimeFilesAsync(
-        IReadOnlyList<FileRecord> files, int width, long sample, string dir, CancellationToken cancellationToken)
+        IReadOnlyList<FileRecord> pending,
+        IReadOnlyList<FileRecord> protectedDestinations,
+        int width,
+        long sample,
+        Action<string>? onTestFile,
+        CancellationToken cancellationToken)
     {
-        var chosen = files.OrderByDescending(f => f.Size).Take(width).ToList();
+        var chosen = pending.OrderByDescending(f => f.Size).Take(width).ToList();
         var each = Math.Max(1, sample / width);
         var mode = width >= 4 ? AdaptiveCopyMode.Files4 : AdaptiveCopyMode.Files2;
-        var clock = System.Diagnostics.Stopwatch.StartNew();
-        var tasks = new Task<long>[chosen.Count];
+        var paths = new string[chosen.Count];
+        var created = new bool[chosen.Count];
         for (var i = 0; i < chosen.Count; i++)
         {
-            var file = chosen[i];
-            var dest = Path.Combine(dir, "f" + i + ".bin");
-            var count = Math.Min(each, file.Size);
-            tasks[i] = CopySampleAsync(file.SourcePath, 0, count, dest, cancellationToken);
+            paths[i] = TestFilePath(chosen[i].DestPath, NewToken(), protectedDestinations);
         }
 
-        var copied = await Task.WhenAll(tasks).ConfigureAwait(false);
-        clock.Stop();
-        return new ProbeSample(mode, copied.Sum(), clock.Elapsed.TotalSeconds);
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            var tasks = new Task<long>[chosen.Count];
+            for (var i = 0; i < chosen.Count; i++)
+            {
+                var index = i;
+                var file = chosen[i];
+                var count = Math.Min(each, file.Size);
+                tasks[i] = CopySampleAsync(file.SourcePath, 0, count, paths[index], () => created[index] = true, cancellationToken);
+            }
+
+            var copied = await Task.WhenAll(tasks).ConfigureAwait(false);
+            clock.Stop();
+            return new ProbeSample(mode, copied.Sum(), clock.Elapsed.TotalSeconds, string.Join("|", paths));
+        }
+        finally
+        {
+            if (clock.IsRunning)
+            {
+                clock.Stop();
+            }
+
+            ReleaseTestFiles(created, paths, onTestFile);
+        }
     }
 
     private static async Task<ProbeSample> TimeRangesAsync(
-        IReadOnlyList<FileRecord> files, long sample, string dir, CancellationToken cancellationToken)
+        IReadOnlyList<FileRecord> pending,
+        IReadOnlyList<FileRecord> protectedDestinations,
+        long sample,
+        Action<string>? onTestFile,
+        CancellationToken cancellationToken)
     {
-        var file = files.OrderByDescending(f => f.Size).First();
+        FileRecord? file = null;
+        foreach (var candidate in pending)
+        {
+            if (candidate.Size < AdaptiveCopyPolicy.LargeFileBytes)
+            {
+                continue;
+            }
+
+            if (file is null || candidate.Size > file.Size)
+            {
+                file = candidate;
+            }
+        }
+
+        if (file is null)
+        {
+            throw new InvalidOperationException("No pending large file to sample.");
+        }
+
         var count = Math.Min(sample, file.Size);
         var mid = count / 2;
+        var token = NewToken();
+        var paths = new[]
+        {
+            TestFilePath(file.DestPath, token + "a", protectedDestinations),
+            TestFilePath(file.DestPath, token + "b", protectedDestinations)
+        };
+        var created = new bool[2];
         var clock = System.Diagnostics.Stopwatch.StartNew();
-        var first = CopySampleAsync(file.SourcePath, 0, mid, Path.Combine(dir, "r0.bin"), cancellationToken);
-        var second = CopySampleAsync(file.SourcePath, mid, count - mid, Path.Combine(dir, "r1.bin"), cancellationToken);
-        var copied = await Task.WhenAll(first, second).ConfigureAwait(false);
-        clock.Stop();
-        return new ProbeSample(AdaptiveCopyMode.Ranges2, copied.Sum(), clock.Elapsed.TotalSeconds);
+        try
+        {
+            var first = CopySampleAsync(file.SourcePath, 0, mid, paths[0], () => created[0] = true, cancellationToken);
+            var second = CopySampleAsync(file.SourcePath, mid, count - mid, paths[1], () => created[1] = true, cancellationToken);
+            var copied = await Task.WhenAll(first, second).ConfigureAwait(false);
+            clock.Stop();
+            return new ProbeSample(AdaptiveCopyMode.Ranges2, copied.Sum(), clock.Elapsed.TotalSeconds, string.Join("|", paths));
+        }
+        finally
+        {
+            if (clock.IsRunning)
+            {
+                clock.Stop();
+            }
+
+            ReleaseTestFiles(created, paths, onTestFile);
+        }
     }
 
+    internal static string TestFilePath(string destPath, string token, IReadOnlyList<FileRecord> protectedDestinations)
+    {
+        var finalPath = Path.GetFullPath(destPath);
+        var folder = Path.GetDirectoryName(finalPath);
+        if (string.IsNullOrEmpty(folder))
+        {
+            throw new IOException("Adaptive copy probe has no destination folder.");
+        }
+
+        Directory.CreateDirectory(folder);
+        var leaf = Path.GetFileName(finalPath);
+        if (string.IsNullOrEmpty(leaf))
+        {
+            leaf = "file";
+        }
+
+        var testPath = Path.GetFullPath(Path.Combine(folder, leaf + SpeedTestMarker + token));
+        if (string.Equals(testPath, finalPath, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new IOException("Adaptive copy probe refused to write the final destination path.");
+        }
+
+        foreach (var other in protectedDestinations)
+        {
+            if (string.IsNullOrWhiteSpace(other.DestPath))
+            {
+                continue;
+            }
+
+            string otherFull;
+            try
+            {
+                otherFull = Path.GetFullPath(other.DestPath);
+            }
+            catch
+            {
+                continue;
+            }
+
+            if (string.Equals(otherFull, testPath, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new IOException("Adaptive copy probe refused to write a final destination path.");
+            }
+        }
+
+        return testPath;
+    }
+
+    private static string NewToken() => Guid.NewGuid().ToString("N");
+
     private static async Task<long> CopySampleAsync(
-        string source, long offset, long count, string dest, CancellationToken cancellationToken)
+        string source, long offset, long count, string dest, Action markCreated, CancellationToken cancellationToken)
     {
         var flags = FileOptions.SequentialScan | FileOptions.Asynchronous;
         await using var src = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 1024 * 1024, flags);
-        await using var dst = new FileStream(dest, FileMode.Create, FileAccess.Write, FileShare.None, 1024 * 1024, flags);
+        await using var dst = new FileStream(dest, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 1024, flags);
+        markCreated();
         if (offset > 0)
         {
             src.Seek(offset, SeekOrigin.Begin);
@@ -1134,6 +1428,49 @@ internal static class AdaptiveCopyProbe
         }
 
         return copied;
+    }
+
+    private static void ReleaseTestFiles(bool[] created, string[] paths, Action<string>? onTestFile)
+    {
+        Exception? observerError = null;
+        for (var i = 0; i < paths.Length; i++)
+        {
+            if (!created[i])
+            {
+                continue;
+            }
+
+            try
+            {
+                onTestFile?.Invoke(paths[i]);
+            }
+            catch (Exception ex)
+            {
+                observerError ??= ex;
+            }
+
+            DeleteTestFile(paths[i]);
+        }
+
+        if (observerError is not null)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(observerError).Throw();
+        }
+    }
+
+    private static void DeleteTestFile(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch
+        {
+            // The test file is not a real copy.
+        }
     }
 }
 
