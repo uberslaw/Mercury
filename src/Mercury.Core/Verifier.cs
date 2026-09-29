@@ -11,10 +11,16 @@ public static class Verifier
         IJobLog log,
         string name,
         CancellationToken cancellationToken = default,
-        Action<RundownProgress>? progress = null)
+        Action<RundownProgress>? progress = null,
+        IReadOnlySet<string>? onlyThese = null)
     {
         var issuesBefore = journal.IssueCount();
         var files = journal.GetFiles();
+        if (onlyThese is not null)
+        {
+            files = files.Where(f => onlyThese.Contains(f.RelativePath)).ToList();
+        }
+
         var total = Math.Max(1, files.Count);
         var done = 0;
         var clock = Stopwatch.StartNew();
@@ -49,6 +55,13 @@ public static class Verifier
             }
 
             if (file.Status == FileCopyStatus.Skipped)
+            {
+                done++;
+                Pulse(file.RelativePath);
+                continue;
+            }
+
+            if (onlyThese is null && AdaptiveVerifyCache.Contains(job.Id, file.RelativePath))
             {
                 done++;
                 Pulse(file.RelativePath);
@@ -133,9 +146,11 @@ public static class Verifier
             Pulse(file.RelativePath);
         }
 
+        if (onlyThese is null)
+        {
         try
         {
-            var known = files.Select(f => f.RelativePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var known = journal.GetFiles().Select(f => f.RelativePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
             foreach (var record in SourceWalker.Walk(mapping, extraExcludeRoots: null, job.Options))
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -158,6 +173,12 @@ public static class Verifier
         catch (Exception ex)
         {
             log.Error(job.Id, name, $"Inventory walk failed: {ex.Message}");
+        }
+        }
+
+        if (onlyThese is null)
+        {
+            AdaptiveVerifyCache.Clear(job.Id);
         }
 
         Pulse(null);

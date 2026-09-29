@@ -4,9 +4,21 @@ namespace Mercury;
 
 public sealed class PauseGate
 {
+    private sealed class Inflight
+    {
+        public string Path = "";
+        public long Size;
+        public long Copied;
+        public long Start;
+        public long StartedUtcTicks;
+    }
+
     private volatile int _paused;
     private volatile int _pauseAfterFile;
     private readonly SemaphoreSlim _signal = new(0, 1);
+    private readonly object _filesLock = new();
+    private readonly Dictionary<string, Inflight> _inflight = new(StringComparer.OrdinalIgnoreCase);
+    private string? _lastPath;
     private string? _filePath;
     private long _fileSize;
     private long _fileCopied;
@@ -14,6 +26,19 @@ public sealed class PauseGate
     private long _fileStartedUtcTicks;
 
     public PauseGate? Parent { get; set; }
+
+    public string CopyModeLabel { get; set; } = "";
+
+    public int InFlightCount
+    {
+        get
+        {
+            lock (_filesLock)
+            {
+                return _inflight.Count;
+            }
+        }
+    }
 
     public bool IsPaused => _paused != 0;
 
@@ -73,22 +98,103 @@ public sealed class PauseGate
 
     public void BeginFile(string relativePath, long size)
     {
-        _filePath = relativePath;
-        _fileSize = size;
-        Interlocked.Exchange(ref _fileCopied, 0);
-        Interlocked.Exchange(ref _fileStart, Stopwatch.GetTimestamp());
-        Interlocked.Exchange(ref _fileStartedUtcTicks, DateTimeOffset.UtcNow.UtcTicks);
+        lock (_filesLock)
+        {
+            _inflight[relativePath] = new Inflight
+            {
+                Path = relativePath,
+                Size = size,
+                Copied = 0,
+                Start = Stopwatch.GetTimestamp(),
+                StartedUtcTicks = DateTimeOffset.UtcNow.UtcTicks
+            };
+            _lastPath = relativePath;
+            PublishPrimary();
+        }
     }
 
-    public void AddFileBytes(long count) => Interlocked.Add(ref _fileCopied, count);
+    public void AddFileBytes(long count) => AddFileBytes(count, null);
 
-    public void EndFile()
+    public void AddFileBytes(long count, string? path)
     {
-        _filePath = null;
-        _fileSize = 0;
-        Interlocked.Exchange(ref _fileCopied, 0);
-        Interlocked.Exchange(ref _fileStart, 0);
-        Interlocked.Exchange(ref _fileStartedUtcTicks, 0);
+        if (count == 0)
+        {
+            return;
+        }
+
+        lock (_filesLock)
+        {
+            var key = path ?? _lastPath;
+            if (key is not null && _inflight.TryGetValue(key, out var file))
+            {
+                file.Copied += count;
+            }
+            else if (_inflight.Count == 1)
+            {
+                foreach (var only in _inflight.Values)
+                {
+                    only.Copied += count;
+                }
+            }
+
+            PublishPrimary();
+        }
+    }
+
+    public void EndFile() => EndFile(null);
+
+    public void EndFile(string? path)
+    {
+        lock (_filesLock)
+        {
+            var key = path ?? _lastPath;
+            if (key is not null)
+            {
+                _inflight.Remove(key);
+            }
+
+            if (_lastPath is not null && !_inflight.ContainsKey(_lastPath))
+            {
+                _lastPath = null;
+                foreach (var remaining in _inflight.Keys)
+                {
+                    _lastPath = remaining;
+                }
+            }
+
+            PublishPrimary();
+        }
+    }
+
+    private void PublishPrimary()
+    {
+        Inflight? best = null;
+        var bestRemain = long.MinValue;
+        foreach (var file in _inflight.Values)
+        {
+            var remain = file.Size - file.Copied;
+            if (best is null || remain > bestRemain || (remain == bestRemain && file.Size > best.Size))
+            {
+                best = file;
+                bestRemain = remain;
+            }
+        }
+
+        if (best is null)
+        {
+            _filePath = null;
+            Interlocked.Exchange(ref _fileSize, 0);
+            Interlocked.Exchange(ref _fileCopied, 0);
+            Interlocked.Exchange(ref _fileStart, 0);
+            Interlocked.Exchange(ref _fileStartedUtcTicks, 0);
+            return;
+        }
+
+        _filePath = best.Path;
+        Interlocked.Exchange(ref _fileSize, best.Size);
+        Interlocked.Exchange(ref _fileCopied, best.Copied);
+        Interlocked.Exchange(ref _fileStart, best.Start);
+        Interlocked.Exchange(ref _fileStartedUtcTicks, best.StartedUtcTicks);
     }
 
     /// <summary>
@@ -97,12 +203,13 @@ public sealed class PauseGate
     /// </summary>
     public TimeSpan? RemainingFileEta(double bytesPerSecond)
     {
-        if (string.IsNullOrEmpty(_filePath) || _fileSize <= 0)
+        var size = Interlocked.Read(ref _fileSize);
+        if (string.IsNullOrEmpty(_filePath) || size <= 0)
         {
             return TimeSpan.Zero;
         }
 
-        var remaining = _fileSize - Interlocked.Read(ref _fileCopied);
+        var remaining = size - Interlocked.Read(ref _fileCopied);
         if (remaining <= 0)
         {
             return TimeSpan.Zero;

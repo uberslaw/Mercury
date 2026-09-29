@@ -45,6 +45,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private int _overwriteIndex;
     private int _verifyIndex;
     private bool _dryRun;
+    private bool _adaptiveCopy = true;
     private bool _packAsZip;
     private bool _ignoreFreeSpaceCheck;
     private bool _roboFlagsExpanded;
@@ -548,6 +549,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public int OverwriteIndex { get => _overwriteIndex; set => SetField(ref _overwriteIndex, value); }
     public int VerifyIndex { get => _verifyIndex; set => SetField(ref _verifyIndex, value); }
     public bool DryRun { get => _dryRun; set => SetField(ref _dryRun, value); }
+    public bool AdaptiveCopy { get => _adaptiveCopy; set => SetField(ref _adaptiveCopy, value); }
     public bool PackAsZip { get => _packAsZip; set => SetField(ref _packAsZip, value); }
     public bool SkipCompressedWhenPacking { get => _skipCompressedWhenPacking; set => SetField(ref _skipCompressedWhenPacking, value); }
     public string NeverPackDraft { get => _neverPackDraft; set => SetField(ref _neverPackDraft, value); }
@@ -2062,7 +2064,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             CopySymbolicLinksAsLinks = CopySymbolicLinksAsLinks,
             FatTimestampTolerance = FatTimestampTolerance,
             ExcludeHiddenSystem = ExcludeHiddenSystem,
-            PurgeExtraDestFiles = PurgeExtraDestFiles
+            PurgeExtraDestFiles = PurgeExtraDestFiles,
+            AdaptiveCopy = AdaptiveCopy
         };
     }
 
@@ -2125,6 +2128,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             FatTimestampTolerance = options.FatTimestampTolerance;
             ExcludeHiddenSystem = options.ExcludeHiddenSystem;
             PurgeExtraDestFiles = options.PurgeExtraDestFiles;
+            AdaptiveCopy = options.AdaptiveCopy;
         }
         finally
         {

@@ -191,7 +191,7 @@ public static class ZipPack
                     {
                         if (!packedOk)
                         {
-                            pause.EndFile();
+                            pause.EndFile(file.RelativePath);
                         }
                     }
 
@@ -211,7 +211,7 @@ public static class ZipPack
                         await onAfterFile(file.RelativePath).ConfigureAwait(false);
                     }
 
-                    pause.EndFile();
+                    pause.EndFile(file.RelativePath);
 
                     if (onRetryDeferred is not null)
                     {
@@ -280,7 +280,7 @@ public static class ZipPack
                 await dst.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
                 hasher?.Append(buffer.AsSpan(0, read));
                 speed.Add(read);
-                pause.AddFileBytes(read);
+                pause.AddFileBytes(read, file.RelativePath);
             }
         }
 
@@ -349,7 +349,7 @@ public static class ZipPack
             }
             finally
             {
-                pause.EndFile();
+                pause.EndFile(file.RelativePath);
             }
         }
     }
@@ -532,7 +532,7 @@ public static class ZipPack
 
                 if (!entries.TryGetValue(key, out entry))
                 {
-                    pause?.EndFile();
+                    pause?.EndFile(relative);
                     throw new FileNotFoundException($"Packed zip is missing entry {relative}.", zipPath);
                 }
             }
@@ -546,7 +546,7 @@ public static class ZipPack
 
                 onUnpacked?.Invoke(relative);
                 speed?.Add(size);
-                pause?.EndFile();
+                pause?.EndFile(relative);
                 if (onAfterFile is not null)
                 {
                     await onAfterFile(relative).ConfigureAwait(false);
@@ -591,7 +591,7 @@ public static class ZipPack
 
                         await dst.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
                         speed?.Add(read);
-                        pause?.AddFileBytes(read);
+                        pause?.AddFileBytes(read, relative);
                     }
 
                     await dst.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -622,23 +622,23 @@ public static class ZipPack
             catch (OperationCanceledException)
             {
                 TryDelete(temp);
-                pause?.EndFile();
+                pause?.EndFile(relative);
                 throw;
             }
             catch (Exception ex) when (onTransientSkip?.Invoke(relative, ex) == true)
             {
                 TryDelete(temp);
-                pause?.EndFile();
+                pause?.EndFile(relative);
                 continue;
             }
             catch
             {
                 TryDelete(temp);
-                pause?.EndFile();
+                pause?.EndFile(relative);
                 throw;
             }
 
-            pause?.EndFile();
+            pause?.EndFile(relative);
             onUnpacked?.Invoke(relative);
             if (log is not null && job is not null && (i == 0 || i + 1 == total || (i + 1) % 500 == 0))
             {
