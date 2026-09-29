@@ -243,7 +243,9 @@ public class DirectoryCompareTests
         Assert.Contains("Skip if dest newer or equal", section.Body, StringComparison.Ordinal);
         Assert.Contains("xxHash64", section.Body, StringComparison.Ordinal);
         Assert.Contains("current folder", section.Body, StringComparison.Ordinal);
-        Assert.Contains("does not keep a place to resume", section.Body, StringComparison.Ordinal);
+        Assert.Contains("each source hash", section.Body, StringComparison.Ordinal);
+        Assert.Contains("starts the count over", section.Body, StringComparison.Ordinal);
+        Assert.DoesNotContain("does not keep a place to resume", section.Body, StringComparison.Ordinal);
         Assert.Contains("Source / Destination", section.Body, StringComparison.Ordinal);
         Assert.Contains("Source→Dest", section.Body, StringComparison.Ordinal);
         Assert.Contains("Show destination-only", section.Body, StringComparison.Ordinal);
@@ -303,6 +305,226 @@ public class DirectoryCompareTests
                 d.RelativePath == "album" &&
                 d.LeftFileCount == 2 &&
                 d.RightFileCount == 1);
+        }
+        finally
+        {
+            Cleanup(left, right);
+        }
+    }
+
+    [Fact]
+    public void Manifest_RoundTrip_LastHashWins_AndSameJob()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "mercury-manifest-" + Guid.NewGuid().ToString("N"));
+        var left = Path.Combine(dir, "L");
+        var right = Path.Combine(dir, "R");
+        Directory.CreateDirectory(left);
+        Directory.CreateDirectory(right);
+        try
+        {
+            var path = Path.Combine(dir, "compare-manifest.jsonl");
+            using (var writer = CompareManifestWriter.Open(path, left, right, advanced: true, hash: true, fat: false))
+            {
+                writer.WriteInventory(new CompareManifest
+                {
+                    LeftRootFiles = 1,
+                    RightRootFiles = 1,
+                    Files =
+                    {
+                        new CompareManifestEntry
+                        {
+                            Left = true,
+                            Relative = "a.txt",
+                            Name = "a.txt",
+                            FullPath = Path.Combine(left, "a.txt"),
+                            Size = 4,
+                            WriteTicks = 10
+                        },
+                        new CompareManifestEntry
+                        {
+                            Left = false,
+                            Relative = "a.txt",
+                            Name = "a.txt",
+                            FullPath = Path.Combine(right, "a.txt"),
+                            Size = 4,
+                            WriteTicks = 10
+                        }
+                    }
+                });
+                writer.WriteHash(left: true, "a.txt", "AAAA", 4, 10);
+                writer.WriteHash(left: true, "a.txt", "BBBB", 4, 10);
+            }
+
+            var loaded = CompareManifestStore.Load(path);
+            Assert.NotNull(loaded);
+            Assert.True(loaded!.InventoryComplete);
+            Assert.Equal(1, loaded.LeftRootFiles);
+            Assert.True(CompareManifestStore.SameJob(loaded, left, right, true, true, false));
+            Assert.False(CompareManifestStore.SameJob(loaded, left, right, true, false, false));
+            Assert.False(CompareManifestStore.SameJob(loaded, left, right, true, true, true));
+            Assert.False(CompareManifestStore.SameJob(loaded, left, Path.Combine(dir, "other"), true, true, false));
+            var entry = Assert.Single(loaded.Files, file => file.Left);
+            Assert.Equal("BBBB", entry.ContentHash);
+            Assert.Equal(1, loaded.SourceHashCount);
+            Assert.Equal(0, loaded.DestHashCount);
+            Assert.Equal(0, loaded.ComparedFileCount);
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public void HashResume_SkipsFinishedSourceHash()
+    {
+        var (left, right) = Trees();
+        try
+        {
+            File.WriteAllText(Path.Combine(left, "a.txt"), "AAAA");
+            File.WriteAllText(Path.Combine(right, "a.txt"), "AAAA");
+            File.WriteAllText(Path.Combine(left, "b.txt"), "BBBB");
+            File.WriteAllText(Path.Combine(right, "b.txt"), "BBBB");
+            var manifest = Path.Combine(Path.GetDirectoryName(left)!, "compare-manifest.jsonl");
+            using var cts = new CancellationTokenSource();
+            var first = DirectoryComparer.Compare(
+                left,
+                right,
+                new DirectoryCompareOptions { Advanced = true, Hash = true },
+                cts.Token,
+                progress: progress =>
+                {
+                    if (progress.CurrentRelative == "a.txt" &&
+                        progress.Pace is { FileBytesDone: > 0, FileBytesTotal: > 0 } &&
+                        progress.Pace.FileBytesDone == progress.Pace.FileBytesTotal)
+                    {
+                        cts.Cancel();
+                    }
+                },
+                manifestPath: manifest);
+            Assert.True(first.Canceled);
+            var saved = CompareManifestStore.Load(manifest);
+            Assert.NotNull(saved);
+            Assert.True(saved!.InventoryComplete);
+            Assert.Contains(saved.Files, file => file.Left && file.Relative == "a.txt" && !string.IsNullOrEmpty(file.ContentHash));
+            Assert.DoesNotContain(saved.Files, file => !file.Left && file.Relative == "a.txt" && !string.IsNullOrEmpty(file.ContentHash));
+            Assert.DoesNotContain(saved.Files, file => file.Relative == "b.txt" && !string.IsNullOrEmpty(file.ContentHash));
+
+            var starts = new List<string>();
+            var second = DirectoryComparer.Compare(
+                left,
+                right,
+                new DirectoryCompareOptions { Advanced = true, Hash = true },
+                progress: progress =>
+                {
+                    if (progress.Pace is { FileBytesDone: 0, FileBytesTotal: > 0 })
+                    {
+                        starts.Add(progress.CurrentRelative ?? "");
+                    }
+                },
+                manifestPath: manifest);
+            Assert.True(second.Completed);
+            Assert.Equal(0, second.HashMismatches);
+            Assert.Equal(["b.txt", "a.txt", "b.txt"], starts);
+            var finished = CompareManifestStore.Load(manifest);
+            Assert.Equal(2, finished!.ComparedFileCount);
+        }
+        finally
+        {
+            Cleanup(left, right);
+        }
+    }
+
+    [Fact]
+    public void Manifest_RehashesDestinationWhenFileChanges()
+    {
+        var (left, right) = Trees();
+        try
+        {
+            var leftFile = Path.Combine(left, "a.txt");
+            var rightFile = Path.Combine(right, "a.txt");
+            File.WriteAllText(leftFile, "AAAA");
+            File.WriteAllText(rightFile, "AAAA");
+            var manifest = Path.Combine(Path.GetDirectoryName(left)!, "compare-manifest.jsonl");
+            var first = DirectoryComparer.Compare(
+                left,
+                right,
+                new DirectoryCompareOptions { Advanced = true, Hash = true },
+                manifestPath: manifest);
+            Assert.True(first.Completed);
+            Assert.Equal(0, first.HashMismatches);
+
+            File.WriteAllText(rightFile, "BBBB");
+            File.SetLastWriteTimeUtc(rightFile, DateTime.UtcNow.AddMinutes(5));
+            var starts = new List<string>();
+            var second = DirectoryComparer.Compare(
+                left,
+                right,
+                new DirectoryCompareOptions { Advanced = true, Hash = true },
+                progress: progress =>
+                {
+                    if (progress.Pace is { FileBytesDone: 0, FileBytesTotal: > 0 })
+                    {
+                        starts.Add(progress.CurrentRelative ?? "");
+                    }
+                },
+                manifestPath: manifest);
+            Assert.True(second.Completed);
+            Assert.Equal(1, second.HashMismatches);
+            Assert.Equal(["a.txt"], starts);
+        }
+        finally
+        {
+            Cleanup(left, right);
+        }
+    }
+
+    [Fact]
+    public void CancelDuringCount_DoesNotKeepFileList()
+    {
+        var (left, right) = Trees();
+        try
+        {
+            for (var i = 0; i < 50; i++)
+            {
+                var name = "f" + i.ToString("00") + ".txt";
+                File.WriteAllText(Path.Combine(left, name), "x");
+                File.WriteAllText(Path.Combine(right, name), "x");
+            }
+
+            var manifest = Path.Combine(Path.GetDirectoryName(left)!, "compare-manifest.jsonl");
+            using var cts = new CancellationTokenSource();
+            var canceled = DirectoryComparer.Compare(
+                left,
+                right,
+                new DirectoryCompareOptions { Advanced = true, Hash = true },
+                cts.Token,
+                progress: progress =>
+                {
+                    if (progress.FilesVisited >= 50 && progress.Pace is null)
+                    {
+                        cts.Cancel();
+                    }
+                },
+                manifestPath: manifest);
+            Assert.True(canceled.Canceled);
+            var partial = CompareManifestStore.Load(manifest);
+            Assert.True(partial is null || !partial.InventoryComplete);
+
+            var resumed = DirectoryComparer.Compare(
+                left,
+                right,
+                new DirectoryCompareOptions { Advanced = true, Hash = true },
+                manifestPath: manifest);
+            var fresh = DirectoryComparer.Compare(
+                left,
+                right,
+                new DirectoryCompareOptions { Advanced = true, Hash = true });
+            Assert.True(resumed.Completed);
+            Assert.Equal(fresh.LeftFiles, resumed.LeftFiles);
+            Assert.Equal(fresh.RightFiles, resumed.RightFiles);
+            Assert.Equal(fresh.HashMismatches, resumed.HashMismatches);
+            Assert.Equal(fresh.FilesSameRelativePath, resumed.FilesSameRelativePath);
         }
         finally
         {

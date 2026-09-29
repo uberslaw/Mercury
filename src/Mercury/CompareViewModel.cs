@@ -14,7 +14,10 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
     private readonly AppPaths _paths;
     private readonly Dispatcher _dispatcher;
     private readonly PauseGate _pause = new();
+    private readonly ManualResetEventSlim _scanIdle = new(true);
     private CancellationTokenSource? _scanCts;
+    private int _closed;
+    private bool _hashRun;
     private DirectoryCompareResult? _result;
     private string _leftPath = "";
     private string _rightPath = "";
@@ -59,6 +62,7 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
         CancelCommand = new RelayCommand(Cancel, () => IsScanning);
         ExportCommand = new RelayCommand(Export, () => HasCompletedResult);
         CreateJobCommand = new RelayCommand(CreateJob, () => HasCompletedResult);
+        OfferSavedCompare();
         ReloadRecents();
     }
 
@@ -465,9 +469,12 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
 
     public void Dispose()
     {
+        Interlocked.Exchange(ref _closed, 1);
         _scanCts?.Cancel();
-        _scanCts?.Dispose();
         _pause.Resume();
+        _scanIdle.Wait(TimeSpan.FromSeconds(5));
+        _scanCts?.Dispose();
+        _scanIdle.Dispose();
     }
 
     private void StartScan()
@@ -478,8 +485,11 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
         }
 
         _scanCts?.Cancel();
+        _pause.Resume();
+        _scanIdle.Wait(TimeSpan.FromSeconds(5));
         _scanCts?.Dispose();
         _scanCts = new CancellationTokenSource();
+        _scanIdle.Reset();
         _pause.Resume();
         IsPaused = false;
         IsScanning = true;
@@ -492,7 +502,16 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
         ProgressIndeterminate = true;
         ProgressMaximum = 1;
         ProgressValue = 0;
-        StatusText = "Scanning…";
+        _hashRun = Advanced && HashFiles;
+        var resuming = false;
+        if (_hashRun)
+        {
+            var saved = CompareManifestStore.Load(_paths.CompareManifestFile);
+            resuming = saved is { InventoryComplete: true } &&
+                       CompareManifestStore.SameJob(saved, LeftPath, RightPath, Advanced, true, FatTimestampTolerance);
+        }
+
+        StatusText = resuming ? "Continuing saved compare…" : "Scanning…";
         Highlights.Clear();
         ListedDifferences.Clear();
         SummaryText = "";
@@ -510,10 +529,16 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
             FatTimestampTolerance = FatTimestampTolerance
         };
         var token = _scanCts.Token;
-        _ = Task.Run(() => RunScan(left, right, options, token), token);
+        var manifest = _hashRun ? _paths.CompareManifestFile : null;
+        _ = Task.Run(() => RunScan(left, right, options, token, manifest), token);
     }
 
-    private void RunScan(string left, string right, DirectoryCompareOptions options, CancellationToken token)
+    private void RunScan(
+        string left,
+        string right,
+        DirectoryCompareOptions options,
+        CancellationToken token,
+        string? manifest)
     {
         try
         {
@@ -523,21 +548,51 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
                 options,
                 token,
                 _pause,
-                progress => RunOnUi(() => ApplyProgress(progress)));
+                progress => RunOnUi(() => ApplyProgress(progress)),
+                manifest);
+            if (Volatile.Read(ref _closed) != 0)
+            {
+                return;
+            }
+
+            if (result.Completed && result.Hashed && manifest is not null)
+            {
+                CompareManifestStore.Delete(manifest);
+            }
+
             RunOnUi(() => ApplyResult(result));
         }
         catch (OperationCanceledException)
         {
-            RunOnUi(() => ApplyCanceled());
+            if (Volatile.Read(ref _closed) == 0)
+            {
+                RunOnUi(ApplyCanceled);
+            }
         }
         catch (Exception ex)
         {
+            if (Volatile.Read(ref _closed) != 0)
+            {
+                return;
+            }
+
             RunOnUi(() =>
             {
                 IsScanning = false;
                 IsPaused = false;
                 StatusText = ex.Message;
             });
+        }
+        finally
+        {
+            try
+            {
+                _scanIdle.Set();
+            }
+            catch (ObjectDisposedException)
+            {
+                // window already closed
+            }
         }
     }
 
@@ -573,7 +628,7 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
     {
         IsScanning = false;
         IsPaused = false;
-        StatusText = "Scan canceled.";
+        StatusText = CanceledStatus();
         ProgressText = $"Canceled after {FilesVisited:N0} files.";
         _result = null;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasCompletedResult)));
@@ -593,7 +648,7 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
         }
         else if (result.Canceled)
         {
-            StatusText = "Scan canceled.";
+            StatusText = CanceledStatus();
         }
         else
         {
@@ -875,7 +930,51 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
             return;
         }
 
-        _dispatcher.Invoke(action);
+        _dispatcher.BeginInvoke(action);
+    }
+
+    private void OfferSavedCompare()
+    {
+        var saved = CompareManifestStore.Load(_paths.CompareManifestFile);
+        if (saved is not { InventoryComplete: true })
+        {
+            return;
+        }
+
+        Advanced = saved.Advanced;
+        HashFiles = saved.Hash;
+        FatTimestampTolerance = saved.FatTimestampTolerance;
+        LeftPath = saved.LeftRoot;
+        RightPath = saved.RightRoot;
+        StatusText = SavedCompareStatus(saved);
+    }
+
+    private string CanceledStatus()
+    {
+        if (!_hashRun)
+        {
+            return "Scan canceled.";
+        }
+
+        var saved = CompareManifestStore.Load(_paths.CompareManifestFile);
+        return saved is { InventoryComplete: true }
+            ? "Compare saved. Click Compare to continue."
+            : "Scan canceled.";
+    }
+
+    private static string SavedCompareStatus(CompareManifest saved)
+    {
+        if (saved.ComparedFileCount > 0)
+        {
+            return $"Saved compare. {saved.ComparedFileCount:N0} files already compared. Compare continues.";
+        }
+
+        if (saved.SourceHashCount > 0)
+        {
+            return $"Saved compare. {saved.SourceHashCount:N0} source hashes saved. Compare continues with the destination.";
+        }
+
+        return "Saved compare. File list is saved. Compare continues with hashing.";
     }
 
     private bool SetField<T>(ref T field, T value, [CallerMemberName] string? name = null)

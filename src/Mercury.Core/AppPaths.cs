@@ -43,6 +43,7 @@ public sealed class AppPaths
     public string CatcherTemplatesFile { get; }
     public string CatcherSettingsFile { get; }
     public string Compares { get; }
+    public string CompareManifestFile { get; }
     public string PortableFlagFile { get; }
     public string ExeDirectory { get; }
     public string PortableDataRoot { get; }
@@ -99,6 +100,7 @@ public sealed class AppPaths
         ThemesFile = Path.Combine(DataRoot, "themes.json");
         CatcherTemplatesFile = Path.Combine(DataRoot, "catcher-templates.json");
         CatcherSettingsFile = Path.Combine(DataRoot, "catcher-settings.json");
+        CompareManifestFile = Path.Combine(DataRoot, "compare-manifest.jsonl");
     }
 
     public IReadOnlyList<string> ThemeFileCandidates()
@@ -179,6 +181,7 @@ public sealed class AppPaths
             new() { Label = "catcher-templates.json", FullPath = CatcherTemplatesFile },
             new() { Label = "catcher-settings.json", FullPath = CatcherSettingsFile },
             new() { Label = "Compare reports folder", FullPath = Compares },
+            new() { Label = "compare-manifest.jsonl", FullPath = CompareManifestFile },
             new() { Label = "Portable flag", FullPath = PortableFlagFile },
             new() { Label = "Roaming AppData (default)", FullPath = RoamingDataRoot },
             new() { Label = "Beside-exe data (portable)", FullPath = PortableDataRoot }

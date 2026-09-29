@@ -398,10 +398,12 @@ public static class DirectoryComparer
         DirectoryCompareOptions? options = null,
         CancellationToken cancellationToken = default,
         PauseGate? pause = null,
-        Action<DirectoryCompareProgress>? progress = null)
+        Action<DirectoryCompareProgress>? progress = null,
+        string? manifestPath = null)
     {
         options ??= DirectoryCompareOptions.Default;
         var started = DateTimeOffset.UtcNow;
+        CompareManifestWriter? manifest = null;
         try
         {
             var leftPath = PathNormalizer.Normalize(leftRoot);
@@ -416,22 +418,47 @@ public static class DirectoryComparer
                 return Failed(leftPath, rightPath, started, $"Destination folder not found: {rightPath}");
             }
 
+            var advanced = options.Advanced;
+            var hash = options.Hash && advanced;
+            if (hash && !string.IsNullOrWhiteSpace(manifestPath))
+            {
+                manifest = CompareManifestWriter.Open(
+                    manifestPath,
+                    leftPath,
+                    rightPath,
+                    advanced,
+                    hash,
+                    options.FatTimestampTolerance);
+            }
+
             var filesVisited = 0;
             var foldersVisited = 0;
             var lastPulse = Stopwatch.GetTimestamp();
-            var left = ScanSide(leftPath, cancellationToken, pause, progress, ref filesVisited, ref foldersVisited, ref lastPulse);
-            var right = ScanSide(rightPath, cancellationToken, pause, progress, ref filesVisited, ref foldersVisited, ref lastPulse);
+            TreeSide left;
+            TreeSide right;
+            if (manifest is { InventoryComplete: true, Inventory: { } saved })
+            {
+                left = FromManifest(saved, leftSide: true);
+                right = FromManifest(saved, leftSide: false);
+                filesVisited = left.Files.Count + right.Files.Count;
+                foldersVisited = left.Folders.Count + right.Folders.Count;
+            }
+            else
+            {
+                left = ScanSide(leftPath, cancellationToken, pause, progress, ref filesVisited, ref foldersVisited, ref lastPulse);
+                right = ScanSide(rightPath, cancellationToken, pause, progress, ref filesVisited, ref foldersVisited, ref lastPulse);
+                manifest?.WriteInventory(Snapshot(left, right));
+            }
+
             lastPulse = Pulse(progress, filesVisited, foldersVisited, null, lastPulse, force: true);
 
             var diffs = new List<DirectoryCompareDiff>();
-            var advanced = options.Advanced;
-            var hash = options.Hash && advanced;
             var tolerance = options.FatTimestampTolerance
                 ? CopyEngine.FatTimestampTolerance
                 : TimeSpan.Zero;
 
             CompareFolders(left, right, advanced, diffs);
-            CompareFiles(left, right, advanced, hash, tolerance, diffs, cancellationToken, pause, progress, ref filesVisited, ref foldersVisited, ref lastPulse);
+            CompareFiles(left, right, advanced, hash, tolerance, diffs, cancellationToken, pause, progress, ref filesVisited, ref foldersVisited, ref lastPulse, manifest);
 
             var result = BuildResult(leftPath, rightPath, started, DateTimeOffset.UtcNow, options, left, right, diffs, filesVisited, foldersVisited, canceled: false, error: null);
             lastPulse = Pulse(progress, filesVisited, foldersVisited, null, lastPulse, force: true);
@@ -455,6 +482,10 @@ public static class DirectoryComparer
         catch (Exception ex)
         {
             return Failed(leftRoot, rightRoot, started, ex.Message, options);
+        }
+        finally
+        {
+            manifest?.Dispose();
         }
     }
 
@@ -619,60 +650,15 @@ public static class DirectoryComparer
         Action<DirectoryCompareProgress>? progress,
         ref int filesVisited,
         ref int foldersVisited,
-        ref long lastPulse)
+        ref long lastPulse,
+        CompareManifestWriter? manifest)
     {
-        Dictionary<string, long>? folderTotals = null;
-        long hashTotal = 0;
-        if (hash)
-        {
-            folderTotals = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
-            foreach (var (path, entry) in left.Files)
-            {
-                if (!right.Files.TryGetValue(path, out var match) || entry.Size != match.Size)
-                {
-                    continue;
-                }
-
-                var bytes = entry.Size + match.Size;
-                hashTotal += bytes;
-                var folderKey = ParentKey(path);
-                folderTotals[folderKey] = folderTotals.GetValueOrDefault(folderKey) + bytes;
-            }
-        }
-
-        var clock = hash && hashTotal > 0 ? new HashClock() : null;
-        string? openFolder = null;
-        var folderDone = 0L;
-        var folderTotal = 0L;
-        var seenFiles = filesVisited;
-        var seenFolders = foldersVisited;
-        var pulseAt = lastPulse;
-        void EmitHash(string current, long fileDone, long fileTotal, bool force = false)
-        {
-            if (clock is null)
-            {
-                return;
-            }
-
-            pulseAt = Pulse(progress, seenFiles, seenFolders, current, pulseAt, new ComparePace
-            {
-                CurrentFolder = string.IsNullOrEmpty(openFolder) ? "." : openFolder,
-                FileBytesDone = fileDone,
-                FileBytesTotal = fileTotal,
-                FolderBytesDone = folderDone,
-                FolderBytesTotal = folderTotal,
-                BytesDone = clock.Bytes,
-                BytesTotal = hashTotal,
-                BytesPerSecond = clock.BytesPerSecond
-            }, force);
-        }
-
         var keys = left.Files.Keys.ToList();
         keys.Sort(StringComparer.OrdinalIgnoreCase);
         foreach (var key in keys)
         {
             var file = left.Files[key];
-            WaitIfPaused(pause, cancellationToken, clock);
+            WaitIfPaused(pause, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
 
             if (!right.Files.TryGetValue(key, out var other))
@@ -738,62 +724,6 @@ public static class DirectoryComparer
                 });
             }
 
-            if (hash && file.Size == other.Size)
-            {
-                WaitIfPaused(pause, cancellationToken, clock);
-                cancellationToken.ThrowIfCancellationRequested();
-                var folder = ParentKey(key);
-                if (!string.Equals(folder, openFolder, StringComparison.OrdinalIgnoreCase))
-                {
-                    openFolder = folder;
-                    folderDone = 0;
-                    folderTotal = folderTotals?.GetValueOrDefault(folder) ?? 0;
-                }
-
-                var fileTotal = file.Size + other.Size;
-                var fileDone = 0L;
-                void OnRead(long read)
-                {
-                    WaitIfPaused(pause, cancellationToken, clock);
-                    clock?.Add(read);
-                    fileDone += read;
-                    folderDone += read;
-                    EmitHash(key, fileDone, fileTotal);
-                }
-
-                EmitHash(key, 0, fileTotal, force: true);
-                try
-                {
-                    var leftHash = HashUtil.HashFile(file.FullPath, cancellationToken, OnRead);
-                    var rightHash = HashUtil.HashFile(other.FullPath, cancellationToken, OnRead);
-                    if (!string.Equals(leftHash, rightHash, StringComparison.OrdinalIgnoreCase))
-                    {
-                        diffs.Add(new DirectoryCompareDiff
-                        {
-                            Kind = CompareDiffKind.HashMismatch,
-                            RelativePath = key,
-                            LeftSize = file.Size,
-                            RightSize = other.Size,
-                            Detail = $"{leftHash} vs {rightHash}"
-                        });
-                    }
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    diffs.Add(new DirectoryCompareDiff
-                    {
-                        Kind = CompareDiffKind.HashMismatch,
-                        RelativePath = key,
-                        Detail = ex.Message
-                    });
-                }
-
-                EmitHash(key, fileTotal, fileTotal, force: true);
-            }
         }
 
         foreach (var (key, file) in right.Files)
@@ -812,7 +742,333 @@ public static class DirectoryComparer
             });
         }
 
-        lastPulse = pulseAt;
+        if (hash)
+        {
+            lastPulse = HashContents(
+                left,
+                right,
+                diffs,
+                cancellationToken,
+                pause,
+                progress,
+                filesVisited,
+                foldersVisited,
+                lastPulse,
+                manifest);
+        }
+    }
+
+    /// <summary>
+    /// Hash every source file, then every destination file. Finished hashes are appended
+    /// before the end-of-file pulse so a cancel keeps that file.
+    /// </summary>
+    private static long HashContents(
+        TreeSide left,
+        TreeSide right,
+        List<DirectoryCompareDiff> diffs,
+        CancellationToken cancellationToken,
+        PauseGate? pause,
+        Action<DirectoryCompareProgress>? progress,
+        int filesVisited,
+        int foldersVisited,
+        long lastPulse,
+        CompareManifestWriter? manifest)
+    {
+        var folderTotals = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        long hashTotal = 0;
+        var keys = left.Files.Keys.ToList();
+        keys.Sort(StringComparer.OrdinalIgnoreCase);
+        foreach (var key in keys)
+        {
+            var entry = left.Files[key];
+            if (!right.Files.TryGetValue(key, out var match) || entry.Size != match.Size)
+            {
+                continue;
+            }
+
+            var bytes = entry.Size + match.Size;
+            hashTotal += bytes;
+            var folderKey = ParentKey(key);
+            folderTotals[folderKey] = folderTotals.GetValueOrDefault(folderKey) + bytes;
+        }
+
+        if (hashTotal <= 0)
+        {
+            return lastPulse;
+        }
+
+        var clock = new HashClock();
+        var credited = 0L;
+        var savedFolder = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        var leftDone = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var rightDone = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var failed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var key in keys)
+        {
+            var file = left.Files[key];
+            if (!right.Files.TryGetValue(key, out var other) || file.Size != other.Size)
+            {
+                continue;
+            }
+
+            var folder = ParentKey(key);
+            if (SavedHash(manifest, leftSide: true, file, out var leftHash))
+            {
+                leftDone[key] = leftHash;
+                credited += file.Size;
+                savedFolder[folder] = savedFolder.GetValueOrDefault(folder) + file.Size;
+            }
+
+            if (SavedHash(manifest, leftSide: false, other, out var rightHash))
+            {
+                rightDone[key] = rightHash;
+                credited += other.Size;
+                savedFolder[folder] = savedFolder.GetValueOrDefault(folder) + other.Size;
+            }
+        }
+
+        string? openFolder = null;
+        var folderDone = 0L;
+        var folderTotal = 0L;
+        var pulseAt = lastPulse;
+        void Emit(string current, long fileDone, long fileTotal, bool force = false)
+        {
+            pulseAt = Pulse(progress, filesVisited, foldersVisited, current, pulseAt, new ComparePace
+            {
+                CurrentFolder = string.IsNullOrEmpty(openFolder) ? "." : openFolder,
+                FileBytesDone = fileDone,
+                FileBytesTotal = fileTotal,
+                FolderBytesDone = folderDone,
+                FolderBytesTotal = folderTotal,
+                BytesDone = credited + clock.Bytes,
+                BytesTotal = hashTotal,
+                BytesPerSecond = clock.BytesPerSecond
+            }, force);
+        }
+
+        if (credited > 0)
+        {
+            Emit("", 0, 0, force: true);
+        }
+
+        void HashSide(bool leftSide)
+        {
+            openFolder = null;
+            var done = leftSide ? leftDone : rightDone;
+            foreach (var key in keys)
+            {
+                var file = left.Files[key];
+                if (!right.Files.TryGetValue(key, out var other) || file.Size != other.Size || failed.Contains(key))
+                {
+                    continue;
+                }
+
+                WaitIfPaused(pause, cancellationToken, clock);
+                cancellationToken.ThrowIfCancellationRequested();
+                var entry = leftSide ? file : other;
+                var folder = ParentKey(key);
+                if (!string.Equals(folder, openFolder, StringComparison.OrdinalIgnoreCase))
+                {
+                    openFolder = folder;
+                    folderDone = savedFolder.GetValueOrDefault(folder);
+                    folderTotal = folderTotals.GetValueOrDefault(folder);
+                }
+
+                if (done.ContainsKey(key))
+                {
+                    continue;
+                }
+
+                var fileTotal = entry.Size;
+                var fileDone = 0L;
+                void OnRead(long read)
+                {
+                    WaitIfPaused(pause, cancellationToken, clock);
+                    clock.Add(read);
+                    fileDone += read;
+                    folderDone += read;
+                    Emit(key, fileDone, fileTotal);
+                }
+
+                Emit(key, 0, fileTotal, force: true);
+                try
+                {
+                    var value = HashUtil.HashFile(entry.FullPath, cancellationToken, OnRead);
+                    manifest?.WriteHash(leftSide, key, value, entry.Size, entry.LastWriteUtc.Ticks);
+                    savedFolder[folder] = savedFolder.GetValueOrDefault(folder) + entry.Size;
+                    done[key] = value;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    failed.Add(key);
+                    diffs.Add(new DirectoryCompareDiff
+                    {
+                        Kind = CompareDiffKind.HashMismatch,
+                        RelativePath = key,
+                        LeftSize = file.Size,
+                        RightSize = other.Size,
+                        Detail = ex.Message
+                    });
+                }
+
+                Emit(key, fileTotal, fileTotal, force: true);
+            }
+        }
+
+        HashSide(leftSide: true);
+        HashSide(leftSide: false);
+        foreach (var key in keys)
+        {
+            var file = left.Files[key];
+            if (!right.Files.TryGetValue(key, out var other) || file.Size != other.Size || failed.Contains(key))
+            {
+                continue;
+            }
+
+            if (!leftDone.TryGetValue(key, out var leftHash) || !rightDone.TryGetValue(key, out var rightHash))
+            {
+                continue;
+            }
+
+            if (string.Equals(leftHash, rightHash, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            diffs.Add(new DirectoryCompareDiff
+            {
+                Kind = CompareDiffKind.HashMismatch,
+                RelativePath = key,
+                LeftSize = file.Size,
+                RightSize = other.Size,
+                Detail = $"{leftHash} vs {rightHash}"
+            });
+        }
+
+        return pulseAt;
+    }
+
+    private static bool SavedHash(CompareManifestWriter? manifest, bool leftSide, FileEntry file, out string hash)
+    {
+        hash = "";
+        if (manifest is null || !manifest.TryGetHash(leftSide, file.Relative, file.Size, file.LastWriteUtc.Ticks, out hash))
+        {
+            return false;
+        }
+
+        try
+        {
+            var info = new FileInfo(file.FullPath);
+            if (info.Length != file.Size || info.LastWriteTimeUtc.Ticks != file.LastWriteUtc.Ticks)
+            {
+                hash = "";
+                return false;
+            }
+        }
+        catch
+        {
+            hash = "";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static CompareManifest Snapshot(TreeSide left, TreeSide right)
+    {
+        var manifest = new CompareManifest
+        {
+            LeftRootFiles = left.RootImmediateFiles,
+            RightRootFiles = right.RootImmediateFiles
+        };
+        foreach (var folder in left.Folders.Values)
+        {
+            manifest.Folders.Add(new CompareManifestFolder
+            {
+                Left = true,
+                Relative = folder.Relative,
+                Name = folder.Name,
+                ImmediateFiles = folder.ImmediateFiles,
+                SubtreeFiles = folder.SubtreeFiles
+            });
+        }
+
+        foreach (var folder in right.Folders.Values)
+        {
+            manifest.Folders.Add(new CompareManifestFolder
+            {
+                Left = false,
+                Relative = folder.Relative,
+                Name = folder.Name,
+                ImmediateFiles = folder.ImmediateFiles,
+                SubtreeFiles = folder.SubtreeFiles
+            });
+        }
+
+        foreach (var file in left.Files.Values)
+        {
+            manifest.Files.Add(ToEntry(file, left: true));
+        }
+
+        foreach (var file in right.Files.Values)
+        {
+            manifest.Files.Add(ToEntry(file, left: false));
+        }
+
+        return manifest;
+    }
+
+    private static CompareManifestEntry ToEntry(FileEntry file, bool left) =>
+        new()
+        {
+            Left = left,
+            Relative = file.Relative,
+            Name = file.Name,
+            FullPath = file.FullPath,
+            Size = file.Size,
+            WriteTicks = file.LastWriteUtc.Ticks
+        };
+
+    private static TreeSide FromManifest(CompareManifest manifest, bool leftSide)
+    {
+        var side = new TreeSide
+        {
+            RootImmediateFiles = leftSide ? manifest.LeftRootFiles : manifest.RightRootFiles
+        };
+        foreach (var folder in manifest.Folders)
+        {
+            if (folder.Left != leftSide)
+            {
+                continue;
+            }
+
+            side.Folders[folder.Relative] = new FolderEntry(folder.Relative, folder.Name)
+            {
+                ImmediateFiles = folder.ImmediateFiles,
+                SubtreeFiles = folder.SubtreeFiles
+            };
+        }
+
+        foreach (var file in manifest.Files)
+        {
+            if (file.Left != leftSide)
+            {
+                continue;
+            }
+
+            side.Files[file.Relative] = new FileEntry(
+                file.Relative,
+                file.Name,
+                file.FullPath,
+                file.Size,
+                new DateTime(file.WriteTicks, DateTimeKind.Utc));
+        }
+
+        return side;
     }
 
     private static TreeSide ScanSide(
