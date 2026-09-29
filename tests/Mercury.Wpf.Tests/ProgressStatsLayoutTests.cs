@@ -208,15 +208,15 @@ public class ProgressStatsLayoutTests
                     DataContext = new StatPair("File ETA", "3m 40s"),
                     KeySizeGroup = "FileClockKey"
                 };
-                var clocks = new StackPanel { HorizontalAlignment = HorizontalAlignment.Right };
+                var clocks = new StackPanel { HorizontalAlignment = HorizontalAlignment.Left };
                 Grid.SetIsSharedSizeScope(clocks, true);
                 clocks.Children.Add(thisFile);
                 clocks.Children.Add(fileEta);
 
                 var host = new Grid { Width = 720 };
                 host.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                host.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                Grid.SetColumn(clocks, 1);
+                host.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
+                host.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                 host.Children.Add(clocks);
 
                 window = new Window
@@ -339,9 +339,21 @@ public class ProgressStatsLayoutTests
             MainWindow? window = null;
             try
             {
+                var dest1 = Path.Combine(root, "d1");
+                var dest2 = Path.Combine(root, "d2");
+                Directory.CreateDirectory(dest1);
+                Directory.CreateDirectory(dest2);
+                var paths = new AppPaths(root);
+                QueueStore.Save(paths,
+                [
+                    new Job { Name = "one", SourcePath = Path.Combine(root, "s1"), DestinationPath = dest1 },
+                    new Job { Name = "two", SourcePath = Path.Combine(root, "s2"), DestinationPath = dest2 }
+                ]);
+
                 var now = DateTimeOffset.UtcNow;
-                var vm = new MainViewModel(new AppPaths(root));
+                var vm = new MainViewModel(paths);
                 vm.JobPercent = 40;
+                vm.OverallPercent = 28;
                 vm.JobStats = ProgressStats.From(new JobProgress
                 {
                     Status = JobStatus.Copying,
@@ -373,10 +385,15 @@ public class ProgressStatsLayoutTests
                 window.UpdateLayout();
                 WpfSta.Flush();
 
+                Assert.True(vm.ShowOverallProgress);
                 Assert.True(window.HeaderFileProgressBar.ActualHeight > 0);
                 Assert.Equal(42, window.HeaderFileProgressBar.Value, 1);
                 Assert.Contains("clip.mkv", window.HeaderFileProgressText.Text, StringComparison.Ordinal);
                 Assert.Contains("42%", window.HeaderFileProgressText.Text, StringComparison.Ordinal);
+                Assert.Null(window.HeaderFileProgressText.Effect);
+                Assert.True(window.HeaderFileProgressHost.UseLayoutRounding);
+                Assert.True(window.HeaderFileProgressHost.SnapsToDevicePixels);
+                Assert.Equal(TextFormattingMode.Display, TextOptions.GetTextFormattingMode(window.HeaderFileProgressText));
                 Assert.Equal("This file", window.HeaderThisFilePair.KeyText.Text);
                 Assert.Equal("File ETA", window.HeaderFileEtaPair.KeyText.Text);
                 Assert.Equal("1m 12s", vm.HeaderThisFile.Value);
@@ -385,7 +402,36 @@ public class ProgressStatsLayoutTests
 
                 var thisKeyX = LeftX(window.HeaderThisFilePair.KeyText, window);
                 var etaKeyX = LeftX(window.HeaderFileEtaPair.KeyText, window);
+                var thisColonX = LeftX(window.HeaderThisFilePair.ColonText, window);
+                var etaColonX = LeftX(window.HeaderFileEtaPair.ColonText, window);
                 Assert.True(Math.Abs(thisKeyX - etaKeyX) < 1.5, $"file clock keys must start on the same X ({thisKeyX} vs {etaKeyX})");
+                Assert.True(Math.Abs(thisColonX - etaColonX) < 1.5, $"file clock colons must share an X ({thisColonX} vs {etaColonX})");
+
+                var currentLeft = LeftX(window.HeaderCurrentProgressBar, window);
+                var fileLeft = LeftX(window.HeaderFileProgressBar, window);
+                var currentLabelLeft = LeftX(window.HeaderCurrentLabel, window);
+                var clocksKeyLeft = LeftX(window.HeaderThisFilePair.KeyText, window);
+                var fileRight = RightX(window.HeaderFileProgressBar, window);
+                var overallLeft = LeftX(window.HeaderOverallProgressBar, window);
+                Assert.True(Math.Abs(currentLeft - fileLeft) < 1.5, $"file bar left {fileLeft} must match Current {currentLeft}");
+                Assert.True(Math.Abs(currentLabelLeft - clocksKeyLeft) < 10, $"file clock keys left {clocksKeyLeft} must match Current label {currentLabelLeft}");
+                Assert.True(clocksKeyLeft + 4 < overallLeft, "file clocks stay in the Current column, not under Overall");
+                Assert.True(
+                    Math.Abs(window.HeaderCurrentProgressBar.ActualWidth - window.HeaderFileProgressBar.ActualWidth) < 2,
+                    $"file bar width {window.HeaderFileProgressBar.ActualWidth} must match Current {window.HeaderCurrentProgressBar.ActualWidth}");
+
+                Assert.True(
+                    fileRight + 4 < overallLeft,
+                    $"file bar (right {fileRight}) must not span under Overall (left {overallLeft})");
+
+                var currentBottom = BottomY(window.HeaderCurrentProgressBar, window);
+                var clocksTop = TopY(window.HeaderThisFilePair, window);
+                var clocksBottom = Math.Max(
+                    BottomY(window.HeaderThisFilePair, window),
+                    BottomY(window.HeaderFileEtaPair, window));
+                var fileTop = TopY(window.HeaderFileProgressBar, window);
+                Assert.True(clocksTop + 1 >= currentBottom, "This file / File ETA sit under the Current bar");
+                Assert.True(clocksBottom <= fileTop + 1, "This file / File ETA sit just above the file bar");
             }
             finally
             {
@@ -597,6 +643,12 @@ public class ProgressStatsLayoutTests
 
     private static double RightX(FrameworkElement element, Visual ancestor) =>
         element.TransformToAncestor(ancestor).Transform(new WpfPoint(element.ActualWidth, 0)).X;
+
+    private static double TopY(FrameworkElement element, Visual ancestor) =>
+        element.TransformToAncestor(ancestor).Transform(new WpfPoint(0, 0)).Y;
+
+    private static double BottomY(FrameworkElement element, Visual ancestor) =>
+        element.TransformToAncestor(ancestor).Transform(new WpfPoint(0, element.ActualHeight)).Y;
 
     private static IEnumerable<T> FindVisualChildren<T>(DependencyObject root)
         where T : DependencyObject

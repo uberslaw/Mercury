@@ -76,6 +76,8 @@
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
                             <Border local:ThemeChrome.Keys="OnHeaderBrush,Body">
                                 <Border.Style>
@@ -89,7 +91,7 @@
                                     </Style>
                                 </Border.Style>
                                 <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="Current" FontWeight="SemiBold" Margin="0,0,10,2" VerticalAlignment="Center"
+                                    <TextBlock x:Name="HeaderCurrentLabel" Text="Current" FontWeight="SemiBold" Margin="0,0,10,2" VerticalAlignment="Center"
                                                Foreground="{DynamicResource OnHeaderBrush}"
                                                FontFamily="{DynamicResource BodyFontFamily}" FontSize="{DynamicResource BodyFontSize}"/>
                                     <Border Style="{StaticResource QueueStatusChip}" Margin="0,0,0,2"
@@ -118,7 +120,8 @@
                                     </Style>
                                 </Grid.Style>
                                 <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="HeaderBarFillBrush,HeaderBarTrackBrush">
-                                    <ProgressBar Value="{Binding JobPercent, Mode=OneWay}" Maximum="100"
+                                    <ProgressBar x:Name="HeaderCurrentProgressBar"
+                                                 Value="{Binding JobPercent, Mode=OneWay}" Maximum="100"
                                                  Height="{DynamicResource HeaderProgressBarHeight}"
                                                  MinHeight="{DynamicResource HeaderProgressBarHeight}"
                                                  Foreground="{DynamicResource HeaderBarFillBrush}"
@@ -132,7 +135,8 @@
                             <Grid Grid.Row="1" Grid.Column="2"
                                   Visibility="{Binding ShowOverallProgress, Converter={StaticResource BoolToVis}}">
                                 <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="HeaderBarFillBrush,HeaderBarTrackBrush">
-                                    <ProgressBar Value="{Binding OverallPercent, Mode=OneWay}" Maximum="100"
+                                    <ProgressBar x:Name="HeaderOverallProgressBar"
+                                                 Value="{Binding OverallPercent, Mode=OneWay}" Maximum="100"
                                                  Height="{DynamicResource HeaderProgressBarHeight}"
                                                  MinHeight="{DynamicResource HeaderProgressBarHeight}"
                                                  Foreground="{DynamicResource HeaderBarFillBrush}"
@@ -143,37 +147,21 @@
                                            Foreground="{DynamicResource OnHeaderBrush}"
                                            FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}"/>
                             </Grid>
-                        </Grid>
-                        <Grid Margin="0,6,0,2">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <Grid>
-                                <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="HeaderBarFillBrush,HeaderBarTrackBrush,OnHeaderBrush">
-                                    <ProgressBar x:Name="HeaderFileProgressBar"
-                                                 Value="{Binding CurrentFilePercent, Mode=OneWay}" Maximum="100"
-                                                 Height="{DynamicResource HeaderProgressBarHeight}"
-                                                 MinHeight="{DynamicResource HeaderProgressBarHeight}"
-                                                 Foreground="{DynamicResource HeaderBarFillBrush}"
-                                                 Background="{DynamicResource HeaderBarTrackBrush}"/>
-                                </Border>
-                                <TextBlock x:Name="HeaderFileProgressText"
-                                           Text="{Binding CurrentFileBarText}"
-                                           HorizontalAlignment="Stretch" VerticalAlignment="Center"
-                                           Margin="8,0"
-                                           TextTrimming="CharacterEllipsis"
-                                           FontWeight="SemiBold" IsHitTestVisible="False"
-                                           Foreground="{DynamicResource OnHeaderBrush}"
-                                           FontFamily="{DynamicResource ProgressFontFamily}"
-                                           FontSize="{DynamicResource ProgressFontSize}">
-                                    <TextBlock.Effect>
-                                        <DropShadowEffect BlurRadius="6" ShadowDepth="0" Color="#CC000000" Opacity="0.7"/>
-                                    </TextBlock.Effect>
-                                </TextBlock>
-                            </Grid>
-                            <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center"
-                                        HorizontalAlignment="Right" Grid.IsSharedSizeScope="True">
+                            <StackPanel x:Name="HeaderFileClockPanel"
+                                        Grid.Row="2"
+                                        Margin="0,6,0,0"
+                                        HorizontalAlignment="Left"
+                                        Grid.IsSharedSizeScope="True">
+                                <StackPanel.Style>
+                                    <Style TargetType="StackPanel">
+                                        <Setter Property="Grid.ColumnSpan" Value="1"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ShowOverallProgress}" Value="False">
+                                                <Setter Property="Grid.ColumnSpan" Value="3"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </StackPanel.Style>
                                 <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Label,Value,Progress">
                                     <local:StatPairText x:Name="HeaderThisFilePair"
                                                         DataContext="{Binding HeaderThisFile}"
@@ -187,6 +175,52 @@
                                                         Foreground="{DynamicResource OnHeaderBrush}"/>
                                 </Border>
                             </StackPanel>
+                            <Grid x:Name="HeaderFileProgressHost"
+                                  Grid.Row="3"
+                                  Margin="0,2,0,2"
+                                  UseLayoutRounding="True"
+                                  SnapsToDevicePixels="True"
+                                  TextOptions.TextFormattingMode="Display"
+                                  TextOptions.TextRenderingMode="ClearType"
+                                  TextOptions.TextHintingMode="Fixed"
+                                  RenderOptions.ClearTypeHint="Enabled">
+                                <Grid.Style>
+                                    <Style TargetType="Grid">
+                                        <Setter Property="Grid.ColumnSpan" Value="1"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ShowOverallProgress}" Value="False">
+                                                <Setter Property="Grid.ColumnSpan" Value="3"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Grid.Style>
+                                <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="HeaderBarFillBrush,HeaderBarTrackBrush,OnHeaderBrush">
+                                    <ProgressBar x:Name="HeaderFileProgressBar"
+                                                 Value="{Binding CurrentFilePercent, Mode=OneWay}" Maximum="100"
+                                                 Height="{DynamicResource HeaderProgressBarHeight}"
+                                                 MinHeight="{DynamicResource HeaderProgressBarHeight}"
+                                                 Foreground="{DynamicResource HeaderBarFillBrush}"
+                                                 Background="{DynamicResource HeaderBarTrackBrush}"
+                                                 UseLayoutRounding="True"
+                                                 SnapsToDevicePixels="True"/>
+                                </Border>
+                                <TextBlock x:Name="HeaderFileProgressText"
+                                           Text="{Binding CurrentFileBarText}"
+                                           HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                                           Margin="8,0"
+                                           TextTrimming="CharacterEllipsis"
+                                           TextWrapping="NoWrap"
+                                           FontWeight="SemiBold" IsHitTestVisible="False"
+                                           Foreground="{DynamicResource OnHeaderBrush}"
+                                           FontFamily="{DynamicResource ProgressFontFamily}"
+                                           FontSize="{DynamicResource ProgressFontSize}"
+                                           UseLayoutRounding="True"
+                                           SnapsToDevicePixels="True"
+                                           TextOptions.TextFormattingMode="Display"
+                                           TextOptions.TextRenderingMode="ClearType"
+                                           TextOptions.TextHintingMode="Fixed"
+                                           RenderOptions.ClearTypeHint="Enabled"/>
+                            </Grid>
                         </Grid>
                         <local:ProgressStatsLine DataContext="{Binding HeaderStats}" Foreground="{DynamicResource OnHeaderBrush}"/>
                         <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Progress">
