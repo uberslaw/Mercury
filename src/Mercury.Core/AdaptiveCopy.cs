@@ -7,7 +7,8 @@ internal enum AdaptiveCopyMode
     Sequential = 1,
     Files2 = 2,
     Files4 = 4,
-    Ranges2 = 8
+    Ranges2 = 8,
+    Files8 = 16
 }
 
 internal readonly record struct AdaptiveFileCopy(bool Finished, string? Hash, long BytesOnDisk, bool Fallback);
@@ -55,6 +56,8 @@ internal static class AdaptiveCopyPolicy
     public const double WinRatio = 1.15;
     public const double SpeedDropRatio = 0.70;
     public const int MaxWorkers = 4;
+    /// <summary>Manual “8 files” only. The probe never uses this width.</summary>
+    public const int ManualEightWorkers = 8;
     public const int VerifyBatchSize = 8;
     public const double ProbeMaxSeconds = 8;
     public const double ProbeMinSeconds = 5;
@@ -66,6 +69,7 @@ internal static class AdaptiveCopyPolicy
     public const string TestingStatus = "Testing copy speed…";
     public const string CopyingTwoFiles = "Copying 2 files";
     public const string CopyingFourFiles = "Copying 4 files";
+    public const string CopyingEightFiles = "Copying 8 files";
     public const string CopyingTwoRanges = "Copying 2 ranges";
     public const string CopyingOneStream = "Copying one stream";
     public const string OneStreamSlowedDown = "One stream — parallel copy slowed down";
@@ -186,6 +190,7 @@ internal static class AdaptiveCopyPolicy
 
     public static string StatusFor(AdaptiveCopyMode mode, bool fellOff) => mode switch
     {
+        AdaptiveCopyMode.Files8 => CopyingEightFiles,
         AdaptiveCopyMode.Files4 => CopyingFourFiles,
         AdaptiveCopyMode.Files2 => CopyingTwoFiles,
         AdaptiveCopyMode.Ranges2 => CopyingTwoRanges,
@@ -234,6 +239,7 @@ internal static class AdaptiveCopyPolicy
     {
         AdaptiveCopyMode.Files2 => 2,
         AdaptiveCopyMode.Files4 => MaxWorkers,
+        AdaptiveCopyMode.Files8 => ManualEightWorkers,
         _ => 1
     };
 
@@ -291,7 +297,7 @@ internal static class TransferBalancer
 {
     public static BalancePlan Next(BalanceInput input)
     {
-        var threadsWon = input.Mode is AdaptiveCopyMode.Files2 or AdaptiveCopyMode.Files4;
+        var threadsWon = input.Mode is AdaptiveCopyMode.Files2 or AdaptiveCopyMode.Files4 or AdaptiveCopyMode.Files8;
         var honorCap = input.Capped && !input.Manual;
         var width = honorCap ? 1 : AdaptiveCopyPolicy.Width(input.Mode);
         var packLeft = input.PackBytesRemaining > 0;
@@ -355,6 +361,11 @@ internal static class TransferBalancer
         if (stripe)
         {
             return packing ? "Copying 2 ranges and packing" : AdaptiveCopyPolicy.CopyingTwoRanges;
+        }
+
+        if (width >= 8)
+        {
+            return AdaptiveCopyPolicy.CopyingEightFiles;
         }
 
         if (width >= 4)
@@ -565,14 +576,15 @@ public enum HeaderCopyMode
     OneStream = 2,
     Files2 = 3,
     Files4 = 4,
-    Ranges2 = 5
+    Ranges2 = 5,
+    Files8 = 6
 }
 
 /// <summary>Header checkboxes next to Speed. One mode is on. Not the saved job option.</summary>
 public static class HeaderCopy
 {
     public static bool IsManual(HeaderCopyMode mode) =>
-        mode is HeaderCopyMode.OneStream or HeaderCopyMode.Files2 or HeaderCopyMode.Files4 or HeaderCopyMode.Ranges2;
+        mode is HeaderCopyMode.OneStream or HeaderCopyMode.Files2 or HeaderCopyMode.Files4 or HeaderCopyMode.Files8 or HeaderCopyMode.Ranges2;
 
     public static bool UsesAdaptive(HeaderCopyMode mode, bool savedAdaptive) => mode switch
     {
@@ -595,6 +607,7 @@ public static class HeaderCopy
     {
         HeaderCopyMode.Files2 => AdaptiveCopyMode.Files2,
         HeaderCopyMode.Files4 => AdaptiveCopyMode.Files4,
+        HeaderCopyMode.Files8 => AdaptiveCopyMode.Files8,
         HeaderCopyMode.Ranges2 => AdaptiveCopyMode.Ranges2,
         _ => AdaptiveCopyMode.Sequential
     };
@@ -604,6 +617,7 @@ public static class HeaderCopy
         HeaderCopyMode.OneStream => "one stream",
         HeaderCopyMode.Files2 => "2 files",
         HeaderCopyMode.Files4 => "4 files",
+        HeaderCopyMode.Files8 => "8 files",
         HeaderCopyMode.Ranges2 => "2 ranges",
         _ => "adaptive"
     };
@@ -647,10 +661,11 @@ public sealed class HeaderCopySelection
     public bool OneStream => _mode == HeaderCopyMode.OneStream;
     public bool Files2 => _mode == HeaderCopyMode.Files2;
     public bool Files4 => _mode == HeaderCopyMode.Files4;
+    public bool Files8 => _mode == HeaderCopyMode.Files8;
     public bool Ranges2 => _mode == HeaderCopyMode.Ranges2;
 
     public int OnCount =>
-        (Adaptive ? 1 : 0) + (OneStream ? 1 : 0) + (Files2 ? 1 : 0) + (Files4 ? 1 : 0) + (Ranges2 ? 1 : 0);
+        (Adaptive ? 1 : 0) + (OneStream ? 1 : 0) + (Files2 ? 1 : 0) + (Files4 ? 1 : 0) + (Files8 ? 1 : 0) + (Ranges2 ? 1 : 0);
 
     public string? Select(HeaderCopyMode next)
     {
@@ -777,6 +792,7 @@ internal static class AdaptiveCopyPlanner
     {
         AdaptiveCopyMode.Files2 => "2 files at once",
         AdaptiveCopyMode.Files4 => "4 files at once",
+        AdaptiveCopyMode.Files8 => "8 files at once",
         AdaptiveCopyMode.Ranges2 => "2 ranges of a large file",
         _ => "one stream"
     };
@@ -952,6 +968,7 @@ internal static class AdaptiveCopyLog
     {
         AdaptiveCopyMode.Files2 => "2 files",
         AdaptiveCopyMode.Files4 => "4 files",
+        AdaptiveCopyMode.Files8 => "8 files",
         AdaptiveCopyMode.Ranges2 => "2 ranges",
         _ => "one stream"
     };

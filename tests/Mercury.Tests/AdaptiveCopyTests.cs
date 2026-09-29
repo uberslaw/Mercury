@@ -64,6 +64,7 @@ public class AdaptiveCopyTests
         Assert.Contains(AdaptiveCopyMode.Files2, modes);
         Assert.Contains(AdaptiveCopyMode.Files4, modes);
         Assert.Contains(AdaptiveCopyMode.Ranges2, modes);
+        Assert.DoesNotContain(AdaptiveCopyMode.Files8, modes);
     }
 
     [Fact]
@@ -595,6 +596,7 @@ public class AdaptiveCopyTests
         Assert.False(selection.Adaptive);
         Assert.False(selection.OneStream);
         Assert.False(selection.Files2);
+        Assert.False(selection.Files8);
         Assert.False(selection.Ranges2);
         Assert.Equal(1, selection.OnCount);
         selection.Select(HeaderCopyMode.Ranges2);
@@ -603,6 +605,52 @@ public class AdaptiveCopyTests
         Assert.Equal(1, selection.OnCount);
         Assert.Null(selection.Select(HeaderCopyMode.Ranges2));
         Assert.Equal(1, selection.OnCount);
+    }
+
+    [Fact]
+    public void EightFilesIsAManualWidthAndNotAProbeCandidate()
+    {
+        var files = Enumerable.Range(0, 8).Select(i => new FileRecord
+        {
+            RelativePath = i + ".zip",
+            Size = 33_000_000
+        }).ToList();
+        var modes = AdaptiveCopyPolicy.Candidates(files);
+        Assert.DoesNotContain(AdaptiveCopyMode.Files8, modes);
+        Assert.Contains(AdaptiveCopyMode.Files2, modes);
+        Assert.Contains(AdaptiveCopyMode.Files4, modes);
+        Assert.Equal(4, AdaptiveCopyPolicy.MaxWorkers);
+        Assert.Equal(4, AdaptiveCopyPolicy.Width(AdaptiveCopyMode.Files4));
+        Assert.Equal(8, AdaptiveCopyPolicy.Width(AdaptiveCopyMode.Files8));
+        Assert.Equal(AdaptiveCopyPolicy.ManualEightWorkers, AdaptiveCopyPolicy.Width(HeaderCopy.EngineMode(HeaderCopyMode.Files8)));
+        Assert.False(HeaderCopy.ShouldProbe(HeaderCopyMode.Files8, savedAdaptive: true, pendingLargeEnough: true, remembered: false));
+
+        var selection = new HeaderCopySelection();
+        var line = selection.Select(HeaderCopyMode.Files8);
+        Assert.NotNull(line);
+        Assert.Contains("adaptive → 8 files", line);
+        Assert.Contains("adaptive turned off", line);
+        Assert.Contains("8 files", line);
+        Assert.True(selection.Files8);
+        Assert.False(selection.Adaptive);
+        Assert.False(selection.Files4);
+        Assert.False(selection.Ranges2);
+        Assert.Equal(1, selection.OnCount);
+
+        var plan = TransferBalancer.Next(new BalanceInput
+        {
+            Mode = AdaptiveCopyMode.Files8,
+            Manual = true,
+            PendingFiles = 8,
+            PendingCopyBytes = 8_000,
+            LargestPendingBytes = 1_000
+        });
+        Assert.Equal(8, plan.CopyWidth);
+        Assert.False(plan.Stripe);
+        Assert.Equal("Copying 8 files", plan.Label);
+        Assert.Equal(
+            "Copying 8 files — adaptive → 8 files, adaptive turned off",
+            HeaderCopy.RunningStatus(AdaptiveCopyMode.Files8, HeaderCopy.SwitchDetail(HeaderCopyMode.Adaptive, HeaderCopyMode.Files8)));
     }
 
     [Fact]

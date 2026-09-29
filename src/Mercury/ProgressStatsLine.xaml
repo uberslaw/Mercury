@@ -68,6 +68,9 @@
             <CheckBox x:Name="CopyModeFourFilesCheck" Style="{StaticResource HeaderCopyCheck}" Content="4 files"
                       ToolTip="Copy four files at once for the rest of this copy."
                       IsChecked="{Binding DataContext.CopyModeFourFiles, RelativeSource={RelativeSource AncestorType=Window}, Mode=TwoWay}"/>
+            <CheckBox x:Name="CopyModeEightFilesCheck" Style="{StaticResource HeaderCopyCheck}" Content="8 files"
+                      ToolTip="Copy eight files at once for the rest of this copy. Adaptive probing does not test this width."
+                      IsChecked="{Binding DataContext.CopyModeEightFiles, RelativeSource={RelativeSource AncestorType=Window}, Mode=TwoWay}"/>
             <CheckBox x:Name="CopyModeTwoRangesCheck" Style="{StaticResource HeaderCopyCheck}" Content="2 ranges"
                       ToolTip="Split a large file into two ranges. A file that is too small to split stays on one stream."
                       IsChecked="{Binding DataContext.CopyModeTwoRanges, RelativeSource={RelativeSource AncestorType=Window}, Mode=TwoWay}"/>

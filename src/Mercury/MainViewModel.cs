@@ -593,6 +593,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         set => ChooseHeaderCopy(value, HeaderCopyMode.Files4);
     }
 
+    public bool CopyModeEightFiles
+    {
+        get => _headerCopy.Files8;
+        set => ChooseHeaderCopy(value, HeaderCopyMode.Files8);
+    }
+
     public bool CopyModeTwoRanges
     {
         get => _headerCopy.Ranges2;
@@ -4085,6 +4091,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CopyModeOneStream)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CopyModeTwoFiles)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CopyModeFourFiles)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CopyModeEightFiles)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CopyModeTwoRanges)));
         _headerCopyApplying = false;
     }
