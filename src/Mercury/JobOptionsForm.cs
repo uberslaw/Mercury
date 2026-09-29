@@ -38,6 +38,7 @@ public sealed class JobOptionsForm : INotifyPropertyChanged
     private bool _excludeHiddenSystem;
     private bool _purgeExtraDestFiles;
     private bool _adaptiveCopy = true;
+    private bool _hashSourceForCompare;
     private bool _fixLongOrDuplicateNames = true;
     private bool _scheduleMonday = true;
     private bool _scheduleTuesday = true;
@@ -193,6 +194,7 @@ public sealed class JobOptionsForm : INotifyPropertyChanged
     public int VerifyIndex { get => _verifyIndex; set => SetField(ref _verifyIndex, value); }
     public bool DryRun { get => _dryRun; set => SetField(ref _dryRun, value); }
     public bool AdaptiveCopy { get => _adaptiveCopy; set => SetField(ref _adaptiveCopy, value); }
+    public bool HashSourceForCompare { get => _hashSourceForCompare; set => SetField(ref _hashSourceForCompare, value); }
     public bool FixLongOrDuplicateNames { get => _fixLongOrDuplicateNames; set => SetField(ref _fixLongOrDuplicateNames, value); }
     public bool ScheduleMonday { get => _scheduleMonday; set => SetField(ref _scheduleMonday, value); }
     public bool ScheduleTuesday { get => _scheduleTuesday; set => SetField(ref _scheduleTuesday, value); }
@@ -305,6 +307,7 @@ public sealed class JobOptionsForm : INotifyPropertyChanged
             ExcludeHiddenSystem = options.ExcludeHiddenSystem;
             PurgeExtraDestFiles = options.PurgeExtraDestFiles;
             AdaptiveCopy = options.AdaptiveCopy;
+            HashSourceForCompare = options.HashSourceForCompare;
             FixLongOrDuplicateNames = options.FixLongOrDuplicateNames;
             var week = WeekSelection.From(options.ScheduleDays);
             ScheduleSunday = week.Sunday;
@@ -420,6 +423,7 @@ public sealed class JobOptionsForm : INotifyPropertyChanged
             ExcludeHiddenSystem = ExcludeHiddenSystem,
             PurgeExtraDestFiles = PurgeExtraDestFiles,
             AdaptiveCopy = AdaptiveCopy,
+            HashSourceForCompare = HashSourceForCompare,
             FixLongOrDuplicateNames = FixLongOrDuplicateNames,
             ScheduleDays = new WeekSelection(
                 ScheduleSunday,

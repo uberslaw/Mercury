@@ -131,6 +131,18 @@ public sealed class JobOptions
     /// </summary>
     public bool FixLongOrDuplicateNames { get; set; } = true;
 
+    /// <summary>Compare job: also compare size, time, name, and files per folder.</summary>
+    public bool CompareAdvanced { get; set; }
+
+    /// <summary>Compare job: hash file contents with xxHash64. Off unless Advanced is also on.</summary>
+    public bool CompareHash { get; set; }
+
+    /// <summary>
+    /// Copy job: while the copy runs, hash source files into this job’s compare manifest
+    /// so a later Compare can skip those source hashes. Off by default.
+    /// </summary>
+    public bool HashSourceForCompare { get; set; }
+
     /// <summary>
     /// Days the job may start. Null means every day (older jobs and the default).
     /// </summary>
@@ -176,6 +188,9 @@ public sealed class JobOptions
         PurgeExtraDestFiles = other.PurgeExtraDestFiles;
         AdaptiveCopy = other.AdaptiveCopy;
         FixLongOrDuplicateNames = other.FixLongOrDuplicateNames;
+        CompareAdvanced = other.CompareAdvanced;
+        CompareHash = other.CompareHash;
+        HashSourceForCompare = other.HashSourceForCompare;
         ScheduleDays = other.ScheduleDays is null ? null : [..other.ScheduleDays];
     }
 }
@@ -209,10 +224,18 @@ public sealed class BandwidthSettings
     public List<string>? NeverPackExtensions { get; set; }
 }
 
+public enum JobKind
+{
+    Copy = 0,
+    Compare = 1
+}
+
 public sealed class Job
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
     public string Name { get; set; } = "";
+    /// <summary>Copy moves bytes. Compare is a queue row that runs DirectoryComparer and can resume its manifest.</summary>
+    public JobKind Kind { get; set; } = JobKind.Copy;
     public string SourcePath { get; set; } = "";
     /// <summary>
     /// All source roots for this job. Empty means <see cref="SourcePath"/> only (older jobs / single pick).

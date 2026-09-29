@@ -16,6 +16,8 @@ public sealed class CompareManifest
     public bool Hash { get; set; }
     public bool FatTimestampTolerance { get; set; }
     public bool InventoryComplete { get; set; }
+    /// <summary>Source file list is complete. Destination has not been inventoried yet.</summary>
+    public bool SourceInventoryComplete { get; set; }
     public int LeftRootFiles { get; set; }
     public int RightRootFiles { get; set; }
     public List<CompareManifestEntry> Files { get; set; } = [];
@@ -75,6 +77,8 @@ public sealed class CompareManifestFolder
 
 public static class CompareManifestStore
 {
+    public const string FileName = "compare-manifest.jsonl";
+
     private static readonly JsonSerializerOptions Json = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -164,6 +168,9 @@ public static class CompareManifestStore
                     case "inventory" when job is not null:
                         job.InventoryComplete = true;
                         break;
+                    case "sourceInventory" when job is not null:
+                        job.SourceInventoryComplete = true;
+                        break;
                     case "hash" when !string.IsNullOrEmpty(row.Rel) && !string.IsNullOrEmpty(row.Digest):
                         hashes[Key(IsLeft(row.Side), row.Rel)] = new HashMark(row.Digest, row.Size ?? 0, row.WriteTicks ?? 0);
                         break;
@@ -197,6 +204,88 @@ public static class CompareManifestStore
         {
             return null;
         }
+    }
+
+    public static string JobFile(string jobDirectory) => Path.Combine(jobDirectory, FileName);
+
+    public static bool SameRoots(CompareManifest data, string left, string right)
+    {
+        try
+        {
+            return PathsEqual(data.LeftRoot, left) && PathsEqual(data.RightRoot, right);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Other jobs' manifests for this source → dest pair that already have source hashes.
+    /// The compare file being written is skipped so it is not read while it is open for append.
+    /// </summary>
+    public static IReadOnlyList<CompareManifest> FindSourceHashSeeds(
+        string jobsRoot,
+        string left,
+        string right,
+        string? excludePath)
+    {
+        var seeds = new List<CompareManifest>();
+        if (string.IsNullOrWhiteSpace(jobsRoot) || !Directory.Exists(jobsRoot))
+        {
+            return seeds;
+        }
+
+        string? exclude = null;
+        if (!string.IsNullOrWhiteSpace(excludePath))
+        {
+            try
+            {
+                exclude = Path.GetFullPath(excludePath);
+            }
+            catch (ArgumentException)
+            {
+                exclude = excludePath;
+            }
+        }
+
+        List<string> dirs;
+        try
+        {
+            dirs = Directory.EnumerateDirectories(jobsRoot).ToList();
+        }
+        catch (IOException)
+        {
+            return seeds;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return seeds;
+        }
+
+        foreach (var dir in dirs)
+        {
+            var path = JobFile(dir);
+            if (exclude is not null && FullPathsEqual(path, exclude))
+            {
+                continue;
+            }
+
+            var loaded = Load(path);
+            if (loaded is null || !loaded.Hash || loaded.SourceHashCount == 0)
+            {
+                continue;
+            }
+
+            if (!SameRoots(loaded, left, right))
+            {
+                continue;
+            }
+
+            seeds.Add(loaded);
+        }
+
+        return seeds;
     }
 
     public static bool SameJob(CompareManifest data, string left, string right, bool advanced, bool hash, bool fat)
@@ -238,6 +327,18 @@ public static class CompareManifestStore
     private static bool PathsEqual(string left, string right) =>
         string.Equals(PathNormalizer.Normalize(left), PathNormalizer.Normalize(right), StringComparison.OrdinalIgnoreCase);
 
+    private static bool FullPathsEqual(string left, string right)
+    {
+        try
+        {
+            return string.Equals(Path.GetFullPath(left), Path.GetFullPath(right), StringComparison.OrdinalIgnoreCase);
+        }
+        catch (ArgumentException)
+        {
+            return string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
     private static bool IsLeft(string? side) => !string.Equals(side, "R", StringComparison.OrdinalIgnoreCase);
 
     internal readonly record struct HashMark(string Hash, long Size, long Ticks);
@@ -262,7 +363,11 @@ public sealed class CompareManifestWriter : IDisposable
 
     public CompareManifest? Inventory { get; private set; }
 
+    public CompareManifest? SourceInventory { get; private set; }
+
     public bool InventoryComplete => Inventory is { InventoryComplete: true };
+
+    public bool SourceInventoryComplete => SourceInventory is { SourceInventoryComplete: true };
 
     public static CompareManifestWriter Open(
         string path,
@@ -279,16 +384,20 @@ public sealed class CompareManifestWriter : IDisposable
         }
 
         var loaded = CompareManifestStore.Load(path);
-        var resume = loaded is { InventoryComplete: true } &&
-                     CompareManifestStore.SameJob(loaded, leftRoot, rightRoot, advanced, hash, fat);
+        var fullResume = loaded is { InventoryComplete: true } &&
+                         CompareManifestStore.SameJob(loaded, leftRoot, rightRoot, advanced, hash, fat);
+        var sourceResume = !fullResume &&
+                           loaded is { SourceInventoryComplete: true } &&
+                           CompareManifestStore.SameJob(loaded, leftRoot, rightRoot, advanced, hash, fat);
+        var append = fullResume || sourceResume;
         var stream = new FileStream(
             path,
-            resume ? FileMode.Append : FileMode.Create,
+            append ? FileMode.Append : FileMode.Create,
             FileAccess.Write,
             FileShare.Read);
         var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
         var hashes = new Dictionary<string, CompareManifestStore.HashMark>(StringComparer.OrdinalIgnoreCase);
-        if (resume && loaded is not null)
+        if (append && loaded is not null)
         {
             foreach (var file in loaded.Files)
             {
@@ -302,8 +411,13 @@ public sealed class CompareManifestWriter : IDisposable
             }
         }
 
-        var session = new CompareManifestWriter(writer, resume ? loaded : null, hashes);
-        if (!resume)
+        var session = new CompareManifestWriter(writer, fullResume ? loaded : null, hashes);
+        if (sourceResume)
+        {
+            session.SourceInventory = loaded;
+        }
+
+        if (!append)
         {
             session.WriteLine(new CompareManifestLine
             {
@@ -317,6 +431,98 @@ public sealed class CompareManifestWriter : IDisposable
         }
 
         return session;
+    }
+
+    /// <summary>Source file list only. A later Compare still scans both trees and reuses the hashes.</summary>
+    public void WriteSourceInventory(CompareManifest inventory)
+    {
+        lock (_gate)
+        {
+            if (_disposed || SourceInventoryComplete || InventoryComplete)
+            {
+                return;
+            }
+
+            foreach (var folder in inventory.Folders)
+            {
+                if (!folder.Left)
+                {
+                    continue;
+                }
+
+                WriteLine(new CompareManifestLine
+                {
+                    T = "folder",
+                    Side = "L",
+                    Rel = folder.Relative,
+                    Name = folder.Name,
+                    Immediate = folder.ImmediateFiles,
+                    Subtree = folder.SubtreeFiles
+                });
+            }
+
+            foreach (var file in inventory.Files)
+            {
+                if (!file.Left)
+                {
+                    continue;
+                }
+
+                WriteLine(new CompareManifestLine
+                {
+                    T = "file",
+                    Side = "L",
+                    Rel = file.Relative,
+                    Name = file.Name,
+                    Path = file.FullPath,
+                    Size = file.Size,
+                    WriteTicks = file.WriteTicks
+                });
+            }
+
+            WriteLine(new CompareManifestLine { T = "root", Side = "L", Immediate = inventory.LeftRootFiles });
+            WriteLine(new CompareManifestLine { T = "sourceInventory" });
+            inventory.SourceInventoryComplete = true;
+            SourceInventory = inventory;
+        }
+    }
+
+    /// <summary>
+    /// Copy source hashes that still match size and last-write ticks into this manifest.
+    /// Destination hashes are left for the compare itself.
+    /// </summary>
+    public int SeedSourceHashes(CompareManifest prior)
+    {
+        if (Inventory is null)
+        {
+            return 0;
+        }
+
+        var seeded = 0;
+        foreach (var file in prior.Files)
+        {
+            if (!file.Left || string.IsNullOrEmpty(file.ContentHash))
+            {
+                continue;
+            }
+
+            var live = Inventory.Files.FirstOrDefault(row =>
+                row.Left && string.Equals(row.Relative, file.Relative, StringComparison.OrdinalIgnoreCase));
+            if (live is null || live.Size != file.Size || live.WriteTicks != file.WriteTicks)
+            {
+                continue;
+            }
+
+            if (TryGetHash(true, file.Relative, file.Size, file.WriteTicks, out _))
+            {
+                continue;
+            }
+
+            WriteHash(true, file.Relative, file.ContentHash, file.Size, file.WriteTicks);
+            seeded++;
+        }
+
+        return seeded;
     }
 
     public void WriteInventory(CompareManifest inventory)

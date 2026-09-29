@@ -17,7 +17,7 @@
     </UserControl.Resources>
     <DockPanel Margin="12">
         <TextBlock DockPanel.Dock="Top" TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,8"
-                   Text="Compare two folders without touching Transfer, Queue, or a running copy. Source is the catch-up origin; Destination is the other tree. Missing-on-dest is red; dest-only is purple. Default is a recursive count. Advanced adds size, time, name, and per-folder file counts; hash (xxHash64) stays off unless you tick it."/>
+                   Text="Compare two folders. Compare is a queue job, so it can pause and resume after you close Mercury. It waits if a copy is already running. Source is the catch-up origin; Destination is the other tree. Missing-on-dest is red; dest-only is purple. Default is a recursive count. Advanced adds size, time, name, and per-folder file counts; hash (xxHash64) stays off unless you tick it."/>
 
         <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
             <Grid.ColumnDefinitions>
@@ -106,8 +106,8 @@
 
         <StackPanel DockPanel.Dock="Top" Visibility="{Binding ShowProgress, Converter={StaticResource BoolToVis}}" Margin="0,0,0,8">
             <ProgressBar Height="{DynamicResource HeaderProgressBarHeight}" Minimum="0"
-                         Maximum="{Binding ProgressMaximum}" Value="{Binding ProgressValue}"
-                         IsIndeterminate="{Binding ProgressIndeterminate}"/>
+                         Maximum="{Binding ProgressMaximum, Mode=OneWay}" Value="{Binding ProgressValue, Mode=OneWay}"
+                         IsIndeterminate="{Binding ProgressIndeterminate, Mode=OneWay}"/>
             <TextBlock Text="{Binding FileEtaText}" Margin="0,6,0,0" TextWrapping="Wrap"/>
             <TextBlock Text="{Binding FolderEtaText}" TextWrapping="Wrap"/>
             <TextBlock Text="{Binding CompareEtaText}" TextWrapping="Wrap"/>

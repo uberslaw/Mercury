@@ -50,6 +50,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private int _verifyIndex;
     private bool _dryRun;
     private bool _adaptiveCopy = true;
+    private bool _hashSourceForCompare;
     private bool _fixLongOrDuplicateNames = true;
     private bool _scheduleMonday = true;
     private bool _scheduleTuesday = true;
@@ -277,7 +278,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
         _scheduler.Kick();
         Theme = new ThemeViewModel();
-        Compare = new CompareViewModel(_paths)
+        Compare = new CompareViewModel(_paths, _scheduler)
         {
             QueueCatchUpRequested = (source, dest) => QueueCompareCatchUp(source, dest)
         };
@@ -571,6 +572,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public int VerifyIndex { get => _verifyIndex; set => SetField(ref _verifyIndex, value); }
     public bool DryRun { get => _dryRun; set => SetField(ref _dryRun, value); }
     public bool AdaptiveCopy { get => _adaptiveCopy; set => SetField(ref _adaptiveCopy, value); }
+    public bool HashSourceForCompare { get => _hashSourceForCompare; set => SetField(ref _hashSourceForCompare, value); }
 
     public bool CopyModeAdaptive
     {
@@ -1435,6 +1437,26 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             return true;
         }
 
+        var compare = _scheduler.TryGetRunningJob();
+        if (compare?.Kind == JobKind.Compare)
+        {
+            var compareChoice = ChoiceWindow.Show(
+                owner,
+                "Compare in progress",
+                "You have a compare running. Close now and resume later, or stay open?",
+                "Close now",
+                secondary: null,
+                cancel: "Cancel");
+            if (compareChoice != ChoiceResult.Primary)
+            {
+                return false;
+            }
+
+            _scheduler.Stop(compare.Id, clearHeartbeat: false);
+            _keepHeartbeatOnClose = true;
+            return true;
+        }
+
         var jobId = _runningJobId;
         if (!string.IsNullOrEmpty(jobId) && _scheduler.CanPauseAfterFile(jobId))
         {
@@ -1848,7 +1870,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
 
         bool? scan = false;
-        if (JobJournal.Exists(_scheduler.Paths.JobDirectory(last.Id)))
+        if (last.Kind != JobKind.Compare && JobJournal.Exists(_scheduler.Paths.JobDirectory(last.Id)))
         {
             scan = OfferSourceScan(last);
             if (scan is null)
@@ -2206,6 +2228,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             ExcludeHiddenSystem = ExcludeHiddenSystem,
             PurgeExtraDestFiles = PurgeExtraDestFiles,
             AdaptiveCopy = AdaptiveCopy,
+            HashSourceForCompare = HashSourceForCompare,
             FixLongOrDuplicateNames = FixLongOrDuplicateNames,
             ScheduleDays = new WeekSelection(
                 ScheduleSunday,
@@ -2278,6 +2301,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             ExcludeHiddenSystem = options.ExcludeHiddenSystem;
             PurgeExtraDestFiles = options.PurgeExtraDestFiles;
             AdaptiveCopy = options.AdaptiveCopy;
+            HashSourceForCompare = options.HashSourceForCompare;
             FixLongOrDuplicateNames = options.FixLongOrDuplicateNames;
             var week = WeekSelection.From(options.ScheduleDays);
             ScheduleSunday = week.Sunday;

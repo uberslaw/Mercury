@@ -12,7 +12,9 @@ namespace Mercury;
 public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
 {
     private readonly AppPaths _paths;
+    private readonly JobScheduler? _scheduler;
     private readonly Dispatcher _dispatcher;
+    private string? _activeJobId;
     private readonly PauseGate _pause = new();
     private readonly ManualResetEventSlim _scanIdle = new(true);
     private CancellationTokenSource? _scanCts;
@@ -50,10 +52,15 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
     private string _listCaption = "Differences";
     private string _lastExportPath = "";
 
-    public CompareViewModel(AppPaths paths)
+    public CompareViewModel(AppPaths paths, JobScheduler? scheduler = null)
     {
         _paths = paths;
+        _scheduler = scheduler;
         _dispatcher = Dispatcher.CurrentDispatcher;
+        if (_scheduler is not null)
+        {
+            _scheduler.CompareActivity += OnCompareActivity;
+        }
         BrowseLeftCommand = new RelayCommand(BrowseLeft, () => !IsScanning);
         BrowseRightCommand = new RelayCommand(BrowseRight, () => !IsScanning);
         CompareCommand = new RelayCommand(StartScan, () => CanStartScan);
@@ -470,6 +477,11 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
     public void Dispose()
     {
         Interlocked.Exchange(ref _closed, 1);
+        if (_scheduler is not null)
+        {
+            _scheduler.CompareActivity -= OnCompareActivity;
+        }
+
         _scanCts?.Cancel();
         _pause.Resume();
         _scanIdle.Wait(TimeSpan.FromSeconds(5));
@@ -481,6 +493,12 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
     {
         if (!CanStartScan)
         {
+            return;
+        }
+
+        if (_scheduler is not null)
+        {
+            StartQueuedCompare();
             return;
         }
 
@@ -759,6 +777,14 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
 
     private void Pause()
     {
+        if (_scheduler is not null && _activeJobId is not null && _scheduler.TryGetRunningJob(_activeJobId) is not null)
+        {
+            _scheduler.Pause(_activeJobId);
+            IsPaused = true;
+            StatusText = "Compare paused.";
+            return;
+        }
+
         _pause.Pause();
         IsPaused = true;
         StatusText = "Scan paused.";
@@ -766,6 +792,23 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
 
     private void Resume()
     {
+        if (_scheduler is not null && _activeJobId is not null)
+        {
+            if (_scheduler.TryGetRunningJob(_activeJobId) is not null)
+            {
+                _scheduler.ResumePaused(_activeJobId);
+            }
+            else
+            {
+                _scheduler.ResumeOrRetry(_activeJobId);
+            }
+
+            IsPaused = false;
+            IsScanning = true;
+            StatusText = "Comparing…";
+            return;
+        }
+
         _pause.Resume();
         IsPaused = false;
         StatusText = "Scanning…";
@@ -773,6 +816,31 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
 
     private void Cancel()
     {
+        if (_scheduler is not null && _activeJobId is not null)
+        {
+            if (_scheduler.TryGetRunningJob(_activeJobId) is not null)
+            {
+                _scheduler.Stop(_activeJobId);
+            }
+            else
+            {
+                var queued = _scheduler.Queue.FirstOrDefault(job => job.Id == _activeJobId);
+                if (queued is { Status: JobStatus.Pending })
+                {
+                    _scheduler.Remove(_activeJobId);
+                    IsScanning = false;
+                    IsPaused = false;
+                    StatusText = "Compare removed from the queue.";
+                    return;
+                }
+
+                _scheduler.Stop(_activeJobId);
+            }
+
+            StatusText = "Canceling…";
+            return;
+        }
+
         _scanCts?.Cancel();
         _pause.Resume();
         StatusText = "Canceling…";
@@ -933,8 +1001,165 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
         _dispatcher.BeginInvoke(action);
     }
 
+    private void StartQueuedCompare()
+    {
+        var existing = FindOpenCompare();
+        var busy = _scheduler!.HasRunningJob && existing?.Id != _scheduler.TryGetRunningJob()?.Id;
+        Job job;
+        if (existing is not null)
+        {
+            job = existing;
+            _activeJobId = job.Id;
+            _hashRun = job.Options.CompareHash;
+            PrepareScanUi(resuming: true);
+            StatusText = busy && _scheduler.TryGetRunningJob(job.Id) is null
+                ? "Compare is in the queue. It starts when the current job finishes."
+                : "Continuing saved compare…";
+            _scheduler.ResumeOrRetry(job.Id);
+            return;
+        }
+
+        var leaf = Path.GetFileName(LeftPath.TrimEnd('\\', '/'));
+        busy = _scheduler.HasRunningJob;
+        job = new Job
+        {
+            Kind = JobKind.Compare,
+            Name = string.IsNullOrWhiteSpace(leaf) ? "Compare" : "Compare " + leaf,
+            SourcePath = LeftPath,
+            SourcePaths = [LeftPath],
+            DestinationPath = RightPath,
+            SourceKind = SourceKind.Folder,
+            Options = new JobOptions
+            {
+                CompareAdvanced = Advanced,
+                CompareHash = Advanced && HashFiles,
+                FatTimestampTolerance = FatTimestampTolerance,
+                IncludeSourceFolderName = false
+            }
+        };
+        _activeJobId = job.Id;
+        _hashRun = job.Options.CompareHash;
+        PrepareScanUi(resuming: false);
+        StatusText = busy
+            ? "Compare is in the queue. It starts when the current job finishes."
+            : "Comparing…";
+        Remember(isLeft: true, LeftPath);
+        Remember(isLeft: false, RightPath);
+        _scheduler.Enqueue(job, startNow: true);
+    }
+
+    private Job? FindOpenCompare()
+    {
+        if (_scheduler is null)
+        {
+            return null;
+        }
+
+        foreach (var job in _scheduler.Queue)
+        {
+            if (job.Kind != JobKind.Compare || job.Status == JobStatus.Completed)
+            {
+                continue;
+            }
+
+            var marker = new CompareManifest
+            {
+                LeftRoot = job.SourcePath,
+                RightRoot = job.DestinationPath,
+                Advanced = job.Options.CompareAdvanced,
+                Hash = job.Options.CompareHash,
+                FatTimestampTolerance = job.Options.FatTimestampTolerance
+            };
+            if (CompareManifestStore.SameJob(marker, LeftPath, RightPath, Advanced, Advanced && HashFiles, FatTimestampTolerance))
+            {
+                return job;
+            }
+        }
+
+        return null;
+    }
+
+    private void PrepareScanUi(bool resuming)
+    {
+        _pause.Resume();
+        IsPaused = false;
+        IsScanning = true;
+        FilesVisited = 0;
+        FoldersVisited = 0;
+        ProgressText = resuming ? "Continuing…" : "Starting…";
+        FileEtaText = "File  —  —";
+        FolderEtaText = "Folder  —  —";
+        CompareEtaText = "Compare  —  (counting)";
+        ProgressIndeterminate = true;
+        ProgressMaximum = 1;
+        ProgressValue = 0;
+        Highlights.Clear();
+        ListedDifferences.Clear();
+        SummaryText = "";
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasHighlights)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasListedDifferences)));
+    }
+
+    private void OnCompareActivity(object? sender, CompareActivity activity)
+    {
+        if (Volatile.Read(ref _closed) != 0)
+        {
+            return;
+        }
+
+        if (!string.IsNullOrEmpty(_activeJobId)
+            && !string.Equals(_activeJobId, activity.JobId, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        RunOnUi(() =>
+        {
+            if (activity.Job is not null)
+            {
+                IsPaused = activity.Job.Status is JobStatus.Paused or JobStatus.PausedOutsideHours;
+            }
+
+            if (activity.Progress is { } progress)
+            {
+                IsScanning = activity.Result is null
+                    && activity.Job?.Status is not (JobStatus.Completed or JobStatus.Failed or JobStatus.Cancelled);
+                ApplyProgress(progress);
+            }
+
+            if (activity.Result is { } result)
+            {
+                if (result.Completed || !string.IsNullOrWhiteSpace(result.Error))
+                {
+                    ApplyResult(result);
+                }
+                else
+                {
+                    ApplyCanceled();
+                }
+            }
+        });
+    }
+
     private void OfferSavedCompare()
     {
+        if (_scheduler is not null)
+        {
+            var pending = _scheduler.Queue.FirstOrDefault(job =>
+                job.Kind == JobKind.Compare && job.Status != JobStatus.Completed);
+            if (pending is not null)
+            {
+                Advanced = pending.Options.CompareAdvanced;
+                HashFiles = pending.Options.CompareHash;
+                FatTimestampTolerance = pending.Options.FatTimestampTolerance;
+                LeftPath = pending.SourcePath;
+                RightPath = pending.DestinationPath;
+                _activeJobId = pending.Id;
+                StatusText = "This compare is in the queue. Compare or Resume continues it.";
+                return;
+            }
+        }
+
         var saved = CompareManifestStore.Load(_paths.CompareManifestFile);
         if (saved is not { InventoryComplete: true })
         {
@@ -951,6 +1176,11 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
 
     private string CanceledStatus()
     {
+        if (_scheduler is not null)
+        {
+            return "Compare saved in the queue. Resume continues it.";
+        }
+
         if (!_hashRun)
         {
             return "Scan canceled.";

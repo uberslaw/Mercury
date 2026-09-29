@@ -95,9 +95,9 @@ public sealed class QueueJobItem : INotifyPropertyChanged
                 JobStatus.Completed => "Done",
                 JobStatus.Failed => "Failed",
                 JobStatus.Incomplete => "Incomplete",
-                JobStatus.Preparing => "Preparing",
-                JobStatus.Enumerating => "Enumerating",
-                JobStatus.Copying => "Transferring",
+                JobStatus.Preparing => Job.Kind == JobKind.Compare ? "Comparing" : "Preparing",
+                JobStatus.Enumerating => Job.Kind == JobKind.Compare ? "Comparing" : "Enumerating",
+                JobStatus.Copying => Job.Kind == JobKind.Compare ? "Comparing" : "Transferring",
                 JobStatus.Verifying => "Verifying",
                 _ => Job.Status.ToString()
             };
@@ -114,6 +114,27 @@ public sealed class QueueJobItem : INotifyPropertyChanged
     {
         get
         {
+            if (Job.Kind == JobKind.Compare)
+            {
+                var parts = new List<string> { "Compare" };
+                if (Job.Options.CompareAdvanced)
+                {
+                    parts.Add("Advanced");
+                }
+
+                if (Job.Options.CompareHash)
+                {
+                    parts.Add("Hash");
+                }
+
+                if (Job.Options.FatTimestampTolerance)
+                {
+                    parts.Add("FAT 2s");
+                }
+
+                return string.Join(". ", parts) + ".";
+            }
+
             var o = Job.Options;
             var speed = o.MaxMegabytesPerSecond is > 0
                 ? $"{o.MaxMegabytesPerSecond.Value.ToString("0.###", CultureInfo.InvariantCulture)} MB/s"
@@ -252,6 +273,13 @@ public sealed class QueueJobItem : INotifyPropertyChanged
 
             if (CanResume)
             {
+                if (Job.Kind == JobKind.Compare)
+                {
+                    return ResumeLabel == "Start"
+                        ? "Start this compare."
+                        : "Resume this compare from its saved manifest.";
+                }
+
                 return ResumeLabel == "Start"
                     ? "Start this job now."
                     : "Resume this job from its saved progress.";
@@ -259,7 +287,9 @@ public sealed class QueueJobItem : INotifyPropertyChanged
 
             if (Job.Status is JobStatus.Preparing or JobStatus.Enumerating or JobStatus.Copying)
             {
-                return "This job is already transferring.";
+                return Job.Kind == JobKind.Compare
+                    ? "This compare is already running."
+                    : "This job is already transferring.";
             }
 
             if (_verifying || Job.Status == JobStatus.Verifying)
@@ -274,7 +304,9 @@ public sealed class QueueJobItem : INotifyPropertyChanged
 
             if (Job.Status == JobStatus.Completed)
             {
-                return "This job finished. Queue a new copy from Transfer if you need another run.";
+                return Job.Kind == JobKind.Compare
+                    ? "This compare finished."
+                    : "This job finished. Queue a new copy from Transfer if you need another run.";
             }
 
             return "This job cannot be resumed right now.";

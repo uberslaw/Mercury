@@ -245,6 +245,8 @@ public class DirectoryCompareTests
         Assert.Contains("current folder", section.Body, StringComparison.Ordinal);
         Assert.Contains("each source hash", section.Body, StringComparison.Ordinal);
         Assert.Contains("starts the count over", section.Body, StringComparison.Ordinal);
+        Assert.Contains("queue row", section.Body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Hash source for Compare", HelpDocument.Sections.Single(s => s.Id == "options").Body, StringComparison.Ordinal);
         Assert.DoesNotContain("does not keep a place to resume", section.Body, StringComparison.Ordinal);
         Assert.Contains("Source / Destination", section.Body, StringComparison.Ordinal);
         Assert.Contains("Source→Dest", section.Body, StringComparison.Ordinal);

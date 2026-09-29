@@ -263,7 +263,8 @@ public static class JobHeartbeat
     {
         var local = state.Utc.ToLocalTime();
         var pct = state.Percent.ToString("0", CultureInfo.CurrentCulture);
-        return $"Unscheduled stop of {RouteLabel(state, job)} at {pct}% at {local:d MMM yyyy HH:mm}. Resume transfer from there?";
+        var kind = job?.Kind == JobKind.Compare ? "compare" : "transfer";
+        return $"Unscheduled stop of {RouteLabel(state, job)} at {pct}% at {local:d MMM yyyy HH:mm}. Resume {kind} from there?";
     }
 
     public static string WaitForThisFileLabel(TimeSpan? fileEta)

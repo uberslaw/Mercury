@@ -78,6 +78,7 @@ public sealed class JobScheduler : IDisposable
     public event EventHandler<JobProgress>? ProgressChanged;
     public event EventHandler? QueueChanged;
     public event EventHandler? HistoryChanged;
+    public event EventHandler<CompareActivity>? CompareActivity;
 
     public IReadOnlyList<Job> Queue
     {
@@ -387,7 +388,7 @@ public sealed class JobScheduler : IDisposable
             throw new InvalidOperationException("That job is already running.");
         }
 
-        if (_pendingHeaderCopy != HeaderCopyMode.FollowSaved)
+        if (job.Kind != JobKind.Compare && _pendingHeaderCopy != HeaderCopyMode.FollowSaved)
         {
             job.HeaderCopyMode = _pendingHeaderCopy;
             job.HeaderCopyModeChosen = true;
@@ -413,15 +414,25 @@ public sealed class JobScheduler : IDisposable
         var reportFinal = false;
         var keepHeartbeat = false;
         var rundownOwnsJournal = false;
+        var compareBeat = new CompareBeat();
         try
         {
             Log.Info(job.Id, job.Name, $"Job started. Log: {_paths.JobLogFile(job.Id)}");
-            await _engine.RunAsync(job, journal, Budget, pause, Log, progress, cts.Token).ConfigureAwait(false);
+            if (job.Kind == JobKind.Compare)
+            {
+                await Task.Run(() => RunCompare(job, journal, pause, progress, cts.Token, compareBeat)).ConfigureAwait(false);
+            }
+            else
+            {
+                await _engine.RunAsync(job, journal, Budget, pause, Log, progress, cts.Token).ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException)
         {
             job.Status = JobStatus.Cancelled;
-            job.ResultMessage = "Stopped. Progress is saved; you can Resume.";
+            job.ResultMessage = job.Kind == JobKind.Compare
+                ? "Compare stopped. Resume continues the saved compare."
+                : "Stopped. Progress is saved; you can Resume.";
             Log.Info(job.Id, job.Name, job.ResultMessage);
             reportFinal = true;
         }
@@ -443,17 +454,33 @@ public sealed class JobScheduler : IDisposable
 
             try
             {
-                var hb = SafeTotals(journal);
-                var percent = hb.Bytes > 0 ? 100.0 * hb.DoneBytes / hb.Bytes : 0;
-                var terminal = job.Status is JobStatus.Completed or JobStatus.Incomplete or JobStatus.Failed
-                    || (job.Status == JobStatus.Cancelled && !keepHeartbeat);
-                if (terminal || (!JobHeartbeat.HasCopyProgress(percent, null, job) && hb.DoneFiles == 0))
+                if (job.Kind == JobKind.Compare)
                 {
-                    JobHeartbeat.Clear(journal);
+                    var compareTerminal = job.Status is JobStatus.Completed or JobStatus.Incomplete or JobStatus.Failed
+                        || (job.Status == JobStatus.Cancelled && !keepHeartbeat);
+                    if (compareTerminal || (compareBeat.Percent < 0.05 && string.IsNullOrWhiteSpace(compareBeat.File)))
+                    {
+                        JobHeartbeat.Clear(journal);
+                    }
+                    else
+                    {
+                        JobHeartbeat.Write(journal, job, compareBeat.Percent, compareBeat.File);
+                    }
                 }
                 else
                 {
-                    JobHeartbeat.Write(journal, job, percent, null);
+                    var hb = SafeTotals(journal);
+                    var percent = hb.Bytes > 0 ? 100.0 * hb.DoneBytes / hb.Bytes : 0;
+                    var terminal = job.Status is JobStatus.Completed or JobStatus.Incomplete or JobStatus.Failed
+                        || (job.Status == JobStatus.Cancelled && !keepHeartbeat);
+                    if (terminal || (!JobHeartbeat.HasCopyProgress(percent, null, job) && hb.DoneFiles == 0))
+                    {
+                        JobHeartbeat.Clear(journal);
+                    }
+                    else
+                    {
+                        JobHeartbeat.Write(journal, job, percent, null);
+                    }
                 }
             }
             catch
@@ -462,8 +489,35 @@ public sealed class JobScheduler : IDisposable
             }
 
             cts.Dispose();
-            BeginPostCopy(job, journal, progress);
-            rundownOwnsJournal = true;
+            if (job.Kind == JobKind.Compare)
+            {
+                try
+                {
+                    if (job.Status is JobStatus.Completed or JobStatus.Incomplete or JobStatus.Cancelled or JobStatus.Failed)
+                    {
+                        HistoryStore.Record(_paths, job);
+                        HistoryChanged?.Invoke(this, EventArgs.Empty);
+                    }
+                }
+                catch
+                {
+                    // history is best-effort
+                }
+
+                try
+                {
+                    journal.Dispose();
+                }
+                catch
+                {
+                    // journal already closed
+                }
+            }
+            else
+            {
+                BeginPostCopy(job, journal, progress);
+                rundownOwnsJournal = true;
+            }
             lock (_queueLock)
             {
                 SaveQueue();
@@ -1116,10 +1170,164 @@ public sealed class JobScheduler : IDisposable
 
     private void RaiseQueueChanged() => QueueChanged?.Invoke(this, EventArgs.Empty);
 
+    private void RunCompare(
+        Job job,
+        JobJournal journal,
+        PauseGate pause,
+        IProgress<JobProgress> progress,
+        CancellationToken cancellationToken,
+        CompareBeat beat)
+    {
+        var advanced = job.Options.CompareAdvanced;
+        var hash = advanced && job.Options.CompareHash;
+        var manifestPath = hash ? CompareManifestStore.JobFile(journal.Directory) : null;
+        var options = new DirectoryCompareOptions
+        {
+            Advanced = advanced,
+            Hash = hash,
+            FatTimestampTolerance = job.Options.FatTimestampTolerance
+        };
+        job.Status = JobStatus.Enumerating;
+        journal.SaveJob(job);
+        var lastBeat = DateTime.UtcNow;
+        ReportCompare(job, progress, JobStatus.Enumerating, "Comparing…", null);
+
+        var result = DirectoryComparer.Compare(
+            job.SourcePath,
+            job.DestinationPath,
+            options,
+            cancellationToken,
+            pause,
+            snapshot =>
+            {
+                var hashing = snapshot.Pace is not null;
+                var status = pause.IsEffectivelyPaused
+                    ? JobStatus.Paused
+                    : hashing ? JobStatus.Copying : JobStatus.Enumerating;
+                if (job.Status is not (JobStatus.Cancelled or JobStatus.Failed or JobStatus.Completed))
+                {
+                    job.Status = status;
+                }
+
+                double percent = 0;
+                if (snapshot.Pace is { BytesTotal: > 0 } pace)
+                {
+                    percent = 100.0 * pace.BytesDone / pace.BytesTotal;
+                }
+                else if (!string.IsNullOrWhiteSpace(snapshot.CurrentRelative))
+                {
+                    percent = 0.05;
+                }
+
+                beat.Percent = percent;
+                beat.File = snapshot.CurrentRelative;
+                if (DateTime.UtcNow - lastBeat >= TimeSpan.FromSeconds(2))
+                {
+                    try
+                    {
+                        JobHeartbeat.Write(journal, job, percent, snapshot.CurrentRelative);
+                    }
+                    catch
+                    {
+                        // a missed pulse still leaves the manifest
+                    }
+
+                    lastBeat = DateTime.UtcNow;
+                }
+
+                ReportCompare(job, progress, job.Status, "Comparing", snapshot);
+                CompareActivity?.Invoke(this, new CompareActivity
+                {
+                    JobId = job.Id,
+                    Job = job,
+                    Progress = snapshot
+                });
+            },
+            manifestPath,
+            _paths.Jobs);
+
+        if (result.Completed)
+        {
+            if (result.Hashed && manifestPath is not null)
+            {
+                CompareManifestStore.Delete(manifestPath);
+            }
+
+            job.Status = JobStatus.Completed;
+            job.EndedUtc = DateTimeOffset.UtcNow;
+            job.ResultMessage = result.Hashed
+                ? "Compare finished (hashed)."
+                : result.Advanced ? "Advanced compare finished." : "Compare finished.";
+            job.SourceFiles = result.LeftFiles;
+            job.DestFiles = result.RightFiles;
+            job.SourceFolders = result.LeftFolders;
+            job.DestFolders = result.RightFolders;
+            beat.Percent = 100;
+            beat.File = null;
+        }
+        else if (result.Canceled)
+        {
+            job.Status = JobStatus.Cancelled;
+            job.EndedUtc = DateTimeOffset.UtcNow;
+            job.ResultMessage = "Compare stopped. Resume continues the saved compare.";
+        }
+        else
+        {
+            job.Status = JobStatus.Failed;
+            job.EndedUtc = DateTimeOffset.UtcNow;
+            job.ResultMessage = string.IsNullOrWhiteSpace(result.Error) ? "Compare failed." : result.Error;
+        }
+
+        journal.SaveJob(job);
+        Log.Info(job.Id, job.Name, job.ResultMessage ?? job.Status.ToString());
+        ReportCompare(job, progress, job.Status, job.ResultMessage ?? "Compare", null);
+        CompareActivity?.Invoke(this, new CompareActivity
+        {
+            JobId = job.Id,
+            Job = job,
+            Result = result
+        });
+    }
+
+    private void ReportCompare(Job job, IProgress<JobProgress> progress, JobStatus status, string message, DirectoryCompareProgress? snapshot)
+    {
+        var pace = snapshot?.Pace;
+        progress.Report(new JobProgress
+        {
+            JobId = job.Id,
+            JobName = job.Name,
+            Status = status,
+            Message = message,
+            CurrentFile = snapshot?.CurrentRelative,
+            CurrentFileBytesCopied = pace?.FileBytesDone ?? 0,
+            CurrentFileBytesTotal = pace?.FileBytesTotal ?? 0,
+            BytesCopied = pace?.BytesDone ?? 0,
+            BytesTotal = pace?.BytesTotal ?? 0,
+            FilesCopied = 0,
+            FilesTotal = 0,
+            BytesPerSecond = pace?.BytesPerSecond ?? 0,
+            SpeedMeasured = pace is { BytesPerSecond: > 0 },
+            Eta = pace?.OverallEta,
+            StageIndex = 1,
+            StageCount = 1,
+            StageName = "Compare",
+            StartedUtc = job.StartedUtc,
+            PausedUtc = status is JobStatus.Paused or JobStatus.PausedOutsideHours ? job.PausedUtc ?? DateTimeOffset.UtcNow : job.PausedUtc,
+            StageStartedUtc = job.StartedUtc
+        });
+    }
+
     private static void EnsureName(Job job)
     {
         if (!string.IsNullOrWhiteSpace(job.Name))
         {
+            return;
+        }
+
+        if (job.Kind == JobKind.Compare)
+        {
+            var leaf = Path.GetFileName(job.SourcePath.TrimEnd('\\', '/'));
+            job.Name = string.IsNullOrWhiteSpace(leaf) ? "Compare" : "Compare " + leaf;
             return;
         }
 
@@ -1426,6 +1634,12 @@ public sealed class JobScheduler : IDisposable
         return TimeSpan.FromSeconds((total - done) / bps);
     }
 
+    private sealed class CompareBeat
+    {
+        public double Percent;
+        public string? File;
+    }
+
     public void Dispose()
     {
         _lifetime.Cancel();
@@ -1446,4 +1660,12 @@ public sealed class JobScheduler : IDisposable
         Log.Dispose();
         _lifetime.Dispose();
     }
+}
+
+public sealed class CompareActivity
+{
+    public string JobId { get; init; } = "";
+    public Job? Job { get; init; }
+    public DirectoryCompareProgress? Progress { get; init; }
+    public DirectoryCompareResult? Result { get; init; }
 }

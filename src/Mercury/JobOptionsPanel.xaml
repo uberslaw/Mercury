@@ -124,6 +124,9 @@
                           Content="Adaptive copy" IsChecked="{Binding AdaptiveCopy}"
                           ToolTip="Default on. Before a large copy, Mercury briefly tests one stream, several files at once, and splitting one large file, and keeps a mode only when it is clearly faster. The winner is remembered for that source and destination volume. Zip, hashing, and verify use spare time: a large file can move in slices while small files pack, unless several files at once was faster. A speed cap stays on one stream. Turn off to force one stream."/>
                 <CheckBox Style="{StaticResource OptionsCheckBox}"
+                          Content="Hash source for Compare" IsChecked="{Binding HashSourceForCompare}"
+                          ToolTip="Off by default. While this copy runs, hash each source file into a compare manifest. A later Compare of the same folders with Hash on skips those source hashes and only hashes the destination. Pause or Stop keeps the hashes already written."/>
+                <CheckBox Style="{StaticResource OptionsCheckBox}"
                           Content="Ignore Storage Limit" IsChecked="{Binding IgnoreFreeSpaceCheck}"
                           ToolTip="Still reports Need vs available, but does not abort if the destination is thin-provisioned or can grow."/>
                 <Button Content="RoboFlags" Style="{StaticResource OptionsBoxButton}"

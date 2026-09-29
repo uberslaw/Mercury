@@ -82,6 +82,7 @@ public sealed class CopyEngine : ICopyEngine
         var heartbeat = reporter.HeartbeatAsync(heartbeatCts.Token);
         var dirtyPulse = PulseDirtyAsync(job, journal, pause, heartbeatCts.Token);
         UnbufferedIoSession? io = null;
+        Task? sourceHashes = null;
         try
         {
             reporter.Enter(CopyStageKind.PreparingDestination, JobStatus.Preparing,
@@ -286,6 +287,39 @@ public sealed class CopyEngine : ICopyEngine
                 return;
             }
 
+            if (job.Options.HashSourceForCompare && catcher is null && Directory.Exists(job.SourcePath))
+            {
+                var manifestPath = CompareManifestStore.JobFile(journal.Directory);
+                var sourceRoot = job.SourcePath;
+                var destRoot = job.DestinationPath;
+                var fat = job.Options.FatTimestampTolerance;
+                log.Info(job.Id, name,
+                    "Hashing source for Compare while the copy runs. Pause or Stop keeps hashes already written.");
+                sourceHashes = Task.Run(() =>
+                {
+                    try
+                    {
+                        DirectoryComparer.RecordSourceHashes(
+                            sourceRoot,
+                            destRoot,
+                            manifestPath,
+                            fat,
+                            cancellationToken,
+                            pause);
+                        log.Info(job.Id, name, "Source hashes for Compare are saved.");
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        log.Info(job.Id, name, "Source hash for Compare stopped. Hashes already written are kept.");
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Error(job.Id, name, "Source hash for Compare stopped: " + ex.Message);
+                    }
+                });
+            }
+
             if (catcher is null)
             {
                 foreach (var map in mappings)
@@ -402,6 +436,18 @@ public sealed class CopyEngine : ICopyEngine
         }
         finally
         {
+            if (sourceHashes is not null)
+            {
+                try
+                {
+                    await sourceHashes.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    // the copy was stopped; source hashes already written stay in the manifest
+                }
+            }
+
             heartbeatCts.Cancel();
             try
             {

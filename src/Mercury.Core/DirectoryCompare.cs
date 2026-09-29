@@ -399,7 +399,8 @@ public static class DirectoryComparer
         CancellationToken cancellationToken = default,
         PauseGate? pause = null,
         Action<DirectoryCompareProgress>? progress = null,
-        string? manifestPath = null)
+        string? manifestPath = null,
+        string? seedJobsRoot = null)
     {
         options ??= DirectoryCompareOptions.Default;
         var started = DateTimeOffset.UtcNow;
@@ -450,6 +451,14 @@ public static class DirectoryComparer
                 manifest?.WriteInventory(Snapshot(left, right));
             }
 
+            if (hash && manifest is not null && !string.IsNullOrWhiteSpace(seedJobsRoot))
+            {
+                foreach (var seed in CompareManifestStore.FindSourceHashSeeds(seedJobsRoot, leftPath, rightPath, manifestPath))
+                {
+                    manifest.SeedSourceHashes(seed);
+                }
+            }
+
             lastPulse = Pulse(progress, filesVisited, foldersVisited, null, lastPulse, force: true);
 
             var diffs = new List<DirectoryCompareDiff>();
@@ -486,6 +495,83 @@ public static class DirectoryComparer
         finally
         {
             manifest?.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Hash source files into a compare manifest while a copy runs.
+    /// Inventory is source-only, so a later Compare still walks both trees and only skips source hashes
+    /// whose size and last-write ticks still match. Destination files are not hashed here.
+    /// </summary>
+    public static void RecordSourceHashes(
+        string sourceRoot,
+        string destRoot,
+        string manifestPath,
+        bool fatTimestampTolerance,
+        CancellationToken cancellationToken = default,
+        PauseGate? pause = null)
+    {
+        var sourcePath = PathNormalizer.Normalize(sourceRoot);
+        var destPath = PathNormalizer.Normalize(destRoot);
+        if (!Directory.Exists(sourcePath))
+        {
+            throw new DirectoryNotFoundException("Source folder not found: " + sourcePath);
+        }
+
+        using var manifest = CompareManifestWriter.Open(
+            manifestPath,
+            sourcePath,
+            destPath,
+            advanced: true,
+            hash: true,
+            fatTimestampTolerance);
+        TreeSide source;
+        if (manifest.InventoryComplete && manifest.Inventory is { } full)
+        {
+            source = FromManifest(full, leftSide: true);
+        }
+        else if (manifest.SourceInventoryComplete && manifest.SourceInventory is { } saved)
+        {
+            source = FromManifest(saved, leftSide: true);
+        }
+        else
+        {
+            var filesVisited = 0;
+            var foldersVisited = 0;
+            var lastPulse = Stopwatch.GetTimestamp();
+            source = ScanSide(sourcePath, cancellationToken, pause, progress: null, ref filesVisited, ref foldersVisited, ref lastPulse);
+            manifest.WriteSourceInventory(SnapshotSource(source));
+        }
+
+        foreach (var file in source.Files.Values.OrderBy(entry => entry.Relative, StringComparer.OrdinalIgnoreCase))
+        {
+            WaitIfPaused(pause, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (manifest.TryGetHash(true, file.Relative, file.Size, file.LastWriteUtc.Ticks, out _))
+            {
+                continue;
+            }
+
+            FileInfo info;
+            try
+            {
+                info = new FileInfo(file.FullPath);
+            }
+            catch
+            {
+                continue;
+            }
+
+            if (!info.Exists || info.Length != file.Size || info.LastWriteTimeUtc.Ticks != file.LastWriteUtc.Ticks)
+            {
+                continue;
+            }
+
+            var hash = HashUtil.HashFile(
+                info.FullName,
+                cancellationToken,
+                _ => WaitIfPaused(pause, cancellationToken));
+            manifest.WriteHash(true, file.Relative, hash, file.Size, file.LastWriteUtc.Ticks);
         }
     }
 
@@ -1022,6 +1108,32 @@ public static class DirectoryComparer
         return manifest;
     }
 
+    private static CompareManifest SnapshotSource(TreeSide source)
+    {
+        var manifest = new CompareManifest
+        {
+            LeftRootFiles = source.RootImmediateFiles
+        };
+        foreach (var folder in source.Folders.Values)
+        {
+            manifest.Folders.Add(new CompareManifestFolder
+            {
+                Left = true,
+                Relative = folder.Relative,
+                Name = folder.Name,
+                ImmediateFiles = folder.ImmediateFiles,
+                SubtreeFiles = folder.SubtreeFiles
+            });
+        }
+
+        foreach (var file in source.Files.Values)
+        {
+            manifest.Files.Add(ToEntry(file, left: true));
+        }
+
+        return manifest;
+    }
+
     private static CompareManifestEntry ToEntry(FileEntry file, bool left) =>
         new()
         {
@@ -1216,7 +1328,7 @@ public static class DirectoryComparer
 
     private static void WaitIfPaused(PauseGate? pause, CancellationToken cancellationToken, HashClock? clock = null)
     {
-        if (pause is null || !pause.IsPaused)
+        if (pause is null || !pause.IsEffectivelyPaused)
         {
             return;
         }
@@ -1224,7 +1336,7 @@ public static class DirectoryComparer
         clock?.Pause();
         try
         {
-            while (pause.IsPaused)
+            while (pause.IsEffectivelyPaused)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 Thread.Sleep(40);

@@ -9,6 +9,32 @@ public static class JobOptionBadges
     public static IReadOnlyList<string> For(Job job)
     {
         var o = job.Options;
+        if (job.Kind == JobKind.Compare)
+        {
+            var compare = new List<string> { "Compare" };
+            if (o.CompareAdvanced)
+            {
+                compare.Add("Advanced");
+            }
+
+            if (o.CompareHash)
+            {
+                compare.Add("Hash");
+            }
+
+            if (o.FatTimestampTolerance)
+            {
+                compare.Add("FAT 2s");
+            }
+
+            if (job.OnHold)
+            {
+                compare.Add("Hold");
+            }
+
+            return compare;
+        }
+
         var badges = new List<string>();
 
         if (job.OnHold)
@@ -152,6 +178,11 @@ public static class JobOptionBadges
         if (!o.FixLongOrDuplicateNames)
         {
             badges.Add("Don't fix names");
+        }
+
+        if (o.HashSourceForCompare)
+        {
+            badges.Add("Hash source");
         }
 
         return badges;
