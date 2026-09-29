@@ -1425,7 +1425,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             }
 
             existing.Options = job.Options;
-            ResumeStoredJob(existing);
+            if (ResumeStoredJob(existing))
+            {
+                ClearTransferDraftAfter(TransferDraftClear.StartSucceeded);
+            }
+
             return;
         }
 
@@ -1451,6 +1455,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         TransferRundown.MarkStarted(job);
         ShowStartingStage(job);
         EnqueueJob(job, "Starting…", startNow: true);
+        ClearTransferDraftAfter(TransferDraftClear.StartSucceeded);
     }
 
     private Job? FindMatchingResumable(Job form) =>
@@ -1557,6 +1562,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             job.ScheduledStart is { } start
                 ? $"Queued “{job.Name}” to start after {start.LocalDateTime:ddd d MMM HH:mm}."
                 : $"Queued “{job.Name}”.");
+        ClearTransferDraftAfter(TransferDraftClear.AddSucceeded);
     }
 
     private void AddToQueueFromQueue()
@@ -1663,16 +1669,16 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         ResumeStoredJob(last);
     }
 
-    private void ResumeStoredJob(Job last)
+    private bool ResumeStoredJob(Job last)
     {
         if (last is null)
         {
-            return;
+            return false;
         }
 
         if (!ConfirmPurgeIfJobNeedsIt(last))
         {
-            return;
+            return false;
         }
 
         last.SourcePath = string.IsNullOrWhiteSpace(SourcePath) ? last.SourcePath : SourcePath;
@@ -1696,7 +1702,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             catch (Exception ex)
             {
                 StatusText = ex.Message;
-                return;
+                return false;
             }
         }
 
@@ -1707,7 +1713,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             if (scan is null)
             {
                 StatusText = "Resume cancelled.";
-                return;
+                return false;
             }
         }
 
@@ -1726,6 +1732,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             scan.Value ? "Resuming — checking source for changes…" : "Resuming last job…",
             startNow: true);
         RefreshFolderTree(force: true);
+        return true;
     }
 
     private static bool IsResumable(JobStatus status) =>
@@ -3538,13 +3545,24 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         item.BeginResume();
         StatusText = item.ResumeLabel == "Start" ? "Starting…" : "Resuming…";
         _scheduler.ResumeOrRetry(item.Job.Id);
-        ClearTransferDraft();
+        ClearTransferDraftAfter(TransferDraftClear.QueueResume);
         RefreshRunState();
     }
 
     /// <summary>
-    /// Queue Resume starts that row and clears the Transfer tab draft. The queue row and journal stay.
+    /// Clears the Transfer tab after queue Resume, a successful Start, or a successful Add to queue.
+    /// The queue row and journal stay. A failed Start or Add does not call this.
     /// </summary>
+    private void ClearTransferDraftAfter(TransferDraftClear when)
+    {
+        if (!TransferDraft.ShouldClear(when))
+        {
+            return;
+        }
+
+        ClearTransferDraft();
+    }
+
     private void ClearTransferDraft()
     {
         var draft = new TransferDraft

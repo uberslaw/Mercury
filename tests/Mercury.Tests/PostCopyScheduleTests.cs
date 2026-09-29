@@ -342,6 +342,66 @@ public class PostCopyScheduleTests
         Assert.Null(draft.Options.ScheduleDays);
     }
 
+    [Fact]
+    public void StartAndAddClearTransferDraftOnlyWhenTheySucceed()
+    {
+        Assert.True(TransferDraft.ShouldClear(TransferDraftClear.QueueResume));
+        Assert.True(TransferDraft.ShouldClear(TransferDraftClear.StartSucceeded));
+        Assert.True(TransferDraft.ShouldClear(TransferDraftClear.AddSucceeded));
+        Assert.False(TransferDraft.ShouldClear(TransferDraftClear.StartFailed));
+        Assert.False(TransferDraft.ShouldClear(TransferDraftClear.AddFailed));
+
+        var started = FilledTransferDraft();
+        if (TransferDraft.ShouldClear(TransferDraftClear.StartSucceeded))
+        {
+            started.ClearForQueueResume();
+        }
+
+        Assert.True(started.IsCleared);
+        Assert.True(started.Options.FixLongOrDuplicateNames);
+        Assert.Null(started.Options.ScheduleDays);
+
+        var added = FilledTransferDraft();
+        if (TransferDraft.ShouldClear(TransferDraftClear.AddSucceeded))
+        {
+            added.ClearForQueueResume();
+        }
+
+        Assert.True(added.IsCleared);
+
+        var failed = FilledTransferDraft();
+        if (TransferDraft.ShouldClear(TransferDraftClear.StartFailed))
+        {
+            failed.ClearForQueueResume();
+        }
+
+        Assert.Equal(Path.Combine(Path.GetTempPath(), "src"), failed.SourcePath);
+        Assert.Equal(2, failed.SourcePaths.Count);
+        Assert.Equal(Path.Combine(Path.GetTempPath(), "dest"), failed.DestinationPath);
+        Assert.Equal(1, failed.DestinationKind);
+        Assert.True(failed.ScheduleEnabled);
+        Assert.False(failed.Options.FixLongOrDuplicateNames);
+        Assert.NotNull(failed.Options.ScheduleDays);
+    }
+
+    private static TransferDraft FilledTransferDraft() => new()
+    {
+        SourcePath = Path.Combine(Path.GetTempPath(), "src"),
+        SourcePaths = [Path.Combine(Path.GetTempPath(), "src"), Path.Combine(Path.GetTempPath(), "other")],
+        DestinationPath = Path.Combine(Path.GetTempPath(), "dest"),
+        DestinationKind = 1,
+        ScheduleEnabled = true,
+        ScheduledDate = new DateTime(2026, 9, 19),
+        ScheduledTime = "18:30",
+        Options = new JobOptions
+        {
+            DryRun = true,
+            HoursEnabled = true,
+            FixLongOrDuplicateNames = false,
+            ScheduleDays = [DayOfWeek.Monday]
+        }
+    };
+
     private static string NameOf(string path)
     {
         var slash = Math.Max(path.LastIndexOf('\\'), path.LastIndexOf('/'));
