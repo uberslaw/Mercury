@@ -441,7 +441,10 @@ public class AdaptiveCopyTests
         Assert.DoesNotContain("4 files", line);
         Assert.DoesNotContain("2 ranges", line);
 
-        Assert.StartsWith("Adaptive copy probe:", line);
+        Assert.StartsWith("Adaptive copy probe", line);
+        Assert.Contains("\none stream\n", line);
+        Assert.Contains("\n2 files\n", line);
+        Assert.Contains("\nChose 2 files at once", line);
 
         var beat = AdaptiveCopyLog.Heartbeat(
             "Copying 2 files",

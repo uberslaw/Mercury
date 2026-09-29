@@ -608,6 +608,32 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         set => ChooseHeaderCopy(value, HeaderCopyMode.Ranges2);
     }
 
+    public bool CopyModeAtOnce
+    {
+        get => _headerCopy.FilesN;
+        set
+        {
+            if (_headerCopyApplying)
+            {
+                return;
+            }
+
+            if (!value)
+            {
+                NotifyHeaderCopy();
+                return;
+            }
+
+            if (!HeaderCopy.TryParseFileCount(_filesAtOnceText, out var width))
+            {
+                NotifyHeaderCopy();
+                return;
+            }
+
+            ApplyManualWidth(width);
+        }
+    }
+
     public string FilesAtOnceText
     {
         get => _filesAtOnceText;
@@ -3820,7 +3846,17 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private void AppendConsole(string text, bool error)
     {
-        ConsoleLines.Add(new ConsoleLine { Text = text, IsError = error });
+        var parts = text.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        if (parts.Length > 1)
+        {
+            ConsoleLines.Add(new ConsoleLine { Text = "", IsError = false });
+        }
+
+        foreach (var part in parts)
+        {
+            ConsoleLines.Add(new ConsoleLine { Text = part, IsError = error });
+        }
+
         while (ConsoleLines.Count > 5000)
         {
             ConsoleLines.RemoveAt(0);
@@ -4145,6 +4181,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
         if (!on)
         {
+            if (mode == HeaderCopyMode.Adaptive && HeaderCopy.TryParseFileCount(_filesAtOnceText, out var width))
+            {
+                ApplyManualWidth(width);
+                return;
+            }
+
             NotifyHeaderCopy();
             return;
         }
@@ -4173,26 +4215,19 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             return;
         }
 
-        if (width is 1 or 2 or 4 or 8)
+        if (_headerCopy.Mode != HeaderCopyMode.FilesN)
         {
-            var preset = width switch
-            {
-                1 => HeaderCopyMode.OneStream,
-                2 => HeaderCopyMode.Files2,
-                4 => HeaderCopyMode.Files4,
-                _ => HeaderCopyMode.Files8
-            };
-            if (_headerCopy.Mode == preset)
-            {
-                return;
-            }
-
-            ChooseHeaderCopy(true, preset);
             return;
         }
 
+        ApplyManualWidth(width);
+    }
+
+    private void ApplyManualWidth(int width)
+    {
         if (_headerCopy.Mode == HeaderCopyMode.FilesN && _manualFiles == width)
         {
+            NotifyHeaderCopy();
             return;
         }
 
@@ -4205,7 +4240,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         _scheduler.SetHeaderCopyMode(HeaderCopyMode.FilesN, from, manualWidth: width, fromWidth: fromWidth);
         if (_lastProgress is { } live && !HidesCopyModeReadout(live))
         {
-            CopyModeReadout = new StatPair(CopyModeLabels.Label, width.ToString(System.Globalization.CultureInfo.InvariantCulture) + " files");
+            CopyModeReadout = new StatPair(CopyModeLabels.Label, HeaderCopy.FileCountName(width));
         }
     }
 
@@ -4231,6 +4266,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CopyModeFourFiles)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CopyModeEightFiles)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CopyModeTwoRanges)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CopyModeAtOnce)));
         var shown = _headerCopy.Mode switch
         {
             HeaderCopyMode.OneStream => "1",
@@ -4238,9 +4274,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             HeaderCopyMode.Files4 => "4",
             HeaderCopyMode.Files8 => "8",
             HeaderCopyMode.FilesN => _manualFiles.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            _ => ""
+            _ => null
         };
-        if (_filesAtOnceText != shown)
+        if (shown is not null && _filesAtOnceText != shown)
         {
             _filesAtOnceText = shown;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(FilesAtOnceText)));

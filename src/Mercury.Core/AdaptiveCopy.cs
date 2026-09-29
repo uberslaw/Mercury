@@ -1178,21 +1178,6 @@ internal static class AdaptiveCopyLog
 
     public static string ProbeLine(IReadOnlyList<ProbeSample> samples, double elapsedSeconds, AdaptiveCopyMode chosen)
     {
-        var parts = new List<string>(samples.Count);
-        foreach (var sample in samples)
-        {
-            if (sample.Bytes <= 0 && sample.Seconds <= 0)
-            {
-                continue;
-            }
-
-            var names = FormatTestNames(sample.TestPaths);
-            var measured = $"{ByteFormatter.ToString(sample.Bytes)} in {Seconds(sample.Seconds)} ({Mbps(sample.BytesPerSecond)})";
-            parts.Add(string.IsNullOrEmpty(names)
-                ? $"{Short(sample.Mode)} {measured}"
-                : $"{Short(sample.Mode)} {names} {measured}");
-        }
-
         var rates = new Dictionary<AdaptiveCopyMode, double>();
         double oneStream = 0;
         foreach (var sample in samples)
@@ -1210,9 +1195,32 @@ internal static class AdaptiveCopyLog
             : elapsedSeconds < AdaptiveCopyPolicy.ProbeMinSeconds
                 ? $"Probe {Seconds(elapsedSeconds)} is not the baseline."
                 : "One stream is well above a later sample, so the probe is not the baseline.";
-        var body = parts.Count == 0 ? "no sample" : string.Join("; ", parts);
         var why = TooFastReason(samples) ?? AdaptiveCopyPolicy.ChooseWhy(rates, chosen);
-        return $"Adaptive copy probe: {body}. Chose {AdaptiveCopyPlanner.Describe(chosen)} ({why}). {baseline}";
+        var lines = new List<string> { "Adaptive copy probe" };
+        foreach (var sample in samples)
+        {
+            if (sample.Bytes <= 0 && sample.Seconds <= 0)
+            {
+                continue;
+            }
+
+            lines.Add(Short(sample.Mode));
+            foreach (var path in sample.TestPaths.Split('|', StringSplitOptions.RemoveEmptyEntries))
+            {
+                lines.Add("  " + path);
+            }
+
+            lines.Add("  " + ByteFormatter.ToString(sample.Bytes) + " in " + Seconds(sample.Seconds) + " (" + Mbps(sample.BytesPerSecond) + ")");
+        }
+
+        if (lines.Count == 1)
+        {
+            lines.Add("  no sample");
+        }
+
+        lines.Add("Chose " + AdaptiveCopyPlanner.Describe(chosen) + " (" + why + ").");
+        lines.Add(baseline);
+        return string.Join("\n", lines);
     }
 
     private static string? TooFastReason(IReadOnlyList<ProbeSample> samples)
@@ -1256,17 +1264,6 @@ internal static class AdaptiveCopyLog
     private static string TooFast(double seconds) =>
         "sample finished in " + seconds.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)
         + "s, too fast to measure this destination; staying on one stream";
-
-    private static string FormatTestNames(string testPaths)
-    {
-        if (string.IsNullOrEmpty(testPaths))
-        {
-            return "";
-        }
-
-        var parts = testPaths.Split('|', StringSplitOptions.RemoveEmptyEntries);
-        return string.Join(", ", parts);
-    }
 
     public static string WidthChange(
         AdaptiveCopyMode from,
