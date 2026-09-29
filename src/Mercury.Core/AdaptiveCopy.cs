@@ -8,7 +8,9 @@ internal enum AdaptiveCopyMode
     Files2 = 2,
     Files4 = 4,
     Ranges2 = 8,
-    Files8 = 16
+    Files8 = 16,
+    /// <summary>Manual file count other than 2, 4, or 8. The probe never selects this.</summary>
+    FilesN = 32
 }
 
 internal readonly record struct AdaptiveFileCopy(bool Finished, string? Hash, long BytesOnDisk, bool Fallback);
@@ -42,6 +44,8 @@ internal sealed class BalanceInput
     public bool FellOff { get; init; }
     /// <summary>User picked a width in the header. Do not let a speed cap collapse it.</summary>
     public bool Manual { get; init; }
+    /// <summary>File count for <see cref="AdaptiveCopyMode.FilesN"/>. Ignored for the preset widths.</summary>
+    public int ManualWidth { get; init; }
 }
 
 internal static class AdaptiveCopyPolicy
@@ -58,6 +62,8 @@ internal static class AdaptiveCopyPolicy
     public const int MaxWorkers = 4;
     /// <summary>Manual “8 files” only. The probe never uses this width.</summary>
     public const int ManualEightWorkers = 8;
+    /// <summary>Highest file count the header box will apply. The probe never tries this.</summary>
+    public const int ManualFileMax = 32;
     public const int VerifyBatchSize = 8;
     public const double ProbeMaxSeconds = 8;
     public const double ProbeMinSeconds = 5;
@@ -273,6 +279,70 @@ internal static class AdaptiveCopyPolicy
         _ => fellOff ? OneStreamSlowedDown : CopyingOneStream
     };
 
+    /// <summary>Status for a file-count width. 2, 4, and 8 keep their existing sentences.</summary>
+    public static string CopyingFiles(int width)
+    {
+        if (width <= 1)
+        {
+            return CopyingOneStream;
+        }
+
+        if (width == 2)
+        {
+            return CopyingTwoFiles;
+        }
+
+        if (width == 4)
+        {
+            return CopyingFourFiles;
+        }
+
+        if (width == 8)
+        {
+            return CopyingEightFiles;
+        }
+
+        return "Copying " + width.ToString(System.Globalization.CultureInfo.InvariantCulture) + " files";
+    }
+
+    public static int ClampManualFiles(int width)
+    {
+        if (width < 1)
+        {
+            return 1;
+        }
+
+        if (width > ManualFileMax)
+        {
+            return ManualFileMax;
+        }
+
+        return width;
+    }
+
+    /// <summary>True when the box holds a whole number from 1 through <see cref="ManualFileMax"/>.</summary>
+    public static bool TryParseManualFiles(string? text, out int width)
+    {
+        width = 0;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        if (!int.TryParse(text.Trim(), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var parsed))
+        {
+            return false;
+        }
+
+        if (parsed < 1 || parsed > ManualFileMax)
+        {
+            return false;
+        }
+
+        width = parsed;
+        return true;
+    }
+
     public static string WithOtherFiles(string? primary, int others)
     {
         if (string.IsNullOrWhiteSpace(primary) || others <= 0)
@@ -311,11 +381,12 @@ internal static class AdaptiveCopyPolicy
         return bytes / seconds;
     }
 
-    public static int Width(AdaptiveCopyMode mode) => mode switch
+    public static int Width(AdaptiveCopyMode mode, int manualWidth = 0) => mode switch
     {
         AdaptiveCopyMode.Files2 => 2,
         AdaptiveCopyMode.Files4 => MaxWorkers,
         AdaptiveCopyMode.Files8 => ManualEightWorkers,
+        AdaptiveCopyMode.FilesN => ClampManualFiles(manualWidth),
         _ => 1
     };
 
@@ -355,7 +426,7 @@ internal static class AdaptiveCopyPolicy
 
     public static bool UseBalancer(AdaptiveCopyMode mode, bool capped, bool hasPack, long largestPending, int pendingFiles)
     {
-        if (Width(mode) > 1 || mode == AdaptiveCopyMode.Ranges2)
+        if (Width(mode) > 1 || mode == AdaptiveCopyMode.Ranges2 || mode == AdaptiveCopyMode.FilesN)
         {
             return true;
         }
@@ -373,9 +444,9 @@ internal static class TransferBalancer
 {
     public static BalancePlan Next(BalanceInput input)
     {
-        var threadsWon = input.Mode is AdaptiveCopyMode.Files2 or AdaptiveCopyMode.Files4 or AdaptiveCopyMode.Files8;
         var honorCap = input.Capped && !input.Manual;
-        var width = honorCap ? 1 : AdaptiveCopyPolicy.Width(input.Mode);
+        var width = honorCap ? 1 : AdaptiveCopyPolicy.Width(input.Mode, input.ManualWidth);
+        var threadsWon = !honorCap && width > 1 && input.Mode != AdaptiveCopyMode.Ranges2;
         var packLeft = input.PackBytesRemaining > 0;
         var stripe = !honorCap
             && input.Mode == AdaptiveCopyMode.Ranges2
@@ -439,19 +510,9 @@ internal static class TransferBalancer
             return packing ? "Copying 2 ranges and packing" : AdaptiveCopyPolicy.CopyingTwoRanges;
         }
 
-        if (width >= 8)
+        if (width > 1)
         {
-            return AdaptiveCopyPolicy.CopyingEightFiles;
-        }
-
-        if (width >= 4)
-        {
-            return AdaptiveCopyPolicy.CopyingFourFiles;
-        }
-
-        if (width == 2)
-        {
-            return AdaptiveCopyPolicy.CopyingTwoFiles;
+            return AdaptiveCopyPolicy.CopyingFiles(width);
         }
 
         if (packing)
@@ -653,14 +714,17 @@ public enum HeaderCopyMode
     Files2 = 3,
     Files4 = 4,
     Ranges2 = 5,
-    Files8 = 6
+    Files8 = 6,
+    /// <summary>A typed file count, from 1 to <see cref="AdaptiveCopyPolicy.ManualFileMax"/>, other than the preset boxes.</summary>
+    FilesN = 7
 }
 
 /// <summary>Header checkboxes on a fixed row under the Speed column. One mode is on. Not the saved job option.</summary>
 public static class HeaderCopy
 {
     public static bool IsManual(HeaderCopyMode mode) =>
-        mode is HeaderCopyMode.OneStream or HeaderCopyMode.Files2 or HeaderCopyMode.Files4 or HeaderCopyMode.Files8 or HeaderCopyMode.Ranges2;
+        mode is HeaderCopyMode.OneStream or HeaderCopyMode.Files2 or HeaderCopyMode.Files4 or HeaderCopyMode.Files8
+            or HeaderCopyMode.FilesN or HeaderCopyMode.Ranges2;
 
     public static bool UsesAdaptive(HeaderCopyMode mode, bool savedAdaptive) => mode switch
     {
@@ -684,6 +748,7 @@ public static class HeaderCopy
         HeaderCopyMode.Files2 => AdaptiveCopyMode.Files2,
         HeaderCopyMode.Files4 => AdaptiveCopyMode.Files4,
         HeaderCopyMode.Files8 => AdaptiveCopyMode.Files8,
+        HeaderCopyMode.FilesN => AdaptiveCopyMode.FilesN,
         HeaderCopyMode.Ranges2 => AdaptiveCopyMode.Ranges2,
         _ => AdaptiveCopyMode.Sequential
     };
@@ -698,22 +763,34 @@ public static class HeaderCopy
         _ => "adaptive"
     };
 
-    public static string SwitchDetail(HeaderCopyMode from, HeaderCopyMode to)
+    public static bool TryParseFileCount(string? text, out int width) =>
+        AdaptiveCopyPolicy.TryParseManualFiles(text, out width);
+
+    public static string FileCountName(int width) =>
+        width <= 1
+            ? "one stream"
+            : width.ToString(System.Globalization.CultureInfo.InvariantCulture) + " files";
+
+    public static string SwitchDetail(HeaderCopyMode from, HeaderCopyMode to, int toWidth = 0, int fromWidth = 0)
     {
+        var fromName = from == HeaderCopyMode.FilesN ? FileCountName(fromWidth) : Name(from);
+        var toName = to == HeaderCopyMode.FilesN ? FileCountName(toWidth) : Name(to);
         if (IsManual(to))
         {
-            return $"{Name(from)} → {Name(to)}, adaptive turned off";
+            return $"{fromName} → {toName}, adaptive turned off";
         }
 
-        return $"{Name(from)} → adaptive";
+        return $"{fromName} → adaptive";
     }
 
-    public static string SwitchLine(HeaderCopyMode from, HeaderCopyMode to) =>
-        "Copy mode: " + SwitchDetail(from, to) + ".";
+    public static string SwitchLine(HeaderCopyMode from, HeaderCopyMode to, int toWidth = 0, int fromWidth = 0) =>
+        "Copy mode: " + SwitchDetail(from, to, toWidth, fromWidth) + ".";
 
-    internal static string RunningStatus(AdaptiveCopyMode mode, string? switchDetail, bool fellOff = false)
+    internal static string RunningStatus(AdaptiveCopyMode mode, string? switchDetail, bool fellOff = false, int fileWidth = 0)
     {
-        var label = AdaptiveCopyPolicy.StatusFor(mode, fellOff);
+        var label = mode == AdaptiveCopyMode.FilesN
+            ? AdaptiveCopyPolicy.CopyingFiles(fileWidth)
+            : AdaptiveCopyPolicy.StatusFor(mode, fellOff);
         return string.IsNullOrEmpty(switchDetail) ? label : label + " — " + switchDetail;
     }
 
@@ -756,6 +833,11 @@ public static class CopyModeLabels
             return Testing;
         }
 
+        if (TryFileCount(text, out var counted))
+        {
+            return counted;
+        }
+
         if (text.StartsWith(AdaptiveCopyPolicy.CopyingEightFiles, StringComparison.Ordinal))
         {
             return EightFiles;
@@ -785,6 +867,39 @@ public static class CopyModeLabels
         return null;
     }
 
+    private static bool TryFileCount(string text, out string label)
+    {
+        label = "";
+        const string prefix = "Copying ";
+        if (!text.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var rest = text[prefix.Length..];
+        var space = rest.IndexOf(' ');
+        if (space <= 0
+            || !int.TryParse(rest[..space], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var width)
+            || width < 1)
+        {
+            return false;
+        }
+
+        if (!rest[space..].StartsWith(" files", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        label = AdaptiveCopyPolicy.CopyingFiles(width) == AdaptiveCopyPolicy.CopyingEightFiles && width == 8
+            ? EightFiles
+            : width == 2
+                ? TwoFiles
+                : width == 4
+                    ? FourFiles
+                    : width + " files";
+        return width is not (2 or 4 or 8);
+    }
+
     /// <summary>Readout for a header checkbox. Null for Adaptive, which shows what the copy actually chose.</summary>
     public static string? ForHeader(HeaderCopyMode mode) => mode switch
     {
@@ -809,10 +924,11 @@ public sealed class HeaderCopySelection
     public bool Files2 => _mode == HeaderCopyMode.Files2;
     public bool Files4 => _mode == HeaderCopyMode.Files4;
     public bool Files8 => _mode == HeaderCopyMode.Files8;
+    public bool FilesN => _mode == HeaderCopyMode.FilesN;
     public bool Ranges2 => _mode == HeaderCopyMode.Ranges2;
 
     public int OnCount =>
-        (Adaptive ? 1 : 0) + (OneStream ? 1 : 0) + (Files2 ? 1 : 0) + (Files4 ? 1 : 0) + (Files8 ? 1 : 0) + (Ranges2 ? 1 : 0);
+        (Adaptive ? 1 : 0) + (OneStream ? 1 : 0) + (Files2 ? 1 : 0) + (Files4 ? 1 : 0) + (Files8 ? 1 : 0) + (FilesN ? 1 : 0) + (Ranges2 ? 1 : 0);
 
     public string? Select(HeaderCopyMode next)
     {
@@ -874,7 +990,9 @@ internal static class AdaptiveCopyPlanner
         {
             var forced = HeaderCopy.EngineMode(job.HeaderCopyMode);
             var detail = job.HeaderCopySwitchDetail;
-            report?.Invoke(HeaderCopy.RunningStatus(forced, detail), string.IsNullOrEmpty(AdaptiveCopyPolicy.ProbeFileLabel(pending)) ? null : AdaptiveCopyPolicy.ProbeFileLabel(pending));
+            report?.Invoke(
+                HeaderCopy.RunningStatus(forced, detail, fileWidth: job.ManualFileWidth),
+                string.IsNullOrEmpty(AdaptiveCopyPolicy.ProbeFileLabel(pending)) ? null : AdaptiveCopyPolicy.ProbeFileLabel(pending));
             var manualUse = true;
             return new AdaptivePlan(forced, 0, manualUse, AdaptiveCopyPolicy.IsCapped(job, budget));
         }
@@ -906,7 +1024,7 @@ internal static class AdaptiveCopyPlanner
             if (HeaderCopy.IsManual(job.HeaderCopyMode))
             {
                 var forced = HeaderCopy.EngineMode(job.HeaderCopyMode);
-                report?.Invoke(HeaderCopy.RunningStatus(forced, job.HeaderCopySwitchDetail), string.IsNullOrEmpty(files) ? null : files);
+                report?.Invoke(HeaderCopy.RunningStatus(forced, job.HeaderCopySwitchDetail, fileWidth: job.ManualFileWidth), string.IsNullOrEmpty(files) ? null : files);
                 return new AdaptivePlan(forced, 0, true, capped);
             }
 
@@ -951,6 +1069,7 @@ internal static class AdaptiveCopyPlanner
         AdaptiveCopyMode.Files2 => "2 files at once",
         AdaptiveCopyMode.Files4 => "4 files at once",
         AdaptiveCopyMode.Files8 => "8 files at once",
+        AdaptiveCopyMode.FilesN => "a chosen number of files at once",
         AdaptiveCopyMode.Ranges2 => "2 ranges of a large file",
         _ => "one stream"
     };
@@ -1187,6 +1306,7 @@ internal static class AdaptiveCopyLog
         AdaptiveCopyMode.Files2 => "2 files",
         AdaptiveCopyMode.Files4 => "4 files",
         AdaptiveCopyMode.Files8 => "8 files",
+        AdaptiveCopyMode.FilesN => "files",
         AdaptiveCopyMode.Ranges2 => "2 ranges",
         _ => "one stream"
     };

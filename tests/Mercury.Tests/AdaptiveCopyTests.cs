@@ -693,6 +693,58 @@ public class AdaptiveCopyTests
     }
 
     [Fact]
+    public void TypedFileCountCopiesThatManyAndIsNotProbed()
+    {
+        Assert.False(AdaptiveCopyPolicy.TryParseManualFiles("", out _));
+        Assert.False(AdaptiveCopyPolicy.TryParseManualFiles("0", out _));
+        Assert.False(AdaptiveCopyPolicy.TryParseManualFiles("33", out _));
+        Assert.False(AdaptiveCopyPolicy.TryParseManualFiles("12 files", out _));
+        Assert.True(AdaptiveCopyPolicy.TryParseManualFiles("12", out var width));
+        Assert.Equal(12, width);
+        Assert.Equal(32, AdaptiveCopyPolicy.ManualFileMax);
+        Assert.Equal(12, AdaptiveCopyPolicy.Width(AdaptiveCopyMode.FilesN, 12));
+        Assert.DoesNotContain(AdaptiveCopyMode.FilesN, AdaptiveCopyPolicy.Candidates(
+        [
+            new FileRecord { RelativePath = "a.zip", Size = 33_000_000 },
+            new FileRecord { RelativePath = "b.zip", Size = 33_000_000 },
+            new FileRecord { RelativePath = "c.zip", Size = 33_000_000 },
+            new FileRecord { RelativePath = "d.zip", Size = 33_000_000 }
+        ]));
+        Assert.False(HeaderCopy.ShouldProbe(HeaderCopyMode.FilesN, savedAdaptive: true, pendingLargeEnough: true, remembered: false));
+
+        var selection = new HeaderCopySelection();
+        var line = selection.Select(HeaderCopyMode.FilesN);
+        Assert.NotNull(line);
+        Assert.True(selection.FilesN);
+        Assert.False(selection.Adaptive);
+        Assert.False(selection.Files8);
+        Assert.Equal(1, selection.OnCount);
+        Assert.Equal(
+            "Copy mode: adaptive → 12 files, adaptive turned off.",
+            HeaderCopy.SwitchLine(HeaderCopyMode.Adaptive, HeaderCopyMode.FilesN, toWidth: 12));
+        Assert.Equal(
+            "Copy mode: 12 files → 16 files, adaptive turned off.",
+            HeaderCopy.SwitchLine(HeaderCopyMode.FilesN, HeaderCopyMode.FilesN, toWidth: 16, fromWidth: 12));
+
+        var plan = TransferBalancer.Next(new BalanceInput
+        {
+            Mode = AdaptiveCopyMode.FilesN,
+            Manual = true,
+            ManualWidth = 12,
+            PendingFiles = 20,
+            PendingCopyBytes = 20_000,
+            LargestPendingBytes = 1_000
+        });
+        Assert.Equal(12, plan.CopyWidth);
+        Assert.False(plan.Stripe);
+        Assert.Equal("Copying 12 files", plan.Label);
+        Assert.Equal("12 files", CopyModeLabels.FromMessage("Copying 12 files — adaptive → 12 files, adaptive turned off."));
+        Assert.Equal(
+            "Copying 12 files — adaptive → 12 files, adaptive turned off",
+            HeaderCopy.RunningStatus(AdaptiveCopyMode.FilesN, HeaderCopy.SwitchDetail(HeaderCopyMode.Adaptive, HeaderCopyMode.FilesN, 12), fileWidth: 12));
+    }
+
+    [Fact]
     public void FileTooSmallToSplitStaysOnOneStreamAndSaysSo()
     {
         Assert.True(HeaderCopy.TooSmallToSplit(AdaptiveCopyPolicy.LargeFileBytes - 1));

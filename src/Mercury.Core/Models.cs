@@ -284,6 +284,16 @@ public sealed class Job
 
     [JsonIgnore]
     public string? HeaderCopySwitchDetail { get; set; }
+
+    private int _manualFileWidth;
+
+    /// <summary>Typed file count for <see cref="HeaderCopyMode.FilesN"/>. Not saved with the job.</summary>
+    [JsonIgnore]
+    public int ManualFileWidth
+    {
+        get => Volatile.Read(ref _manualFileWidth);
+        set => Volatile.Write(ref _manualFileWidth, value);
+    }
 }
 
 public sealed class JobProgress

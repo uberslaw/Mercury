@@ -70,6 +70,17 @@
                 <CheckBox x:Name="CopyModeTwoRangesCheck" Style="{StaticResource HeaderCopyCheck}" Content="2 ranges"
                           ToolTip="Split a large file into two ranges. A file that is too small to split stays on one stream."
                           IsChecked="{Binding DataContext.CopyModeTwoRanges, RelativeSource={RelativeSource AncestorType=Window}, Mode=TwoWay}"/>
+                <TextBlock Text="At once" VerticalAlignment="Center" Margin="2,0,6,0"
+                           FontFamily="{DynamicResource ProgressFontFamily}"
+                           FontSize="{DynamicResource ProgressFontSize}"
+                           Foreground="{DynamicResource OnHeaderBrush}"
+                           ToolTip="Type how many files to copy at once, from 1 to 32, then press Enter. Adaptive turns off. The speed probe does not test this number."/>
+                <TextBox x:Name="FilesAtOnceBox" Width="36" MinHeight="0" Padding="4,1" VerticalAlignment="Center"
+                         FontFamily="{DynamicResource ProgressFontFamily}"
+                         FontSize="{DynamicResource ProgressFontSize}"
+                         ToolTip="How many files to copy at once for the rest of this copy. 1 to 32. Press Enter to apply. Turns Adaptive off. Not part of the automatic probe."
+                         Text="{Binding DataContext.FilesAtOnceText, RelativeSource={RelativeSource AncestorType=Window}, UpdateSourceTrigger=LostFocus}"
+                         PreviewKeyDown="FilesAtOnceBox_PreviewKeyDown"/>
             </StackPanel>
             <!-- Types is on its own row: grow through the empty cells under Overall files, not over those stats. -->
             <Grid Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="4">

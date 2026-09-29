@@ -26,6 +26,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private string? _runningJobId;
     private readonly HeaderCopySelection _headerCopy = new();
     private bool _headerCopyApplying;
+    private string _filesAtOnceText = "";
+    private int _manualFiles;
     private Job? _lastJob;
     private JobProgress? _lastProgress;
     private string? _progressJobId;
@@ -604,6 +606,25 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     {
         get => _headerCopy.Ranges2;
         set => ChooseHeaderCopy(value, HeaderCopyMode.Ranges2);
+    }
+
+    public string FilesAtOnceText
+    {
+        get => _filesAtOnceText;
+        set
+        {
+            if (!SetField(ref _filesAtOnceText, value))
+            {
+                return;
+            }
+
+            if (_headerCopyApplying)
+            {
+                return;
+            }
+
+            ApplyFilesAtOnce(value);
+        }
     }
     public bool FixLongOrDuplicateNames { get => _fixLongOrDuplicateNames; set => SetField(ref _fixLongOrDuplicateNames, value); }
     public bool ScheduleMonday { get => _scheduleMonday; set => SetField(ref _scheduleMonday, value); }
@@ -4145,6 +4166,49 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
+    private void ApplyFilesAtOnce(string text)
+    {
+        if (!HeaderCopy.TryParseFileCount(text, out var width))
+        {
+            return;
+        }
+
+        if (width is 1 or 2 or 4 or 8)
+        {
+            var preset = width switch
+            {
+                1 => HeaderCopyMode.OneStream,
+                2 => HeaderCopyMode.Files2,
+                4 => HeaderCopyMode.Files4,
+                _ => HeaderCopyMode.Files8
+            };
+            if (_headerCopy.Mode == preset)
+            {
+                return;
+            }
+
+            ChooseHeaderCopy(true, preset);
+            return;
+        }
+
+        if (_headerCopy.Mode == HeaderCopyMode.FilesN && _manualFiles == width)
+        {
+            return;
+        }
+
+        var from = _headerCopy.Mode;
+        var fromWidth = _manualFiles;
+        _manualFiles = width;
+        _headerCopy.Select(HeaderCopyMode.FilesN);
+        NotifyHeaderCopy();
+        StatusText = HeaderCopy.SwitchLine(from, HeaderCopyMode.FilesN, width, fromWidth);
+        _scheduler.SetHeaderCopyMode(HeaderCopyMode.FilesN, from, manualWidth: width, fromWidth: fromWidth);
+        if (_lastProgress is { } live && !HidesCopyModeReadout(live))
+        {
+            CopyModeReadout = new StatPair(CopyModeLabels.Label, width.ToString(System.Globalization.CultureInfo.InvariantCulture) + " files");
+        }
+    }
+
     private void ResetHeaderCopyMode()
     {
         if (!_headerCopy.UserPicked && _headerCopy.Adaptive)
@@ -4152,6 +4216,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             return;
         }
 
+        _manualFiles = 0;
         _headerCopy.Reset();
         _scheduler.SetHeaderCopyMode(HeaderCopyMode.FollowSaved, HeaderCopyMode.Adaptive, logChange: false);
         NotifyHeaderCopy();
@@ -4166,6 +4231,21 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CopyModeFourFiles)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CopyModeEightFiles)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CopyModeTwoRanges)));
+        var shown = _headerCopy.Mode switch
+        {
+            HeaderCopyMode.OneStream => "1",
+            HeaderCopyMode.Files2 => "2",
+            HeaderCopyMode.Files4 => "4",
+            HeaderCopyMode.Files8 => "8",
+            HeaderCopyMode.FilesN => _manualFiles.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            _ => ""
+        };
+        if (_filesAtOnceText != shown)
+        {
+            _filesAtOnceText = shown;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(FilesAtOnceText)));
+        }
+
         _headerCopyApplying = false;
     }
 

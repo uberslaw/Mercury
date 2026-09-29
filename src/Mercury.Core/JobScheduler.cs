@@ -39,27 +39,38 @@ public sealed class JobScheduler : IDisposable
     public AppPaths Paths => _paths;
     private HeaderCopyMode _pendingHeaderCopy = HeaderCopyMode.FollowSaved;
     private HeaderCopyMode _pendingHeaderFrom = HeaderCopyMode.Adaptive;
+    private int _pendingManualWidth;
+    private int _pendingManualFromWidth;
 
     /// <summary>
     /// Header checkbox for the current copy. Does not change the saved Adaptive copy option.
     /// Cleared when the copy ends so the next job follows its own saved option.
     /// </summary>
-    public void SetHeaderCopyMode(HeaderCopyMode mode, HeaderCopyMode fromShown, bool logChange = true)
+    public void SetHeaderCopyMode(HeaderCopyMode mode, HeaderCopyMode fromShown, bool logChange = true, int manualWidth = 0, int fromWidth = 0)
     {
+        var width = mode == HeaderCopyMode.FilesN ? AdaptiveCopyPolicy.ClampManualFiles(manualWidth) : 0;
         _pendingHeaderCopy = mode;
         _pendingHeaderFrom = fromShown;
+        _pendingManualWidth = width;
+        _pendingManualFromWidth = fromWidth;
         var chosen = mode != HeaderCopyMode.FollowSaved;
-        var detail = mode == HeaderCopyMode.FollowSaved ? null : HeaderCopy.SwitchDetail(fromShown, mode);
+        var detail = mode == HeaderCopyMode.FollowSaved ? null : HeaderCopy.SwitchDetail(fromShown, mode, width, fromWidth);
         foreach (var running in _running.Values)
         {
-            var changed = running.Job.HeaderCopyMode != mode;
+            var changed = running.Job.HeaderCopyMode != mode
+                || (mode == HeaderCopyMode.FilesN && running.Job.ManualFileWidth != width);
             running.Job.HeaderCopyMode = mode;
             running.Job.HeaderCopyModeChosen = chosen;
+            if (mode == HeaderCopyMode.FilesN)
+            {
+                running.Job.ManualFileWidth = width;
+            }
+
             running.Job.HeaderCopySwitchDetail = detail;
             if (logChange && changed && mode != HeaderCopyMode.FollowSaved)
             {
                 var jobName = string.IsNullOrWhiteSpace(running.Job.Name) ? running.Job.Id[..8] : running.Job.Name;
-                Log.Info(running.Job.Id, jobName, HeaderCopy.SwitchLine(fromShown, mode));
+                Log.Info(running.Job.Id, jobName, HeaderCopy.SwitchLine(fromShown, mode, width, fromWidth));
             }
         }
     }
@@ -380,9 +391,14 @@ public sealed class JobScheduler : IDisposable
         {
             job.HeaderCopyMode = _pendingHeaderCopy;
             job.HeaderCopyModeChosen = true;
-            job.HeaderCopySwitchDetail = HeaderCopy.SwitchDetail(_pendingHeaderFrom, _pendingHeaderCopy);
+            if (_pendingHeaderCopy == HeaderCopyMode.FilesN)
+            {
+                job.ManualFileWidth = _pendingManualWidth;
+            }
+
+            job.HeaderCopySwitchDetail = HeaderCopy.SwitchDetail(_pendingHeaderFrom, _pendingHeaderCopy, _pendingManualWidth, _pendingManualFromWidth);
             var jobName = string.IsNullOrWhiteSpace(job.Name) ? job.Id[..8] : job.Name;
-            Log.Info(job.Id, jobName, HeaderCopy.SwitchLine(_pendingHeaderFrom, _pendingHeaderCopy));
+            Log.Info(job.Id, jobName, HeaderCopy.SwitchLine(_pendingHeaderFrom, _pendingHeaderCopy, _pendingManualWidth, _pendingManualFromWidth));
         }
 
         PruneFinishedProgress();
@@ -469,8 +485,11 @@ public sealed class JobScheduler : IDisposable
         job.HeaderCopyMode = HeaderCopyMode.FollowSaved;
         job.HeaderCopyModeChosen = false;
         job.HeaderCopySwitchDetail = null;
+        job.ManualFileWidth = 0;
         _pendingHeaderCopy = HeaderCopyMode.FollowSaved;
         _pendingHeaderFrom = HeaderCopyMode.Adaptive;
+        _pendingManualWidth = 0;
+        _pendingManualFromWidth = 0;
     }
 
     private async Task WaitForRundownAsync(string jobId)

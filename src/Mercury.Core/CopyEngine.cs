@@ -917,6 +917,7 @@ public sealed class CopyEngine : ICopyEngine
         var mode = adaptive.Mode;
         var dropped = false;
         var appliedChoice = job.HeaderCopyMode;
+        var appliedWidth = job.ManualFileWidth;
         var manual = HeaderCopy.IsManual(appliedChoice);
         string? manualSwitch = manual ? job.HeaderCopySwitchDetail : null;
         var sustain = new AdaptiveSustainTracker();
@@ -932,13 +933,15 @@ public sealed class CopyEngine : ICopyEngine
         async Task<bool> ApplyHeaderChoiceAsync()
         {
             var choice = job.HeaderCopyMode;
-            if (choice == appliedChoice)
+            var widthNow = job.ManualFileWidth;
+            if (choice == appliedChoice && (choice != HeaderCopyMode.FilesN || widthNow == appliedWidth))
             {
                 return false;
             }
 
             var from = appliedChoice;
             appliedChoice = choice;
+            appliedWidth = choice == HeaderCopyMode.FilesN ? widthNow : 0;
             if (HeaderCopy.UsesAdaptive(choice, job.Options.AdaptiveCopy))
             {
                 manual = false;
@@ -968,8 +971,8 @@ public sealed class CopyEngine : ICopyEngine
             manual = true;
             dropped = false;
             mode = HeaderCopy.EngineMode(choice);
-            manualSwitch = job.HeaderCopySwitchDetail ?? HeaderCopy.SwitchDetail(from, choice);
-            reporter.ShowStatus(HeaderCopy.RunningStatus(mode, manualSwitch), pause.CurrentFilePath);
+            manualSwitch = job.HeaderCopySwitchDetail ?? HeaderCopy.SwitchDetail(from, choice, appliedWidth);
+            reporter.ShowStatus(HeaderCopy.RunningStatus(mode, manualSwitch, fileWidth: appliedWidth), pause.CurrentFilePath);
             return true;
         }
 
@@ -1098,6 +1101,7 @@ public sealed class CopyEngine : ICopyEngine
                 AdaptiveEnabled = true,
                 Capped = adaptive.Capped,
                 Manual = manual,
+                ManualWidth = mode == AdaptiveCopyMode.FilesN ? appliedWidth : 0,
                 FellOff = dropped && !manual,
                 PendingFiles = queue.Count,
                 PendingCopyBytes = pendingBytes,
@@ -1108,7 +1112,7 @@ public sealed class CopyEngine : ICopyEngine
                 UnverifiedCopied = CountUnverified(journal, job.Id)
             });
             var statusLabel = manual
-                ? HeaderCopy.RunningStatus(mode, manualSwitch, fellOff: false)
+                ? HeaderCopy.RunningStatus(mode, manualSwitch, fellOff: false, fileWidth: appliedWidth)
                 : step.Label;
             if (mode == AdaptiveCopyMode.Ranges2
                 && pause.CurrentFilePath is { Length: > 0 } smallPath
