@@ -512,7 +512,7 @@ public class ProgressStatsLayoutTests
     }
 
     [Fact]
-    public void GlobalMinMax_LabelsSitBesideBoxes()
+    public void GlobalSpeedBoxes_ShareOneColumn()
     {
         WpfSta.Run(() =>
         {
