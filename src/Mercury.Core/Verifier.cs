@@ -150,11 +150,16 @@ public static class Verifier
         {
         try
         {
-            var known = journal.GetFiles().Select(f => f.RelativePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var journalFiles = journal.GetFiles();
+            var known = journalFiles.Select(f => f.RelativePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var knownSources = journalFiles
+                .Select(f => f.SourcePath)
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
             foreach (var record in SourceWalker.Walk(mapping, extraExcludeRoots: null, job.Options))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (known.Contains(record.RelativePath))
+                if (known.Contains(record.RelativePath) || knownSources.Contains(record.SourcePath))
                 {
                     continue;
                 }

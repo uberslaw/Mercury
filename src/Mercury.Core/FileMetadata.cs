@@ -70,6 +70,27 @@ public static class FileMetadata
         return "RoboFlags: " + string.Join("; ", bits) + ".";
     }
 
+    /// <summary>Sets creation and last-write, matching the copy helper that writes both.</summary>
+    public static void SetDestTimestamps(string path, DateTime lastWriteUtc)
+    {
+        var utc = lastWriteUtc.Kind == DateTimeKind.Utc
+            ? lastWriteUtc
+            : DateTime.SpecifyKind(lastWriteUtc, DateTimeKind.Utc);
+        var attrs = File.GetAttributes(path);
+        var readOnly = attrs.HasFlag(FileAttributes.ReadOnly);
+        if (readOnly)
+        {
+            File.SetAttributes(path, attrs & ~FileAttributes.ReadOnly);
+        }
+
+        File.SetCreationTimeUtc(path, utc);
+        File.SetLastWriteTimeUtc(path, utc);
+        if (readOnly)
+        {
+            File.SetAttributes(path, attrs);
+        }
+    }
+
     public static void ApplyCopiedFile(
         string sourcePath,
         string destPath,

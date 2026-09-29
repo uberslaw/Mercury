@@ -46,6 +46,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private int _verifyIndex;
     private bool _dryRun;
     private bool _adaptiveCopy = true;
+    private bool _fixLongOrDuplicateNames = true;
+    private bool _scheduleMonday = true;
+    private bool _scheduleTuesday = true;
+    private bool _scheduleWednesday = true;
+    private bool _scheduleThursday = true;
+    private bool _scheduleFriday = true;
+    private bool _scheduleSaturday = true;
+    private bool _scheduleSunday = true;
     private bool _packAsZip;
     private bool _ignoreFreeSpaceCheck;
     private bool _roboFlagsExpanded;
@@ -219,6 +227,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         ToggleHoldQueueJobCommand = new RelayCommand(p => ToggleHoldQueueJob(p as QueueJobItem));
         OpenQueueDraftOptionsCommand = new RelayCommand(OpenQueueDraftOptions);
         OpenQueueJobOptionsCommand = new RelayCommand(p => OpenQueueJobOptions(p as QueueJobItem));
+        OpenCopiedFilesCommand = new RelayCommand(
+            p => OpenCopiedFiles(p as QueueJobItem),
+            p => p is QueueJobItem q ? q.CanEditCopiedNames : CanEditCopiedFiles);
+        OpenNameNoticesCommand = new RelayCommand(
+            p => OpenNameNotices(p as QueueJobItem),
+            p => p is QueueJobItem q && q.HasNameNotices);
         OpenSelectedQueueJobOptionsCommand = new RelayCommand(
             () => OpenQueueJobOptions(SelectedQueueJob),
             () => HasSelectedQueueJob);
@@ -325,6 +339,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public ICommand ToggleHoldQueueJobCommand { get; }
     public ICommand OpenQueueDraftOptionsCommand { get; }
     public ICommand OpenQueueJobOptionsCommand { get; }
+    public ICommand OpenCopiedFilesCommand { get; }
+    public ICommand OpenNameNoticesCommand { get; }
     public ICommand OpenSelectedQueueJobOptionsCommand { get; }
     public ICommand CreateCatcherCommand { get; }
     public ICommand ExportCatcherCommand { get; }
@@ -550,6 +566,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public int VerifyIndex { get => _verifyIndex; set => SetField(ref _verifyIndex, value); }
     public bool DryRun { get => _dryRun; set => SetField(ref _dryRun, value); }
     public bool AdaptiveCopy { get => _adaptiveCopy; set => SetField(ref _adaptiveCopy, value); }
+    public bool FixLongOrDuplicateNames { get => _fixLongOrDuplicateNames; set => SetField(ref _fixLongOrDuplicateNames, value); }
+    public bool ScheduleMonday { get => _scheduleMonday; set => SetField(ref _scheduleMonday, value); }
+    public bool ScheduleTuesday { get => _scheduleTuesday; set => SetField(ref _scheduleTuesday, value); }
+    public bool ScheduleWednesday { get => _scheduleWednesday; set => SetField(ref _scheduleWednesday, value); }
+    public bool ScheduleThursday { get => _scheduleThursday; set => SetField(ref _scheduleThursday, value); }
+    public bool ScheduleFriday { get => _scheduleFriday; set => SetField(ref _scheduleFriday, value); }
+    public bool ScheduleSaturday { get => _scheduleSaturday; set => SetField(ref _scheduleSaturday, value); }
+    public bool ScheduleSunday { get => _scheduleSunday; set => SetField(ref _scheduleSunday, value); }
     public bool PackAsZip { get => _packAsZip; set => SetField(ref _packAsZip, value); }
     public bool SkipCompressedWhenPacking { get => _skipCompressedWhenPacking; set => SetField(ref _skipCompressedWhenPacking, value); }
     public string NeverPackDraft { get => _neverPackDraft; set => SetField(ref _neverPackDraft, value); }
@@ -1086,9 +1110,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 _selectedQueueJob?.SyncSpeedFromJob();
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasSelectedQueueJob)));
                 (OpenSelectedQueueJobOptionsCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                (OpenCopiedFilesCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanEditCopiedFiles)));
             }
         }
     }
+
+    public bool CanEditCopiedFiles => FindFinishedJob() is not null;
 
     public bool HasSelectedQueueJob => SelectedQueueJob is not null;
 
@@ -2065,7 +2093,16 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             FatTimestampTolerance = FatTimestampTolerance,
             ExcludeHiddenSystem = ExcludeHiddenSystem,
             PurgeExtraDestFiles = PurgeExtraDestFiles,
-            AdaptiveCopy = AdaptiveCopy
+            AdaptiveCopy = AdaptiveCopy,
+            FixLongOrDuplicateNames = FixLongOrDuplicateNames,
+            ScheduleDays = new WeekSelection(
+                ScheduleSunday,
+                ScheduleMonday,
+                ScheduleTuesday,
+                ScheduleWednesday,
+                ScheduleThursday,
+                ScheduleFriday,
+                ScheduleSaturday).ToStored()
         };
     }
 
@@ -2129,6 +2166,15 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             ExcludeHiddenSystem = options.ExcludeHiddenSystem;
             PurgeExtraDestFiles = options.PurgeExtraDestFiles;
             AdaptiveCopy = options.AdaptiveCopy;
+            FixLongOrDuplicateNames = options.FixLongOrDuplicateNames;
+            var week = WeekSelection.From(options.ScheduleDays);
+            ScheduleSunday = week.Sunday;
+            ScheduleMonday = week.Monday;
+            ScheduleTuesday = week.Tuesday;
+            ScheduleWednesday = week.Wednesday;
+            ScheduleThursday = week.Thursday;
+            ScheduleFriday = week.Friday;
+            ScheduleSaturday = week.Saturday;
         }
         finally
         {
@@ -3532,7 +3578,81 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         item.BeginResume();
         StatusText = item.ResumeLabel == "Start" ? "Starting…" : "Resuming…";
         _scheduler.ResumeOrRetry(item.Job.Id);
+        ClearTransferDraft();
         RefreshRunState();
+    }
+
+    /// <summary>
+    /// Queue Resume starts that row and clears the Transfer tab draft. The queue row and journal stay.
+    /// </summary>
+    private void ClearTransferDraft()
+    {
+        var draft = new TransferDraft
+        {
+            SourcePath = SourcePath,
+            SourcePaths = SourceFolders.Select(f => f.Path).ToList(),
+            DestinationPath = DestPath,
+            DestinationKind = DestKindIndex,
+            Options = BuildOptions(),
+            ScheduleEnabled = ScheduleEnabled,
+            ScheduledDate = ScheduledDate,
+            ScheduledTime = ScheduledTime
+        };
+        draft.ClearForQueueResume();
+        SourceFolders.Clear();
+        SourcePath = draft.SourcePath;
+        DestPath = draft.DestinationPath;
+        DestKindIndex = draft.DestinationKind;
+        SelectedCatcherTemplate = null;
+        ApplyJobOptions(draft.Options);
+        ScheduleEnabled = draft.ScheduleEnabled;
+        ScheduledDate = draft.ScheduledDate ?? DateTime.Today;
+        ScheduledTime = draft.ScheduledTime;
+        NotifySourceFolders();
+    }
+
+    private Job? FindFinishedJob()
+    {
+        if (SelectedQueueJob is { CanEditCopiedNames: true })
+        {
+            return SelectedQueueJob.Job;
+        }
+
+        return _scheduler.Queue.LastOrDefault(j =>
+            j.Catcher is null && j.Status is JobStatus.Completed or JobStatus.Incomplete);
+    }
+
+    private void OpenCopiedFiles(QueueJobItem? item)
+    {
+        var job = item?.Job ?? FindFinishedJob();
+        if (job is null || job.Catcher is not null || job.Status is not (JobStatus.Completed or JobStatus.Incomplete))
+        {
+            StatusText = "Pick a finished job to rename its copied files.";
+            return;
+        }
+
+        var directory = _paths.JobDirectory(job.Id);
+        if (!JobJournal.Exists(directory))
+        {
+            StatusText = "No journal for this job yet.";
+            return;
+        }
+
+        var owner = Application.Current?.Windows.OfType<Window>().FirstOrDefault(w => w.IsActive)
+            ?? Application.Current?.MainWindow;
+        DestFilesWindow.Show(owner, job, directory);
+    }
+
+    private void OpenNameNotices(QueueJobItem? item)
+    {
+        if (item is null || !item.HasNameNotices)
+        {
+            return;
+        }
+
+        var owner = Application.Current?.Windows.OfType<Window>().FirstOrDefault(w => w.IsActive)
+            ?? Application.Current?.MainWindow;
+        NameNotesWindow.Show(owner, item.Job);
     }
 
     private void StopQueueJob(QueueJobItem? item)
@@ -3846,6 +3966,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         (ResumeAllCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (StopCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (ResumeLastCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (OpenCopiedFilesCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanEditCopiedFiles)));
         (SaveJobCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (PauseQueueJobCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (ResumeQueueJobCommand as RelayCommand)?.RaiseCanExecuteChanged();

@@ -246,6 +246,52 @@ public sealed class JobJournal : IDisposable
         }
     }
 
+    public void UpdateDestIdentity(string oldRelative, string newRelative, string newDestPath, DateTime lastWriteUtc)
+    {
+        lock (_lock)
+        {
+            if (!string.Equals(oldRelative, newRelative, StringComparison.Ordinal))
+            {
+                using var checkGuard = new CommandGuard(CreateCommand());
+                var check = checkGuard.Command;
+                check.CommandText = "SELECT COUNT(1) FROM files WHERE relative_path = $new";
+                check.Parameters.AddWithValue("$new", newRelative ?? "");
+                var count = Convert.ToInt32(check.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture);
+                if (count > 0)
+                {
+                    throw new InvalidOperationException("A destination file with that name already exists.");
+                }
+            }
+
+            using var cmdGuard = new CommandGuard(CreateCommand());
+            var cmd = cmdGuard.Command;
+            cmd.CommandText = """
+                UPDATE files
+                SET relative_path = $new, dest_path = $dest, last_write_utc = $lw
+                WHERE relative_path = $old
+                """;
+            cmd.Parameters.AddWithValue("$new", newRelative ?? "");
+            cmd.Parameters.AddWithValue("$dest", newDestPath ?? "");
+            cmd.Parameters.AddWithValue("$lw", lastWriteUtc.ToString("O"));
+            cmd.Parameters.AddWithValue("$old", oldRelative ?? "");
+            var updated = cmd.ExecuteNonQuery();
+            if (updated == 0)
+            {
+                throw new InvalidOperationException("That file is not in the job journal.");
+            }
+
+            if (!string.Equals(oldRelative, newRelative, StringComparison.Ordinal))
+            {
+                using var issueGuard = new CommandGuard(CreateCommand());
+                var issue = issueGuard.Command;
+                issue.CommandText = "UPDATE issues SET relative_path = $new WHERE relative_path = $old";
+                issue.Parameters.AddWithValue("$new", newRelative ?? "");
+                issue.Parameters.AddWithValue("$old", oldRelative ?? "");
+                issue.ExecuteNonQuery();
+            }
+        }
+    }
+
     public void MarkSkipped(string relativePath, string reason)
     {
         lock (_lock)

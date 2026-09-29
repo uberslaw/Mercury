@@ -360,6 +360,9 @@
                                 <Button Content="Add to queue" Style="{StaticResource ToolbarButton}" Command="{Binding AddToQueueCommand}"/>
                             </Border>
                             <Button Content="Save job" Style="{StaticResource CompactButton}" Command="{Binding SaveJobCommand}"/>
+                            <Button Content="Edit copied files" Style="{StaticResource CompactButton}" Margin="0"
+                                    Command="{Binding OpenCopiedFilesCommand}"
+                                    ToolTip="Rename destination files from a finished job and set their last-write time. Does not copy again."/>
                         </StackPanel>
                         </Border>
 
@@ -459,6 +462,16 @@
                                                 Command="{Binding DataContext.OpenQueueJobOptionsCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                 CommandParameter="{Binding}"
                                                 ToolTip="Edit this job’s options."/>
+                                        <Button Content="Names" Style="{StaticResource CompactButton}"
+                                                Visibility="{Binding CanEditCopiedNames, Converter={StaticResource BoolToVis}}"
+                                                Command="{Binding DataContext.OpenCopiedFilesCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}"
+                                                ToolTip="Rename destination files and set last-write times without copying again."/>
+                                        <Button Content="{Binding NameNoticeLabel}" Style="{StaticResource CompactButton}"
+                                                Visibility="{Binding HasNameNotices, Converter={StaticResource BoolToVis}}"
+                                                Command="{Binding DataContext.OpenNameNoticesCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}"
+                                                ToolTip="Long or duplicate destination names found before copy. Opens the list."/>
                                         <Button Content="Remove" Style="{StaticResource CompactButton}"
                                                 IsEnabled="{Binding CanRemove}"
                                                 Command="{Binding DataContext.RemoveQueueJobCommand, RelativeSource={RelativeSource AncestorType=Window}}"

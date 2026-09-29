@@ -291,12 +291,35 @@ public static class CopyShape
                 continue;
             }
 
+            if (SameParent(dest, file.DestPath))
+            {
+                continue;
+            }
+
             file.DestPath = dest;
             journal.UpsertFile(file);
             changed = true;
         }
 
         return changed;
+    }
+
+    private static bool SameParent(string left, string right)
+    {
+        var a = ParentOf(left);
+        var b = ParentOf(right);
+        return string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ParentOf(string path)
+    {
+        if (string.IsNullOrEmpty(path))
+        {
+            return "";
+        }
+
+        var slash = Math.Max(path.LastIndexOf('\\'), path.LastIndexOf('/'));
+        return slash < 0 ? "" : path[..slash].TrimEnd('\\', '/');
     }
 
     private static string StripUniquePrefix(string relativePath, string? prefix)

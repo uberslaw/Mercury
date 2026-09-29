@@ -38,11 +38,12 @@
             <Grid.RowDefinitions>
                 <RowDefinition Height="38"/>
                 <RowDefinition Height="38"/>
+                <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
             <CheckBox Style="{StaticResource OptionsCheckBox}" Margin="0,0,12,0"
-                      Content="Start After" IsChecked="{Binding ScheduleEnabled}"
-                      ToolTip="Calendar start. Window hours still apply if enabled."/>
+                      Content="Schedule" IsChecked="{Binding ScheduleEnabled}"
+                      ToolTip="Calendar start. Days below choose which weekdays the job may start. Window hours still apply if enabled."/>
             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                 <DatePicker Style="{StaticResource OptionsDatePicker}"
                             SelectedDate="{Binding ScheduledDate}" IsEnabled="{Binding ScheduleEnabled}"/>
@@ -74,7 +75,22 @@
                 <ComboBoxItem>Quick (size + time)</ComboBoxItem>
                 <ComboBoxItem>Thorough (xxHash64)</ComboBoxItem>
             </ComboBox>
+
+            <WrapPanel Grid.Row="2" Grid.ColumnSpan="5" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,4">
+                <TextBlock Style="{StaticResource OptionsLabel}" Text="Days"/>
+                <CheckBox Content="Mon" IsChecked="{Binding ScheduleMonday}" Margin="0,0,10,0" ToolTip="Job may start on Monday."/>
+                <CheckBox Content="Tue" IsChecked="{Binding ScheduleTuesday}" Margin="0,0,10,0" ToolTip="Job may start on Tuesday."/>
+                <CheckBox Content="Wed" IsChecked="{Binding ScheduleWednesday}" Margin="0,0,10,0" ToolTip="Job may start on Wednesday."/>
+                <CheckBox Content="Thu" IsChecked="{Binding ScheduleThursday}" Margin="0,0,10,0" ToolTip="Job may start on Thursday."/>
+                <CheckBox Content="Fri" IsChecked="{Binding ScheduleFriday}" Margin="0,0,10,0" ToolTip="Job may start on Friday."/>
+                <CheckBox Content="Sat" IsChecked="{Binding ScheduleSaturday}" Margin="0,0,10,0" ToolTip="Job may start on Saturday."/>
+                <CheckBox Content="Sun" IsChecked="{Binding ScheduleSunday}" Margin="0,0,10,0" ToolTip="Job may start on Sunday. All days on is the default, so older jobs are unchanged."/>
+            </WrapPanel>
         </Grid>
+
+        <CheckBox Style="{StaticResource OptionsCheckBox}" Margin="0,0,0,4"
+                  Content="Fix long or duplicate names" IsChecked="{Binding FixLongOrDuplicateNames}"
+                  ToolTip="Default on. If a destination file name is longer than Windows allows, or two files in this job would land on the same name, Mercury renames the destination (adds “ - file-transfer”, then “ - file-transfer (2)”) so nothing is overwritten. Off: those files are skipped and listed."/>
 
         <Grid Margin="0,4,0,0">
             <Grid.RowDefinitions>

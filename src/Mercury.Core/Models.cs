@@ -123,6 +123,17 @@ public sealed class JobOptions
     /// </summary>
     public bool AdaptiveCopy { get; set; } = true;
 
+    /// <summary>
+    /// When a destination file name is too long for Windows or would collide with another file in the job,
+    /// suffix the destination name instead of overwriting. Default on. Off skips that file.
+    /// </summary>
+    public bool FixLongOrDuplicateNames { get; set; } = true;
+
+    /// <summary>
+    /// Days the job may start. Null means every day (older jobs and the default).
+    /// </summary>
+    public List<DayOfWeek>? ScheduleDays { get; set; }
+
     public double? MaxBytesPerSecond =>
         MaxMegabytesPerSecond is > 0 ? MaxMegabytesPerSecond.Value * 1024 * 1024 : null;
 
@@ -162,6 +173,8 @@ public sealed class JobOptions
         ExcludeHiddenSystem = other.ExcludeHiddenSystem;
         PurgeExtraDestFiles = other.PurgeExtraDestFiles;
         AdaptiveCopy = other.AdaptiveCopy;
+        FixLongOrDuplicateNames = other.FixLongOrDuplicateNames;
+        ScheduleDays = other.ScheduleDays is null ? null : [..other.ScheduleDays];
     }
 }
 
@@ -241,6 +254,9 @@ public sealed class Job
     /// <summary>Copied + skipped payload accounted by the journal.</summary>
     public long BytesCopied { get; set; }
     public double AverageBytesPerSecond { get; set; }
+
+    /// <summary>Long or duplicate destination names found before copy. Empty when there were none.</summary>
+    public List<string> NameNotices { get; set; } = [];
 }
 
 public sealed class JobProgress
