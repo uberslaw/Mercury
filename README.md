@@ -38,9 +38,9 @@ On first run Mercury uses `%APPDATA%\Mercury` (Roaming) so logs and journals sur
   catcher-settings.json
 ```
 
-Tick **Portable: keep data beside Mercury.exe** on the Settings tab if you want a USB toolkit copy (`Mercury\data\`). If AppData has no jobs and `data\` beside the exe already has journals, Mercury keeps using the beside-exe folder so Resume last still works. The Settings tab lists every path with an Open folder button.
+Tick **Portable: keep data beside Mercury.exe** under **Options → Settings** if you want a USB toolkit copy (`Mercury\data\`). If AppData has no jobs and `data\` beside the exe already has journals, Mercury keeps using the beside-exe folder so Resume last still works. Options → Settings lists every path with an Open folder button.
 
-The status bar shows the data folder. Console → Open logs folder, or Settings → Error log.
+The status bar shows the data folder. View → Console → Open logs folder, or Options → Settings → Error log.
 
 Closing the window while a copy is running asks whether to wait for the current file or close now. A crash, kill, or reboot leaves a dirty heartbeat (`jobs\{id}\heartbeat.json` plus journal meta); the next launch offers resume. Use **Resume last** for a clean Stop as well.
 
@@ -56,7 +56,7 @@ Closing the window while a copy is running asks whether to wait for the current 
 | Skip if dest newer or equal | `/XO` (+ `/FFT` when RoboFlags → FAT 2s times is on) |
 | Dry run | `/L` |
 | Destination can expand (ignore free-space abort) | (thin / growable dest; still logs Need vs available) |
-| Console tab + log files | `/LOG` `/TEE` |
+| View → Console + log files | `/LOG` `/TEE` |
 | **RoboFlags** (native copier, not robocopy.exe) | |
 | Timestamps (creation + last-write) — default on | `/COPY:T` |
 | Attributes — default on | `/COPY:A` |

@@ -16,6 +16,18 @@
     <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="BgBrush">
     <DockPanel>
         <Menu DockPanel.Dock="Top">
+            <MenuItem Header="_File">
+                <MenuItem Header="E_xit" Click="ExitMenu_Click"/>
+            </MenuItem>
+            <MenuItem Header="_View">
+                <MenuItem x:Name="ViewConsoleMenu" Header="_Console" Click="ViewConsole_Click"/>
+                <MenuItem x:Name="ViewHistoryMenu" Header="_History" Click="ViewHistory_Click"/>
+                <MenuItem x:Name="ViewNetworkMenu" Header="_Network" Click="ViewNetwork_Click"/>
+            </MenuItem>
+            <MenuItem Header="_Options">
+                <MenuItem x:Name="OptionsThemeMenu" Header="_Theme" Click="OptionsTheme_Click"/>
+                <MenuItem x:Name="OptionsSettingsMenu" Header="_Settings" Click="OptionsSettings_Click"/>
+            </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem Header="_How to use Mercury" Click="HelpMenu_Click"/>
             </MenuItem>
@@ -136,6 +148,7 @@
                             </Grid>
                             <StackPanel x:Name="HeaderFileClockPanel"
                                         Grid.Row="1"
+                                        Orientation="Horizontal"
                                         Margin="0,4,0,0"
                                         HorizontalAlignment="Left"
                                         Grid.IsSharedSizeScope="True">
@@ -155,7 +168,8 @@
                                                         KeySizeGroup="FileClockKey"
                                                         Foreground="{DynamicResource OnHeaderBrush}"/>
                                 </Border>
-                                <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Label,Value,Progress">
+                                <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Label,Value,Progress"
+                                        Margin="16,0,0,0">
                                     <local:StatPairText x:Name="HeaderFileEtaPair"
                                                         DataContext="{Binding HeaderFileEta}"
                                                         KeySizeGroup="FileClockKey"
@@ -209,33 +223,34 @@
                                            RenderOptions.ClearTypeHint="Enabled"/>
                             </Grid>
                         </Grid>
-                        <local:ProgressStatsLine DataContext="{Binding HeaderStats}" Foreground="{DynamicResource OnHeaderBrush}"/>
-                        <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Progress">
+                        <local:ProgressStatsLine x:Name="HeaderStatsLine" DataContext="{Binding HeaderStats}" Foreground="{DynamicResource OnHeaderBrush}"/>
+                        <Border x:Name="HeaderStatusBanner" Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Progress"
+                                Visibility="{Binding ShowHeaderStatus, Converter={StaticResource BoolToVis}}">
                             <TextBlock x:Name="HeaderStatusText" Text="{Binding StatusText}" TextWrapping="Wrap" Margin="0,2,0,0"
                                        Foreground="{DynamicResource OnHeaderBrush}"
-                                       FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}"
-                                       Visibility="{Binding ShowHeaderStatus, Converter={StaticResource BoolToVis}}"/>
+                                       FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}"/>
                         </Border>
-                        <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OkBrush,DangerBrush">
+                        <Border x:Name="HeaderResultBanner" Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OkBrush,DangerBrush"
+                                Visibility="{Binding ShowResultBanner, Converter={StaticResource BoolToVis}}">
                             <DockPanel Margin="0,2,0,0">
                                 <Button DockPanel.Dock="Right" Content="Open log" Style="{StaticResource HeaderButton}"
                                         Command="{Binding OpenLogCommand}"
                                         Visibility="{Binding ShowOpenLog, Converter={StaticResource BoolToVis}}"
                                         Margin="8,0,0,0"
                                         VerticalAlignment="Top"
-                                        ToolTip="Show this job’s text log on the Console tab."/>
+                                        ToolTip="Show this job’s text log (View → Console)."/>
                                 <TextBlock Text="{Binding ResultBanner}" Foreground="{Binding ResultBrush}" FontWeight="SemiBold" TextWrapping="Wrap"/>
                             </DockPanel>
                         </Border>
-                        <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="WarnBrush">
+                        <Border x:Name="HeaderCloudBanner" Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="WarnBrush"
+                                Visibility="{Binding CloudWarning, Converter={StaticResource BoolToVis}}">
                             <TextBlock Text="This destination looks like a cloud-synced folder. Mercury verifies the local copy, not the cloud upload."
                                        Foreground="{DynamicResource WarnBrush}"
                                        TextWrapping="Wrap"
-                                       Margin="0,4,0,0"
-                                       Visibility="{Binding CloudWarning, Converter={StaticResource BoolToVis}}"/>
+                                       Margin="0,4,0,0"/>
                         </Border>
                     </StackPanel>
-                    <WrapPanel x:Name="HeaderRunButtons" Margin="0,6,0,0">
+                    <WrapPanel x:Name="HeaderRunButtons" Margin="0,8,0,0">
                         <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="AccentBrush,AccentForegroundBrush">
                             <Button Content="{Binding StartButtonLabel}" Style="{StaticResource AccentButton}"
                                     Command="{Binding StartCommand}"
@@ -259,7 +274,7 @@
 
         <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="PanelBrush,TabBackgroundBrush,TabSelectedBackgroundBrush,TabSelectedForegroundBrush,TabUnselectedForegroundBrush,Body">
         <TabControl x:Name="MainTabs" SelectionChanged="MainTabs_SelectionChanged">
-            <TabItem Header="Transfer">
+            <TabItem x:Name="TransferTab" Header="Transfer">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16">
                     <StackPanel>
                         <local:JobPathsPanel x:Name="TransferPaths"
@@ -488,13 +503,13 @@
                     </Border>
                 </DockPanel>
             </TabItem>
-            <TabItem Header="Tree">
+            <TabItem x:Name="TreeTab" Header="Tree">
                 <local:FolderTreePanel Margin="10"/>
             </TabItem>
             <TabItem x:Name="CompareTab" Header="Compare">
                 <local:ComparePanel DataContext="{Binding Compare}"/>
             </TabItem>
-            <TabItem x:Name="ConsoleTab" Header="Console">
+            <TabItem x:Name="ConsoleTab" Header="Console" Visibility="Collapsed">
                 <DockPanel Margin="12">
                     <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
@@ -539,7 +554,7 @@
                     </Border>
                 </DockPanel>
             </TabItem>
-            <TabItem Header="History">
+            <TabItem x:Name="HistoryTab" Header="History" Visibility="Collapsed">
                 <DockPanel Margin="12">
                     <Border DockPanel.Dock="Top" Margin="0,0,0,8" Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="MutedBrush">
                         <TextBlock Text="Past transfers, newest first. Click a row to restore its rundown."
@@ -609,7 +624,7 @@
                     </Border>
                 </DockPanel>
             </TabItem>
-            <TabItem Header="Network">
+            <TabItem x:Name="NetworkTab" Header="Network" Visibility="Collapsed">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16">
                     <StackPanel>
                         <TextBlock TextWrapping="Wrap" Margin="0,0,0,12"
@@ -673,102 +688,6 @@
                         <TextBlock Margin="0,12,0,0" Text="{Binding NetworkStatus}" TextWrapping="Wrap"/>
                     </StackPanel>
                 </ScrollViewer>
-            </TabItem>
-            <TabItem x:Name="ThemeTab" Header="Theme">
-                <local:ThemePanel DataContext="{Binding Theme}"/>
-            </TabItem>
-            <TabItem x:Name="SettingsTab" Header="Settings">
-                <DockPanel Margin="12">
-                    <GroupBox Header="Pack / skip extensions" DockPanel.Dock="Top" Margin="0,0,0,12">
-                        <StackPanel>
-                            <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,8"
-                                       Text="Never-pack extensions copy as files (not zipped). Pack extensions stay eligible for small-file pockets even if they look already-compressed (for example adding .mp4 opts video into packing). Unspecified extensions keep automated detection. Job options → Extensions… opens this page. Defaults match Skip Compressed: video, photos, audio, zip/7z/rar, ISO."/>
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="12"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <StackPanel>
-                                    <TextBlock Text="Never pack (copy as-is)" FontWeight="SemiBold" Margin="0,0,0,4"/>
-                                    <ListBox ItemsSource="{Binding NeverPackExtensions}"
-                                             SelectedItem="{Binding SelectedNeverPack}"
-                                             Height="140" Margin="0,0,0,8"/>
-                                    <DockPanel>
-                                        <Button DockPanel.Dock="Right" Content="Reset defaults" Style="{StaticResource CompactButton}"
-                                                Command="{Binding ResetNeverPackCommand}" Margin="8,0,0,0"/>
-                                        <Button DockPanel.Dock="Right" Content="Remove" Style="{StaticResource CompactButton}"
-                                                Command="{Binding RemoveNeverPackCommand}" Margin="8,0,0,0"/>
-                                        <Button DockPanel.Dock="Right" Content="Add" Style="{StaticResource CompactButton}"
-                                                Command="{Binding AddNeverPackCommand}" Margin="8,0,0,0"/>
-                                        <TextBox Text="{Binding NeverPackDraft, UpdateSourceTrigger=PropertyChanged}"
-                                                 ToolTip="Extension with or without a dot (mp4 or .mp4)."/>
-                                    </DockPanel>
-                                </StackPanel>
-                                <StackPanel Grid.Column="2">
-                                    <TextBlock Text="Always consider packing" FontWeight="SemiBold" Margin="0,0,0,4"/>
-                                    <ListBox ItemsSource="{Binding PackExtensions}"
-                                             SelectedItem="{Binding SelectedPackExtension}"
-                                             Height="140" Margin="0,0,0,8"/>
-                                    <DockPanel>
-                                        <Button DockPanel.Dock="Right" Content="Remove" Style="{StaticResource CompactButton}"
-                                                Command="{Binding RemovePackExtensionCommand}" Margin="8,0,0,0"/>
-                                        <Button DockPanel.Dock="Right" Content="Add" Style="{StaticResource CompactButton}"
-                                                Command="{Binding AddPackExtensionCommand}" Margin="8,0,0,0"/>
-                                        <TextBox Text="{Binding PackExtensionDraft, UpdateSourceTrigger=PropertyChanged}"
-                                                 ToolTip="Opt an extension into packing pockets even if Skip Compressed would skip it."/>
-                                    </DockPanel>
-                                </StackPanel>
-                            </Grid>
-                        </StackPanel>
-                    </GroupBox>
-                    <GroupBox Header="Data location" DockPanel.Dock="Top">
-                        <StackPanel>
-                            <TextBlock Text="{Binding DataRootSummary}" TextWrapping="Wrap" Margin="0,0,0,8"/>
-                            <CheckBox Content="Portable: keep data beside Mercury.exe"
-                                      IsChecked="{Binding PortableData}"
-                                      ToolTip="Off (default) uses %APPDATA%\Mercury so logs and journals survive swapping the exe. Takes effect the next time you start Mercury."/>
-                        </StackPanel>
-                    </GroupBox>
-                    <TextBlock DockPanel.Dock="Top" Text="Every file and folder Mercury writes. Open folder to show it in Explorer."
-                               Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,8" TextWrapping="Wrap"/>
-                    <ListBox ItemsSource="{Binding DataPaths}" FontFamily="{DynamicResource BodyFontFamily}" FontSize="{DynamicResource BodyFontSize}"
-                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                             HorizontalContentAlignment="Stretch">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <DockPanel Margin="0,2">
-                                    <Button DockPanel.Dock="Right" Content="Open folder" Style="{StaticResource CompactButton}" Margin="8,0,0,0"
-                                            Command="{Binding OpenFolderCommand}"/>
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding Label}" FontWeight="SemiBold"/>
-                                        <TextBlock Text="{Binding FullPath}" TextWrapping="Wrap" FontFamily="Consolas" FontSize="12" Margin="0,2,0,0"/>
-                                    </StackPanel>
-                                </DockPanel>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-                </DockPanel>
-            </TabItem>
-            <TabItem x:Name="HelpTab" Header="Help">
-                <DockPanel Margin="12">
-                    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-                        <TextBlock Text="Search" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                        <TextBox Text="{Binding HelpSearch, UpdateSourceTrigger=PropertyChanged}"/>
-                    </DockPanel>
-                    <ListBox ItemsSource="{Binding HelpSections}" FontFamily="{DynamicResource BodyFontFamily}" FontSize="{DynamicResource BodyFontSize}"
-                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                             HorizontalContentAlignment="Stretch">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <StackPanel Margin="0,4,0,12">
-                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,4"/>
-                                    <TextBlock Text="{Binding Body}" TextWrapping="Wrap"/>
-                                </StackPanel>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-                </DockPanel>
             </TabItem>
         </TabControl>
         </Border>

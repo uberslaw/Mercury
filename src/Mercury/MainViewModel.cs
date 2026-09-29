@@ -497,7 +497,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
             var route = SelectedCatcherTemplate is { } t
                 ? t.PortForwardHint()
-                : "Create a template on the Network tab first.";
+                : "Create a template under View → Network first.";
             return route + " v1 sends one zip pack (folders) or the source file as-is. Catcher unpacks the zip into a folder tree on that PC. Per-file HTTPS resume is not in this version — restart the send if it fails. TLS fingerprint pinning is required; TLS cannot be turned off.";
         }
     }
@@ -713,6 +713,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             {
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowProgressDetail)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowOpenLog)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowResultBanner)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowHeaderStatus)));
             }
         }
     }
@@ -817,6 +819,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         || JobStats.Files.HasValue
         || JobStats.Bytes.HasValue
         || JobStats.Stage.HasValue;
+
+    public bool ShowResultBanner => !string.IsNullOrWhiteSpace(ResultBanner);
 
     public bool ShowOpenLog =>
         !string.IsNullOrWhiteSpace(ResultBanner) && !string.IsNullOrWhiteSpace(_resultLogJobId);
@@ -1973,7 +1977,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         if (catcherDest)
         {
             var template = catcherTemplate ?? SelectedCatcherTemplate
-                ?? throw new InvalidOperationException("Pick a Catcher template on the Transfer, Queue, or Network tab.");
+                ?? throw new InvalidOperationException("Pick a Catcher template on Transfer, Queue, or View → Network.");
             CatcherCrypto.ValidatePassphrase(_catcherPassphrase);
             CatcherSession.Remember(template.Id, _catcherPassphrase);
             return new Job

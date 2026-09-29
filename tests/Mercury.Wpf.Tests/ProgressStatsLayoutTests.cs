@@ -208,7 +208,11 @@ public class ProgressStatsLayoutTests
                     DataContext = new StatPair("File ETA", "3m 40s"),
                     KeySizeGroup = "FileClockKey"
                 };
-                var clocks = new StackPanel { HorizontalAlignment = HorizontalAlignment.Left };
+                var clocks = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    HorizontalAlignment = HorizontalAlignment.Left
+                };
                 Grid.SetIsSharedSizeScope(clocks, true);
                 clocks.Children.Add(thisFile);
                 clocks.Children.Add(fileEta);
@@ -241,11 +245,17 @@ public class ProgressStatsLayoutTests
                 var etaKeyX = LeftX(fileEta.KeyText, clocks);
                 var thisColonX = LeftX(thisFile.ColonText, clocks);
                 var etaColonX = LeftX(fileEta.ColonText, clocks);
+                var thisY = TopY(thisFile, clocks);
+                var etaY = TopY(fileEta, clocks);
 
-                Assert.True(Math.Abs(thisKeyX - etaKeyX) < 1.5, $"key words must start on the same X ({thisKeyX} vs {etaKeyX})");
-                Assert.True(Math.Abs(thisColonX - etaColonX) < 1.5, $"colons must share an X ({thisColonX} vs {etaColonX})");
+                Assert.True(Math.Abs(thisY - etaY) < 2, $"This file and File ETA must share one line ({thisY} vs {etaY})");
+                Assert.True(etaKeyX > RightX(thisFile, clocks), "File ETA sits to the right of This file");
+                Assert.True(Math.Abs(thisFile.KeyColumn.ActualWidth - fileEta.KeyColumn.ActualWidth) < 1.5,
+                    "shared FileClockKey keeps key columns the same width");
                 Assert.True(RightX(thisFile.KeyText, clocks) + 2 < thisColonX, "This file must not right-align to the colon");
                 Assert.True(RightX(fileEta.KeyText, clocks) + 2 < etaColonX, "File ETA must not right-align to the colon");
+                Assert.True(thisKeyX < thisColonX);
+                Assert.True(etaKeyX < etaColonX);
             }
             finally
             {
@@ -371,7 +381,8 @@ public class ProgressStatsLayoutTests
                     BytesCopied = 42,
                     BytesTotal = 1000,
                     StartedUtc = now.AddMinutes(-5),
-                    StageStartedUtc = now.AddMinutes(-2)
+                    StageStartedUtc = now.AddMinutes(-2),
+                    TypeSummary = "Video: 12 files, 2.93 TB (82%); Images: 126 files, 451 MB (<1%)"
                 }, now);
 
                 window = new MainWindow(vm)
@@ -389,7 +400,7 @@ public class ProgressStatsLayoutTests
 
                 Assert.True(vm.ShowOverallProgress);
                 Assert.False(vm.ShowHeaderStatus);
-                Assert.Equal(Visibility.Collapsed, window.HeaderStatusText.Visibility);
+                Assert.Equal(Visibility.Collapsed, window.HeaderStatusBanner.Visibility);
                 Assert.DoesNotContain(
                     FindVisualChildren<TextBlock>(window.ProgressHeaderRoot)
                         .Where(t => t.IsVisible && t.ActualHeight > 0),
@@ -410,10 +421,12 @@ public class ProgressStatsLayoutTests
 
                 var thisKeyX = LeftX(window.HeaderThisFilePair.KeyText, window);
                 var etaKeyX = LeftX(window.HeaderFileEtaPair.KeyText, window);
-                var thisColonX = LeftX(window.HeaderThisFilePair.ColonText, window);
-                var etaColonX = LeftX(window.HeaderFileEtaPair.ColonText, window);
-                Assert.True(Math.Abs(thisKeyX - etaKeyX) < 1.5, $"file clock keys must start on the same X ({thisKeyX} vs {etaKeyX})");
-                Assert.True(Math.Abs(thisColonX - etaColonX) < 1.5, $"file clock colons must share an X ({thisColonX} vs {etaColonX})");
+                var thisY = TopY(window.HeaderThisFilePair, window);
+                var etaY = TopY(window.HeaderFileEtaPair, window);
+                Assert.True(Math.Abs(thisY - etaY) < 3, $"This file and File ETA must share one line ({thisY} vs {etaY})");
+                Assert.True(etaKeyX > RightX(window.HeaderThisFilePair, window), "File ETA sits to the right of This file");
+                Assert.Equal(window.HeaderThisFilePair.KeySizeGroup, window.HeaderFileEtaPair.KeySizeGroup);
+                Assert.True(thisKeyX < LeftX(window.HeaderThisFilePair.ColonText, window));
 
                 var titleY = TopY(window.HeaderProgressTitle, window);
                 var elapsedY = TopY(window.HeaderElapsedPair, window);
@@ -462,6 +475,18 @@ public class ProgressStatsLayoutTests
                 Assert.True(clocksTop + 1 >= currentBottom, "This file / File ETA sit under the Current bar");
                 Assert.True(clocksBottom <= fileTop + 1, "This file / File ETA sit just above the file bar");
                 Assert.True(clocksTop + 1 >= BottomY(window.HeaderCurrentLabel, window), "Current is not a label row above the clocks");
+
+                Assert.Equal(Visibility.Collapsed, window.HeaderStatusBanner.Visibility);
+                Assert.Equal(Visibility.Collapsed, window.HeaderResultBanner.Visibility);
+                Assert.Equal(Visibility.Collapsed, window.HeaderCloudBanner.Visibility);
+                Assert.True(window.HeaderStatusBanner.ActualHeight < 1);
+                Assert.True(window.HeaderResultBanner.ActualHeight < 1);
+                Assert.True(window.HeaderCloudBanner.ActualHeight < 1);
+
+                var typesBottom = BottomY(window.HeaderStatsLine.TypesPair, window);
+                var startTop = TopY(window.HeaderRunButtons, window);
+                var gap = startTop - typesBottom;
+                Assert.InRange(gap, 4, 28);
             }
             finally
             {

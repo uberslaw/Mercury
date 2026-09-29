@@ -18,9 +18,10 @@ public static class HelpDocument
             Body =
                 "Mercury copies files from any Explorer path to a folder, USB, UNC share, or a Catcher over HTTPS. " +
                 "Jobs can pause, resume, and verify that destination files match. There is no installer.\n\n" +
-                "Data defaults to %APPDATA%\\Mercury so journals survive swapping the exe. Open the Settings tab for every file Mercury writes. " +
+                "Data defaults to %APPDATA%\\Mercury so journals survive swapping the exe. Open Options → Settings for every file Mercury writes. " +
                 "Use portable mode (beside the exe) only if you want a USB toolkit copy.\n\n" +
-                "This Help tab is searchable. Sections: Transfer, Job options, RoboFlags, Progress, Tree, Compare, Queue, Console, History, Network, Catcher setup, Theme, Settings."
+                "Help → How to use Mercury is searchable. Theme and Settings live under Options (not tabs). Console, History, and Network are under View. " +
+                "Visible tabs: Transfer, Queue, Tree, Compare. Sections: Transfer, Job options, RoboFlags, Progress, Tree, Compare, Queue, Console, History, Network, Catcher setup, Theme, Settings."
         },
         new()
         {
@@ -72,8 +73,8 @@ public static class HelpDocument
                 "Skip Compressed (default on) copies video, photos, audio, zip/7z/rar, ISO, and similar as files. " +
                 "If the whole job is already compressed, packing is skipped entirely (no zip-of-zips). " +
                 "Uncertain pockets sample about 256 MB (100–500 MB class, bounded by pocket size) and skip packing when it would not help. " +
-                "Settings holds Never pack and Always consider packing extension lists (add/remove; with or without a leading dot). " +
-                "Job options → Extensions… jumps to that Settings page. Pack list wins over Skip Compressed; never-pack always copies as-is; other extensions keep automated classification. " +
+                "Options → Settings holds Never pack and Always consider packing extension lists (add/remove; with or without a leading dot). " +
+                "Job options → Extensions… opens that Settings window. Pack list wins over Skip Compressed; never-pack always copies as-is; other extensions keep automated classification. " +
                 "Leave Small Files off unless you want to force packing everything eligible.\n\n" +
                 "Ignore Storage Limit: still logs Need vs free space but does not abort on thin/growable volumes.\n\n" +
                 "RoboFlags (button on this tab) opens native copy checkboxes — see the RoboFlags help section. Timestamps default on so dest keeps source creation time.\n\n" +
@@ -111,7 +112,7 @@ public static class HelpDocument
                 "The pink header is Progress. The Progress title, status chip, Elapsed, and ETA share one top row (Progress and the chip on the left; Elapsed and ETA sit in the top-right). " +
                 "Current and Overall bars stay on the next row for running, paused, stopped, and finished (Overall hides only when there is a single job). Each bar shows its name on the left of the bar and its percent in the middle — there is no separate Current / Overall label row. " +
                 "Below 1%, the label uses one decimal (0.1%) or <1% so a started job never shows 0%. " +
-                "Under those bars, This file (elapsed on this file) and File ETA sit just above the current-file bar, left-aligned with the Current bar, with left-aligned keys and aligned colons. The current-file bar matches the Current bar’s width (it does not run under Overall); it fills as that file copies, and the landing-relative path (and percent when size is known) sits on the bar without a blur or glow. Between files, while idle, verifying, or writing rundown, that bar is empty, the path is —, and both file clocks are —. Overall job bar and Overall ETA are unchanged. " +
+                "Under those bars, This file (elapsed on this file) and File ETA share one line just above the current-file bar, left-aligned with the Current bar, with left-aligned keys and aligned colons. The current-file bar matches the Current bar’s width (it does not run under Overall); it fills as that file copies, and the landing-relative path (and percent when size is known) sits on the bar without a blur or glow. Between files, while idle, verifying, or writing rundown, that bar is empty, the path is —, and both file clocks are —. Overall job bar and Overall ETA are unchanged. " +
                 "The stats table is Stage / File / This stage / Files / Bytes / Speed — inactive cells show — (or last known values), not a different rundown-only layout. Keys are bold; colons and values line up in columns. Elapsed and ETA use the Progress size and the table’s Label / Value fonts. A Copying filename is not repeated as a status line under Types — it is already on the current-file bar. Exception text never replaces the table; errors go to Console and History. " +
                 "Overall is copied bytes versus known totals across every queued job. A finished job counts its copied size as both done and total, so job 2 of 2 at <1% cannot show Overall 100%. " +
                 "MB/s or Mbps (Global) switches Speed between MB/s and Mbps (1 MB/s = 8 Mbps). " +
@@ -122,7 +123,7 @@ public static class HelpDocument
                 "Job: 2 of 5 is the running job’s place in the listed queue (omitted when there is a single job). " +
                 "Stats sit under the bars in a table (key: value), including the current File name. Other status text (Paused, Stopping, Unpacking) still lives in this header — the Transfer tab no longer repeats them. " +
                 "Start, Pause, Pause after this file, and Stop sit under the current-file bar at the bottom of this header. Start reads Resume when paused or when Source/Dest match a stopped job you can continue. " +
-                "When a job finishes incomplete, Open log on this header (and Job log on the Console tab) shows that job’s text log in the Console pane. " +
+                "When a job finishes incomplete, Open log on this header (and Job log under View → Console) shows that job’s text log in the Console pane. " +
                 "During enumerate, Types shows a mix such as Video: 40 files, 2.1 TB (82%). Each type includes its file count and share of total bytes. If that line would wrap, a one-line summary is shown; more expands the rest as aligned columns (type, files, size, share). " +
                 "Writing rundown and Verifying run in the background after copy so the next queued job can start transferring. " +
                 "The copier stays one job at a time; Start is enabled when that copy slot is free. Stop during rundown or verify is immediate. " +
@@ -134,6 +135,8 @@ public static class HelpDocument
             Title = "Tree tab",
             Body =
                 "Folders only from the current or last job journal — not 125k file nodes. Each row: folder name, Files, Subdirs, Done %, ETA. " +
+                "Collapsed Files is the recursive total under that folder. Expanded Files is files sitting in that folder only — child rows show their own counts (recursive if collapsed, direct-only if expanded). " +
+                "Subdirs stays the immediate child-folder count. When a parent is expanded and has no files of its own, Done % and ETA show — so they are not copied from the child. " +
                 "Expand a folder for the same columns on child folders. Leaf folders show Subdirs as 0. Starts collapsed at the source’s immediate child folders. " +
                 "Done % is copied/unpacked/skipped bytes in that subtree versus the enumerated total there (file count if sizes are 0). " +
                 "ETA is remaining subtree bytes ÷ job speed, or — until speed exists. Idle with no job is empty."
@@ -148,7 +151,7 @@ public static class HelpDocument
                 "Advanced also compares size, last-write time (optional FAT 2s, same as RoboFlags), name casing, and files per folder. Tick Hash (xxHash64, the Thorough verify hasher) only if you need content compare — it is off by default because it is slow.\n\n" +
                 "Filters choose which difference kinds appear in the summary, highlight cards, list, and TXT export. Default filters are folder counts and file counts only. " +
                 "Highlight cards show the main diffs to act on (top source-only folders in red, dest-only in purple, largest size mismatches, newest time mismatches, hash failures). " +
-                "Show destination-only is on by default; turn it off to hide dest-only files and folders from the list and cards. Summary counts and Export TXT still include dest-only. The list below is capped; Export TXT writes the full enabled lists (default name compare-YYYYMMDD-HHMM.txt under Compare reports in Settings, or a path you pick).\n\n" +
+                "Show destination-only is on by default; turn it off to hide dest-only files and folders from the list and cards. Summary counts and Export TXT still include dest-only. The list below is capped; Export TXT writes the full enabled lists (default name compare-YYYYMMDD-HHMM.txt under Compare reports in Options → Settings, or a path you pick).\n\n" +
                 "Add missing to queue creates a catch-up copy Source→Dest or Dest→Source: Include source folder name off (contents of one root into the other), overwrite Skip if dest newer or equal. Source→Dest is the catch-up of items missing on dest. It is added to the Queue and does not start. Enumeration skips files that already match dest — Mercury does not build a custom skip list."
         },
         new()
@@ -170,26 +173,27 @@ public static class HelpDocument
         new()
         {
             Id = "console",
-            Title = "Console tab",
+            Title = "Console",
             Body =
-                "Live log of the current session. Each line starts with the local date and 24-hour time (not UTC, not 12-hour). Search filters lines; Follow stays on the newest line; Errors only hides info. " +
+                "View → Console shows the live log of the current session. Each line starts with the local date and 24-hour time (not UTC, not 12-hour). Search filters lines; Follow stays on the newest line; Errors only hides info. " +
                 "Copy copies the view. Job log loads that job’s text log into this pane. Open logs folder opens the logs directory. " +
-                "A daily error log (mercury-YYYYMMDD.log) is also written under Settings so you can check failures later. " +
+                "Open log on an incomplete job still lands here. " +
+                "A daily error log (mercury-YYYYMMDD.log) is also written under Options → Settings so you can check failures later. " +
                 "When a finished job is verifying or writing its rundown off the copy slot, the console logs Verify running in background then Rundown running in background."
         },
         new()
         {
             Id = "history",
-            Title = "History tab",
+            Title = "History",
             Body =
-                "Finished transfers, newest first. Click a row to restore its rundown (started, ended, files, mismatch). Open log on a row that mentions a log (or still has a log file) shows that job’s text log on the Console tab. Stored in history.db."
+                "View → History lists finished transfers, newest first. Click a row to restore its rundown (started, ended, files, mismatch). Open log on a row that mentions a log (or still has a log file) shows that job’s text log under View → Console. Stored in history.db."
         },
         new()
         {
             Id = "network",
-            Title = "Network tab",
+            Title = "Network",
             Body =
-                "Create a Catcher template (public host/IP, public port, internal listen port, optional bind IP). " +
+                "View → Network creates a Catcher template (public host/IP, public port, internal listen port, optional bind IP). " +
                 "Export a .mercury-catch file — the passphrase is not stored in the file. Copy that file to the receiving PC. " +
                 "Default public port is 443; Catcher listens on 8443 internally. Mercury does not punch NAT: the router must forward 443 → the Catcher LAN port, and Catcher must already be listening."
         },
@@ -207,24 +211,24 @@ public static class HelpDocument
         new()
         {
             Id = "theme",
-            Title = "Theme tab",
+            Title = "Theme",
             Body =
-                "Colours use hex or the picker and apply live. Save / Load / Delete named themes in themes.json. " +
+                "Options → Theme opens the theme editor (not a tab). Colours use hex or the picker and apply live. Save / Load / Delete named themes in themes.json. " +
                 "Export writes a portable .mercury-theme.json (colours and fonts) you can attach in chat or Import later. " +
                 "Fonts are per text type: progress stats, labels/keys, values, body/tabs, buttons, console. " +
-                "Hover a colour or font row while the Theme tab (or preview) is open to outline the chrome that uses it. " +
-                "Leaving Theme clears those outlines and closes the preview. " +
+                "Hover a colour or font row while the theme editor (or preview) is open to outline the chrome that uses it. " +
+                "Closing Theme clears those outlines and closes the preview. " +
                 "Hover or click an element in the theme preview to highlight the matching editor rows. Reset restores the shipping default."
         },
         new()
         {
             Id = "settings",
-            Title = "Settings tab",
+            Title = "Settings",
             Body =
-                "Lists every path Mercury writes (data folder, error log, job logs, journals, settings.json, last-job.json, queue.json, history.db, themes.json, Catcher files, compare reports). " +
-                "Open folder jumps to that location in Explorer.\n\n" +
+                "Options → Settings (not a tab) lists every path Mercury writes (data folder, error log, job logs, journals, settings.json, last-job.json, queue.json, history.db, themes.json, Catcher files, compare reports). " +
+                "Open folder jumps to that location in Explorer. Global bandwidth stays on the Transfer tab.\n\n" +
                 "Pack / skip extensions: never-pack copies those types as files; pack list opts types into small-file pockets even if they look compressed. " +
-                "Defaults match Skip Compressed (video, photos, audio, archives, ISO). Reset defaults restores that set. Job options → Extensions… opens this section.\n\n" +
+                "Defaults match Skip Compressed (video, photos, audio, archives, ISO). Reset defaults restores that set. Job options → Extensions… opens this window.\n\n" +
                 "Default data root is %APPDATA%\\Mercury. Portable (beside the exe) is off unless you tick it (takes effect on next launch) " +
                 "or Mercury finds jobs beside the exe and none in AppData — it will keep that journal so Resume last still works."
         }

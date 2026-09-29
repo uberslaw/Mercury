@@ -1,0 +1,80 @@
+<Window x:Class="Mercury.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:Mercury"
+        Title="Settings"
+        Width="860" Height="640"
+        MinWidth="640" MinHeight="420"
+        Background="{DynamicResource BgBrush}">
+    <DockPanel Margin="12">
+        <GroupBox Header="Pack / skip extensions" DockPanel.Dock="Top" Margin="0,0,0,12">
+            <StackPanel>
+                <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,8"
+                           Text="Never-pack extensions copy as files (not zipped). Pack extensions stay eligible for small-file pockets even if they look already-compressed (for example adding .mp4 opts video into packing). Unspecified extensions keep automated detection. Job options → Extensions… opens this window. Defaults match Skip Compressed: video, photos, audio, zip/7z/rar, ISO."/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="12"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="Never pack (copy as-is)" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                        <ListBox ItemsSource="{Binding NeverPackExtensions}"
+                                 SelectedItem="{Binding SelectedNeverPack}"
+                                 Height="140" Margin="0,0,0,8"/>
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right" Content="Reset defaults" Style="{StaticResource CompactButton}"
+                                    Command="{Binding ResetNeverPackCommand}" Margin="8,0,0,0"/>
+                            <Button DockPanel.Dock="Right" Content="Remove" Style="{StaticResource CompactButton}"
+                                    Command="{Binding RemoveNeverPackCommand}" Margin="8,0,0,0"/>
+                            <Button DockPanel.Dock="Right" Content="Add" Style="{StaticResource CompactButton}"
+                                    Command="{Binding AddNeverPackCommand}" Margin="8,0,0,0"/>
+                            <TextBox Text="{Binding NeverPackDraft, UpdateSourceTrigger=PropertyChanged}"
+                                     ToolTip="Extension with or without a dot (mp4 or .mp4)."/>
+                        </DockPanel>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="Always consider packing" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                        <ListBox ItemsSource="{Binding PackExtensions}"
+                                 SelectedItem="{Binding SelectedPackExtension}"
+                                 Height="140" Margin="0,0,0,8"/>
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right" Content="Remove" Style="{StaticResource CompactButton}"
+                                    Command="{Binding RemovePackExtensionCommand}" Margin="8,0,0,0"/>
+                            <Button DockPanel.Dock="Right" Content="Add" Style="{StaticResource CompactButton}"
+                                    Command="{Binding AddPackExtensionCommand}" Margin="8,0,0,0"/>
+                            <TextBox Text="{Binding PackExtensionDraft, UpdateSourceTrigger=PropertyChanged}"
+                                     ToolTip="Opt an extension into packing pockets even if Skip Compressed would skip it."/>
+                        </DockPanel>
+                    </StackPanel>
+                </Grid>
+            </StackPanel>
+        </GroupBox>
+        <GroupBox Header="Data location" DockPanel.Dock="Top">
+            <StackPanel>
+                <TextBlock Text="{Binding DataRootSummary}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                <CheckBox Content="Portable: keep data beside Mercury.exe"
+                          IsChecked="{Binding PortableData}"
+                          ToolTip="Off (default) uses %APPDATA%\Mercury so logs and journals survive swapping the exe. Takes effect the next time you start Mercury."/>
+            </StackPanel>
+        </GroupBox>
+        <TextBlock DockPanel.Dock="Top" Text="Every file and folder Mercury writes. Open folder to show it in Explorer."
+                   Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,8" TextWrapping="Wrap"/>
+        <ListBox ItemsSource="{Binding DataPaths}" FontFamily="{DynamicResource BodyFontFamily}" FontSize="{DynamicResource BodyFontSize}"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                 HorizontalContentAlignment="Stretch">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <DockPanel Margin="0,2">
+                        <Button DockPanel.Dock="Right" Content="Open folder" Style="{StaticResource CompactButton}" Margin="8,0,0,0"
+                                Command="{Binding OpenFolderCommand}"/>
+                        <StackPanel>
+                            <TextBlock Text="{Binding Label}" FontWeight="SemiBold"/>
+                            <TextBlock Text="{Binding FullPath}" TextWrapping="Wrap" FontFamily="Consolas" FontSize="12" Margin="0,2,0,0"/>
+                        </StackPanel>
+                    </DockPanel>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+    </DockPanel>
+</Window>

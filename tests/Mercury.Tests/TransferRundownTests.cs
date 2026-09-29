@@ -401,12 +401,13 @@ public class TransferRundownTests
         Assert.Contains("job 2 of 2 at <1% cannot show Overall 100%", progress.Body, StringComparison.Ordinal);
         Assert.Contains("Start, Pause, Pause after this file, and Stop sit under the current-file bar", progress.Body, StringComparison.Ordinal);
         Assert.Contains("This file (elapsed on this file) and File ETA", progress.Body, StringComparison.Ordinal);
+        Assert.Contains("share one line", progress.Body, StringComparison.Ordinal);
         Assert.Contains("just above the current-file bar", progress.Body, StringComparison.Ordinal);
         Assert.Contains("does not run under Overall", progress.Body, StringComparison.Ordinal);
         Assert.Contains("without a blur or glow", progress.Body, StringComparison.Ordinal);
         Assert.DoesNotContain("to the right of that bar", progress.Body, StringComparison.Ordinal);
         Assert.Contains("Start reads Resume when paused or when Source/Dest match a stopped job", progress.Body, StringComparison.Ordinal);
-        Assert.Contains("choose No, that snapshot is cleared", progress.Body, StringComparison.Ordinal);
+        Assert.Contains("Choose No to drop that leftover heartbeat", progress.Body, StringComparison.Ordinal);
         Assert.Contains("Rundown running in background", HelpDocument.Sections.Single(s => s.Id == "console").Body, StringComparison.Ordinal);
         Assert.Contains("local date and 24-hour time", HelpDocument.Sections.Single(s => s.Id == "console").Body, StringComparison.Ordinal);
         Assert.DoesNotContain("Files; ", progress.Body, StringComparison.Ordinal);
@@ -423,6 +424,11 @@ public class TransferRundownTests
         var theme = HelpDocument.Sections.Single(s => s.Id == "theme");
         Assert.Contains(".mercury-theme.json", theme.Body, StringComparison.Ordinal);
         Assert.Contains("fonts", theme.Body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Options → Theme", theme.Body, StringComparison.Ordinal);
+        var settings = HelpDocument.Sections.Single(s => s.Id == "settings");
+        Assert.Contains("Options → Settings", settings.Body, StringComparison.Ordinal);
+        Assert.Contains("View → Console", HelpDocument.Sections.Single(s => s.Id == "console").Body, StringComparison.Ordinal);
+        Assert.Contains("recursive total", HelpDocument.Sections.Single(s => s.Id == "tree").Body, StringComparison.Ordinal);
     }
 
     [Fact]

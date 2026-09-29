@@ -476,6 +476,38 @@ public class PathAndTreeUiTests
     }
 
     [Fact]
+    public void FolderTreeItem_ExpandedFilesAreDirectOnly()
+    {
+        var nodes = FolderTree.Build(
+            [
+                new FileRecord
+                {
+                    RelativePath = @"Warren Truss\compressed\a.zip",
+                    Size = 100,
+                    Status = FileCopyStatus.Copied
+                },
+                new FileRecord
+                {
+                    RelativePath = @"Warren Truss\compressed\b.zip",
+                    Size = 100,
+                    Status = FileCopyStatus.Pending
+                }
+            ],
+            bytesPerSecond: 50);
+        var parent = Assert.Single(nodes);
+        var item = new FolderTreeItem(parent, new HashSet<string>());
+        Assert.False(item.IsExpanded);
+        Assert.Equal("2", item.FilesText);
+        Assert.Equal("50%", item.PercentText);
+        item.IsExpanded = true;
+        Assert.Equal("0", item.FilesText);
+        Assert.Equal("—", item.PercentText);
+        Assert.Equal("—", item.EtaText);
+        Assert.Equal("2", item.Children[0].FilesText);
+        Assert.Equal("1", item.SubdirsText);
+    }
+
+    [Fact]
     public void QueueTileShowsStartAndPending()
     {
         var item = new QueueJobItem(new Job

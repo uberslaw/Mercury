@@ -5,7 +5,7 @@
              Foreground="{DynamicResource TextBrush}">
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition x:Name="KeyColumn" Width="Auto" SharedSizeGroup="ProgressStatKey0"/>
+            <ColumnDefinition x:Name="KeyColumn" x:FieldModifier="internal" Width="Auto" SharedSizeGroup="ProgressStatKey0"/>
             <ColumnDefinition Width="Auto"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>

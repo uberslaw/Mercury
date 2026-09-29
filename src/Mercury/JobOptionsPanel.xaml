@@ -97,11 +97,11 @@
                           ToolTip="Hint: pack every non-compressed file into a stored transport zip (old behaviour). Leave off (default) so Mercury plans at start: stream already-compressed and large files immediately while packing only small-file pockets that would help. Skip Compressed and Settings extension lists still apply. Unpack restores a normal folder tree and deletes the zip."/>
                 <CheckBox Style="{StaticResource OptionsCheckBox}"
                           Content="Skip Compressed" IsChecked="{Binding SkipCompressedWhenPacking}"
-                          ToolTip="Default on. Video, photos, audio, zip/7z/rar, ISO, and similar copy as-is — they are not wrapped. Edit the lists on Settings (Extensions… here). Pack list = eligible even if compressed. Never-pack list = always copy as files. Unspecified extensions keep automated classification."/>
+                          ToolTip="Default on. Video, photos, audio, zip/7z/rar, ISO, and similar copy as-is — they are not wrapped. Edit the lists under Options → Settings (Extensions… here). Pack list = eligible even if compressed. Never-pack list = always copy as files. Unspecified extensions keep automated classification."/>
                 <Button Content="Extensions…" Style="{StaticResource OptionsBoxButton}"
                         Command="{Binding OpenPackExtensionsCommand}"
                         Margin="8,0,0,0"
-                        ToolTip="Opens Settings to add or remove file extensions Mercury should pack, or never pack. Defaults match Skip Compressed (video, photos, audio, archives, ISO)."/>
+                        ToolTip="Opens Options → Settings to add or remove file extensions Mercury should pack, or never pack. Defaults match Skip Compressed (video, photos, audio, archives, ISO)."/>
             </StackPanel>
             <StackPanel Grid.Row="1" Orientation="Horizontal" VerticalAlignment="Center">
                 <CheckBox Style="{StaticResource OptionsCheckBox}"

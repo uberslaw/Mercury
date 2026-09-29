@@ -88,6 +88,7 @@
                                        FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}"/>
                         </Grid>
                         <StackPanel Grid.Row="1"
+                                    Orientation="Horizontal"
                                     Margin="0,4,0,0"
                                     HorizontalAlignment="Left"
                                     Grid.IsSharedSizeScope="True">
@@ -96,7 +97,8 @@
                                                     KeySizeGroup="FileClockKey"
                                                     Foreground="{DynamicResource OnHeaderBrush}"/>
                             </Border>
-                            <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Label,Value,Progress">
+                            <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="OnHeaderBrush,Label,Value,Progress"
+                                    Margin="16,0,0,0">
                                 <local:StatPairText x:Name="PreviewFileEta"
                                                     KeySizeGroup="FileClockKey"
                                                     Foreground="{DynamicResource OnHeaderBrush}"/>

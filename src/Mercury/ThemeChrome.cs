@@ -26,7 +26,7 @@ public static class ThemeChrome
     public static event Action<IReadOnlyList<string>, bool>? EditorJumpRequested;
 
     /// <summary>
-    /// Inverse-outline helpers only run while Theme tab or the theme preview window is in session.
+    /// Inverse-outline helpers only run while Options → Theme or the theme preview window is in session.
     /// </summary>
     public static bool HelpersEnabled { get; private set; }
 

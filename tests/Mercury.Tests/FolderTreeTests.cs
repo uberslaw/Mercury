@@ -17,6 +17,8 @@ public class FolderTreeTests
         Assert.Equal("a", nodes[0].Name);
         Assert.Equal("e", nodes[1].Name);
         Assert.Equal(2, nodes[0].FileCount);
+        Assert.Equal(1, nodes[0].DirectFileCount);
+        Assert.Equal(1, nodes[0].Children[0].DirectFileCount);
         Assert.Equal(1, nodes[0].SubdirCount);
         Assert.Equal("50%", nodes[0].PercentText);
         Assert.Equal("2s", nodes[0].EtaText);
@@ -49,6 +51,28 @@ public class FolderTreeTests
         Assert.Equal(0, leaf.SubdirCount);
         Assert.Equal("50%", leaf.PercentText);
         Assert.Equal("—", leaf.EtaText);
+    }
+
+    [Fact]
+    public void ExpandedParentFilesAreDirectOnly_CollapsedAreRecursive()
+    {
+        var nodes = FolderTree.Build(
+            [
+                Rec(@"Warren Truss\compressed\a.zip", 100, FileCopyStatus.Copied),
+                Rec(@"Warren Truss\compressed\b.zip", 100, FileCopyStatus.Pending)
+            ],
+            bytesPerSecond: 50);
+
+        var parent = Assert.Single(nodes);
+        Assert.Equal("Warren Truss", parent.Name);
+        Assert.Equal(2, parent.FileCount);
+        Assert.Equal(0, parent.DirectFileCount);
+        Assert.Equal(1, parent.SubdirCount);
+        var child = Assert.Single(parent.Children);
+        Assert.Equal("compressed", child.Name);
+        Assert.Equal(2, child.FileCount);
+        Assert.Equal(2, child.DirectFileCount);
+        Assert.Equal(0, child.SubdirCount);
     }
 
     [Fact]

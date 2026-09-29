@@ -13,7 +13,10 @@ public partial class MainWindow : Window
     private ScrollViewer? _consoleScroll;
     private ThemePreviewWindow? _preview;
     private ThemeEditorWindow? _editor;
+    private SettingsWindow? _settings;
+    private HelpWindow? _help;
     private JobOptionsWindow? _jobOptions;
+    private bool _themeSession;
     private bool _forceClose;
     private bool _closing;
 
@@ -34,14 +37,7 @@ public partial class MainWindow : Window
         vm.Theme.PopOutEditorRequested = OpenThemeEditor;
         vm.OpenJobOptionsRequested = OpenJobOptions;
         vm.SelectConsoleRequested = SelectConsoleTab;
-        vm.OpenSettingsRequested = () =>
-        {
-            LeaveThemeSession();
-            if (SettingsTab is not null)
-            {
-                SettingsTab.IsSelected = true;
-            }
-        };
+        vm.OpenSettingsRequested = OpenSettingsWindow;
         vm.CloseWindowRequested = () =>
         {
             _forceClose = true;
@@ -55,17 +51,39 @@ public partial class MainWindow : Window
 
     private MainViewModel Vm => (MainViewModel)DataContext;
 
-    private void HelpMenu_Click(object sender, RoutedEventArgs e)
+    private void HelpMenu_Click(object sender, RoutedEventArgs e) =>
+        OpenHelpWindow();
+
+    private void ExitMenu_Click(object sender, RoutedEventArgs e) =>
+        Close();
+
+    private void ViewConsole_Click(object sender, RoutedEventArgs e) =>
+        SelectConsoleTab();
+
+    private void ViewHistory_Click(object sender, RoutedEventArgs e)
     {
-        if (HelpTab is not null)
+        if (HistoryTab is not null)
         {
-            HelpTab.IsSelected = true;
+            HistoryTab.IsSelected = true;
         }
     }
 
+    private void ViewNetwork_Click(object sender, RoutedEventArgs e)
+    {
+        if (NetworkTab is not null)
+        {
+            NetworkTab.IsSelected = true;
+        }
+    }
+
+    private void OptionsTheme_Click(object sender, RoutedEventArgs e) =>
+        StartThemeSession();
+
+    private void OptionsSettings_Click(object sender, RoutedEventArgs e) =>
+        OpenSettingsWindow();
+
     private void SelectConsoleTab()
     {
-        LeaveThemeSession();
         if (ConsoleTab is not null)
         {
             ConsoleTab.IsSelected = true;
@@ -83,26 +101,19 @@ public partial class MainWindow : Window
 
         if (QueueTab is { IsSelected: true })
         {
-            LeaveThemeSession();
             Vm.PrepareQueueForm();
-            return;
         }
-
-        if (ThemeTab is { IsSelected: true })
-        {
-            ThemeChrome.SetHelpersEnabled(true);
-            OpenThemePreview();
-            return;
-        }
-
-        LeaveThemeSession();
     }
 
     private void LeaveThemeSession()
     {
+        _themeSession = false;
         ThemeChrome.SetHelpersEnabled(false);
         Vm.Theme.ClearRowHighlights();
-        CloseThemePreview();
+        if (_preview is { IsLoaded: true })
+        {
+            CloseThemePreview();
+        }
     }
 
     private void CloseThemePreview()
@@ -122,13 +133,43 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OpenThemePreview()
+    private void StartThemeSession()
     {
-        if (ThemeTab is not { IsSelected: true })
+        _themeSession = true;
+        ThemeChrome.SetHelpersEnabled(true);
+        OpenThemeEditor();
+        OpenThemePreview();
+    }
+
+    private void OpenSettingsWindow()
+    {
+        if (_settings is { IsLoaded: true })
         {
+            _settings.Activate();
             return;
         }
 
+        _settings = new SettingsWindow(Vm) { Owner = this };
+        _settings.Closed += (_, _) => _settings = null;
+        _settings.Show();
+    }
+
+    private void OpenHelpWindow()
+    {
+        if (_help is { IsLoaded: true })
+        {
+            _help.Activate();
+            return;
+        }
+
+        _help = new HelpWindow(Vm) { Owner = this };
+        _help.Closed += (_, _) => _help = null;
+        _help.Show();
+    }
+
+    private void OpenThemePreview()
+    {
+        _themeSession = true;
         ThemeChrome.SetHelpersEnabled(true);
         if (_preview is { IsLoaded: true })
         {
@@ -153,10 +194,9 @@ public partial class MainWindow : Window
 
         _preview = null;
         ThemeChrome.Unpin();
-        if (ThemeTab is not { IsSelected: true })
+        if (_editor is not { IsLoaded: true })
         {
-            ThemeChrome.SetHelpersEnabled(false);
-            Vm.Theme.ClearRowHighlights();
+            LeaveThemeSession();
         }
     }
 
@@ -183,7 +223,7 @@ public partial class MainWindow : Window
 
     private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
-        if (e.Key != System.Windows.Input.Key.Escape || ThemeTab is not { IsSelected: true })
+        if (e.Key != System.Windows.Input.Key.Escape || !_themeSession)
         {
             return;
         }
@@ -202,9 +242,18 @@ public partial class MainWindow : Window
             return;
         }
 
+        _themeSession = true;
+        ThemeChrome.SetHelpersEnabled(true);
         _editor = new ThemeEditorWindow(Vm.Theme) { Owner = this };
         _preview?.Activate();
-        _editor.Closed += (_, _) => _editor = null;
+        _editor.Closed += (_, _) =>
+        {
+            _editor = null;
+            if (_preview is not { IsLoaded: true })
+            {
+                LeaveThemeSession();
+            }
+        };
         PlaceBeside(this, _editor, 16);
         _editor.Show();
     }
@@ -404,6 +453,8 @@ public partial class MainWindow : Window
         Vm.Theme.ClearRowHighlights();
         _preview?.Close();
         _editor?.Close();
+        _settings?.Close();
+        _help?.Close();
         _jobOptions?.Close();
         Vm.Closing();
         Vm.Dispose();
