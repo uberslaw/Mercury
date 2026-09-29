@@ -396,6 +396,8 @@ public class TransferRundownTests
         Assert.Contains("share one top row", progress.Body, StringComparison.Ordinal);
         Assert.Contains("name on the left of the bar", progress.Body, StringComparison.Ordinal);
         Assert.Contains("not repeated as a status line", progress.Body, StringComparison.Ordinal);
+        Assert.Contains("lined up with the Speed column", progress.Body, StringComparison.Ordinal);
+        Assert.Contains("2 ranges", progress.Body, StringComparison.Ordinal);
         Assert.DoesNotContain("Elapsed above ETA", progress.Body, StringComparison.Ordinal);
         Assert.Contains("Keys are bold", progress.Body, StringComparison.Ordinal);
         Assert.Contains("job 2 of 2 at <1% cannot show Overall 100%", progress.Body, StringComparison.Ordinal);

@@ -726,6 +726,176 @@ public class ProgressStatsLayoutTests
         });
     }
 
+    [Fact]
+    public void CopyModeChecks_StayPut_WhenLiveStatsChangeLength()
+    {
+        WpfSta.Run(() =>
+        {
+            WpfSta.EnsureApp();
+            Window? window = null;
+            try
+            {
+                var line = new ProgressStatsLine
+                {
+                    DataContext = CopyStats(shortText: true, severalJobs: false),
+                    Width = 980
+                };
+                window = new Window
+                {
+                    Width = 1000,
+                    Height = 320,
+                    Content = line
+                };
+                window.Show();
+                WpfSta.Flush();
+                line.UpdateLayout();
+                WpfSta.Flush();
+
+                var checks = CopyModeChecks(line);
+                Assert.Equal(
+                    ["Adaptive", "One stream", "2 files", "4 files", "8 files", "2 ranges"],
+                    checks.Select(c => c.Content as string).ToArray());
+                Assert.Equal(1, Grid.GetRow(line.CopyModeChecks));
+                Assert.Equal(1, Grid.GetColumn(line.CopyModeChecks));
+                Assert.Equal(3, Grid.GetColumnSpan(line.CopyModeChecks));
+                Assert.Equal(new Thickness(0, 2, 0, 2), line.CopyModeChecks.Margin);
+                Assert.Same(line.StatsGrid, line.CopyModeChecks.Parent);
+
+                var speed = Pair(FindVisualChildren<StatPairText>(line), "Speed");
+                Assert.True(
+                    Math.Abs(LeftX(checks[0], line) - LeftX(speed, line)) < 2,
+                    $"Adaptive must line up with the Speed column ({LeftX(checks[0], line)} vs {LeftX(speed, line)})");
+                AssertCopyModesClearOfStats(line, checks);
+
+                var anchored = checks.Select(c => (LeftX(c, line), TopY(c, line), c.ActualWidth)).ToArray();
+                foreach (var stats in new[]
+                {
+                    CopyStats(shortText: false, severalJobs: false),
+                    CopyStats(shortText: true, severalJobs: true),
+                    CopyStats(shortText: false, severalJobs: true),
+                    CopyStats(shortText: true, severalJobs: false)
+                })
+                {
+                    line.DataContext = stats;
+                    WpfSta.Flush();
+                    line.UpdateLayout();
+                    WpfSta.Flush();
+
+                    checks = CopyModeChecks(line);
+                    Assert.Equal(new Thickness(0, 2, 0, 2), line.CopyModeChecks.Margin);
+                    Assert.Equal(1, Grid.GetRow(line.CopyModeChecks));
+                    Assert.Equal(1, Grid.GetColumn(line.CopyModeChecks));
+                    for (var i = 0; i < checks.Length; i++)
+                    {
+                        Assert.True(
+                            Math.Abs(LeftX(checks[i], line) - anchored[i].Item1) < 1.5,
+                            $"{checks[i].Content} moved horizontally ({anchored[i].Item1} → {LeftX(checks[i], line)})");
+                        Assert.True(
+                            Math.Abs(TopY(checks[i], line) - anchored[i].Item2) < 1.5,
+                            $"{checks[i].Content} moved vertically ({anchored[i].Item2} → {TopY(checks[i], line)})");
+                        Assert.True(Math.Abs(checks[i].ActualWidth - anchored[i].Item3) < 1.5);
+                        Assert.True(RightX(checks[i], line) <= line.ActualWidth + 1, $"{checks[i].Content} must stay inside the stats line");
+                    }
+
+                    AssertCopyModesClearOfStats(line, checks);
+                }
+            }
+            finally
+            {
+                try
+                {
+                    window?.Close();
+                }
+                catch
+                {
+                    // test cleanup
+                }
+            }
+        });
+    }
+
+    private static ProgressStats CopyStats(bool shortText, bool severalJobs)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var file = shortText
+            ? "a.zip"
+            : @"Warren Truss\compressed\warren_truss_2026_05_11_22_21_48.zip and 3 other files";
+        var bytes = shortText ? 1024L : 4_080_000_000_000L;
+        var total = shortText ? 4096L : 4_530_000_000_000L;
+        return ProgressStats.From(
+            new JobProgress
+            {
+                Status = JobStatus.Copying,
+                StageName = "Copying",
+                StageIndex = 2,
+                StageCount = 4,
+                CurrentFile = file,
+                CurrentFileBytesCopied = shortText ? 10 : bytes / 2,
+                CurrentFileBytesTotal = shortText ? 100 : total,
+                FilesCopied = shortText ? 3 : 49974,
+                FilesTotal = shortText ? 10 : 64375,
+                BytesCopied = bytes,
+                BytesTotal = total,
+                BytesPerSecond = shortText ? 1024 : 128_000_000,
+                SpeedMeasured = true,
+                StartedUtc = now.AddHours(shortText ? -1 : -11),
+                StageStartedUtc = now.AddSeconds(shortText ? -4 : -13),
+                TypeSummary = shortText
+                    ? "Video: 2 files, 1 MB (50%)"
+                    : "Video: 12,632 files, 2.93 TB (65%); Images: 126 files, 451 MB (<1%); Archives: 51,514 files, 1.60 TB (35%)"
+            },
+            now,
+            jobIndex: severalJobs ? 2 : 1,
+            jobCount: severalJobs ? 4 : 1,
+            overall: severalJobs ? new JobProgress { FilesCopied = 1200, FilesTotal = 90000 } : null,
+            megabits: !shortText);
+    }
+
+    private static CheckBox[] CopyModeChecks(ProgressStatsLine line) =>
+        FindVisualChildren<CheckBox>(line.CopyModeChecks).ToArray();
+
+    private static void AssertCopyModesClearOfStats(ProgressStatsLine line, IReadOnlyList<CheckBox> checks)
+    {
+        var pairs = FindVisualChildren<StatPairText>(line).ToArray();
+        foreach (var key in new[] { "Bytes", "Types", "Stage", "File" })
+        {
+            var pair = Pair(pairs, key);
+            foreach (var check in checks)
+            {
+                Assert.False(
+                    Overlaps(check, pair, line),
+                    $"{check.Content} overlaps {key} (check {LeftX(check, line)},{TopY(check, line)} {check.ActualWidth}x{check.ActualHeight}; {key} {LeftX(pair, line)},{TopY(pair, line)} {pair.ActualWidth}x{pair.ActualHeight})");
+            }
+        }
+
+        var bytesBottom = BottomY(Pair(pairs, "Bytes"), line);
+        var speedBottom = BottomY(Pair(pairs, "Speed"), line);
+        var typesTop = TopY(line.TypesPair, line);
+        foreach (var check in checks)
+        {
+            Assert.True(TopY(check, line) + 0.5 >= bytesBottom, $"{check.Content} must sit below Bytes");
+            Assert.True(TopY(check, line) + 0.5 >= speedBottom, $"{check.Content} must sit below Speed");
+            Assert.True(BottomY(check, line) <= typesTop + 0.5, $"{check.Content} must sit above Types");
+            Assert.True(check.ActualWidth > 24, $"{check.Content} must be readable");
+        }
+    }
+
+    private static bool Overlaps(FrameworkElement a, FrameworkElement b, Visual ancestor)
+    {
+        var aLeft = LeftX(a, ancestor);
+        var aTop = TopY(a, ancestor);
+        var aRight = RightX(a, ancestor);
+        var aBottom = BottomY(a, ancestor);
+        var bLeft = LeftX(b, ancestor);
+        var bTop = TopY(b, ancestor);
+        var bRight = RightX(b, ancestor);
+        var bBottom = BottomY(b, ancestor);
+        return aLeft < bRight - 0.5
+            && aRight > bLeft + 0.5
+            && aTop < bBottom - 0.5
+            && aBottom > bTop + 0.5;
+    }
+
     private static StatPairText Pair(IEnumerable<StatPairText> pairs, string key) =>
         Assert.Single(pairs, p => p.KeyText.Text == key);
 

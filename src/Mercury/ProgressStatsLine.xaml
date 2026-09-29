@@ -4,13 +4,22 @@
              xmlns:local="clr-namespace:Mercury"
              Foreground="{DynamicResource TextBrush}">
     <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="Progress">
-        <Grid x:Name="StatsHost" Margin="0,4,0,0">
-        <Grid x:Name="StatsGrid" Grid.IsSharedSizeScope="True">
+        <Grid x:Name="StatsGrid" Grid.IsSharedSizeScope="True" Margin="0,4,0,0">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
-            <ItemsControl ItemsSource="{Binding GridCells}">
+            <!-- Four equal columns match the stats UniformGrid. Column 1 is the Speed column
+                 on a single-job copy (Bytes | Speed). Copy mode uses that column boundary,
+                 never the measured width of Speed, Bytes, or the file name. -->
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <ItemsControl Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="4" ItemsSource="{Binding GridCells}">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
                         <UniformGrid Columns="4"/>
@@ -24,8 +33,46 @@
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
+            <StackPanel x:Name="CopyModeChecks"
+                        Grid.Row="1"
+                        Grid.Column="1"
+                        Grid.ColumnSpan="3"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Center"
+                        Margin="0,2,0,2">
+                <StackPanel.Resources>
+                    <Style x:Key="HeaderCopyCheck" TargetType="CheckBox" BasedOn="{StaticResource OptionsCheckBox}">
+                        <Setter Property="FontFamily" Value="{DynamicResource ProgressFontFamily}"/>
+                        <Setter Property="FontSize" Value="{DynamicResource ProgressFontSize}"/>
+                        <Setter Property="Foreground" Value="{DynamicResource OnHeaderBrush}"/>
+                        <Setter Property="Margin" Value="0,0,14,0"/>
+                        <Setter Property="MinHeight" Value="0"/>
+                        <Setter Property="Padding" Value="2,0"/>
+                        <Setter Property="VerticalAlignment" Value="Center"/>
+                    </Style>
+                </StackPanel.Resources>
+                <CheckBox x:Name="CopyModeAdaptiveCheck" Style="{StaticResource HeaderCopyCheck}" Content="Adaptive"
+                          ToolTip="Let Mercury test one stream, several files, and a split large file. This is the default for the next job."
+                          IsChecked="{Binding DataContext.CopyModeAdaptive, RelativeSource={RelativeSource AncestorType=Window}, Mode=TwoWay}"/>
+                <CheckBox x:Name="CopyModeOneStreamCheck" Style="{StaticResource HeaderCopyCheck}" Content="One stream"
+                          ToolTip="Force one stream for the rest of this copy. Does not change the saved Adaptive copy option."
+                          IsChecked="{Binding DataContext.CopyModeOneStream, RelativeSource={RelativeSource AncestorType=Window}, Mode=TwoWay}"/>
+                <CheckBox x:Name="CopyModeTwoFilesCheck" Style="{StaticResource HeaderCopyCheck}" Content="2 files"
+                          ToolTip="Copy two files at once for the rest of this copy."
+                          IsChecked="{Binding DataContext.CopyModeTwoFiles, RelativeSource={RelativeSource AncestorType=Window}, Mode=TwoWay}"/>
+                <CheckBox x:Name="CopyModeFourFilesCheck" Style="{StaticResource HeaderCopyCheck}" Content="4 files"
+                          ToolTip="Copy four files at once for the rest of this copy."
+                          IsChecked="{Binding DataContext.CopyModeFourFiles, RelativeSource={RelativeSource AncestorType=Window}, Mode=TwoWay}"/>
+                <CheckBox x:Name="CopyModeEightFilesCheck" Style="{StaticResource HeaderCopyCheck}" Content="8 files"
+                          ToolTip="Copy eight files at once for the rest of this copy. Adaptive probing does not test this width."
+                          IsChecked="{Binding DataContext.CopyModeEightFiles, RelativeSource={RelativeSource AncestorType=Window}, Mode=TwoWay}"/>
+                <CheckBox x:Name="CopyModeTwoRangesCheck" Style="{StaticResource HeaderCopyCheck}" Content="2 ranges"
+                          ToolTip="Split a large file into two ranges. A file that is too small to split stays on one stream."
+                          IsChecked="{Binding DataContext.CopyModeTwoRanges, RelativeSource={RelativeSource AncestorType=Window}, Mode=TwoWay}"/>
+            </StackPanel>
             <!-- Types is on its own row: grow through the empty cells under Overall files, not over those stats. -->
-            <Grid Grid.Row="1">
+            <Grid Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="4">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
@@ -42,39 +89,6 @@
                                     KeySizeGroup="ProgressStatKey0"
                                     Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=local:ProgressStatsLine}}"/>
             </Grid>
-        </Grid>
-        <StackPanel x:Name="CopyModeChecks" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Top"
-                    Margin="0,2,0,0">
-            <StackPanel.Resources>
-                <Style x:Key="HeaderCopyCheck" TargetType="CheckBox" BasedOn="{StaticResource OptionsCheckBox}">
-                    <Setter Property="FontFamily" Value="{DynamicResource ProgressFontFamily}"/>
-                    <Setter Property="FontSize" Value="{DynamicResource ProgressFontSize}"/>
-                    <Setter Property="Foreground" Value="{DynamicResource OnHeaderBrush}"/>
-                    <Setter Property="Margin" Value="0,0,14,0"/>
-                    <Setter Property="MinHeight" Value="0"/>
-                    <Setter Property="Padding" Value="2,0"/>
-                    <Setter Property="VerticalAlignment" Value="Center"/>
-                </Style>
-            </StackPanel.Resources>
-            <CheckBox x:Name="CopyModeAdaptiveCheck" Style="{StaticResource HeaderCopyCheck}" Content="Adaptive"
-                      ToolTip="Let Mercury test one stream, several files, and a split large file. This is the default for the next job."
-                      IsChecked="{Binding DataContext.CopyModeAdaptive, RelativeSource={RelativeSource AncestorType=Window}, Mode=TwoWay}"/>
-            <CheckBox x:Name="CopyModeOneStreamCheck" Style="{StaticResource HeaderCopyCheck}" Content="One stream"
-                      ToolTip="Force one stream for the rest of this copy. Does not change the saved Adaptive copy option."
-                      IsChecked="{Binding DataContext.CopyModeOneStream, RelativeSource={RelativeSource AncestorType=Window}, Mode=TwoWay}"/>
-            <CheckBox x:Name="CopyModeTwoFilesCheck" Style="{StaticResource HeaderCopyCheck}" Content="2 files"
-                      ToolTip="Copy two files at once for the rest of this copy."
-                      IsChecked="{Binding DataContext.CopyModeTwoFiles, RelativeSource={RelativeSource AncestorType=Window}, Mode=TwoWay}"/>
-            <CheckBox x:Name="CopyModeFourFilesCheck" Style="{StaticResource HeaderCopyCheck}" Content="4 files"
-                      ToolTip="Copy four files at once for the rest of this copy."
-                      IsChecked="{Binding DataContext.CopyModeFourFiles, RelativeSource={RelativeSource AncestorType=Window}, Mode=TwoWay}"/>
-            <CheckBox x:Name="CopyModeEightFilesCheck" Style="{StaticResource HeaderCopyCheck}" Content="8 files"
-                      ToolTip="Copy eight files at once for the rest of this copy. Adaptive probing does not test this width."
-                      IsChecked="{Binding DataContext.CopyModeEightFiles, RelativeSource={RelativeSource AncestorType=Window}, Mode=TwoWay}"/>
-            <CheckBox x:Name="CopyModeTwoRangesCheck" Style="{StaticResource HeaderCopyCheck}" Content="2 ranges"
-                      ToolTip="Split a large file into two ranges. A file that is too small to split stays on one stream."
-                      IsChecked="{Binding DataContext.CopyModeTwoRanges, RelativeSource={RelativeSource AncestorType=Window}, Mode=TwoWay}"/>
-        </StackPanel>
         </Grid>
     </Border>
 </UserControl>

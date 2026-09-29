@@ -580,7 +580,7 @@ public enum HeaderCopyMode
     Files8 = 6
 }
 
-/// <summary>Header checkboxes next to Speed. One mode is on. Not the saved job option.</summary>
+/// <summary>Header checkboxes on a fixed row under the Speed column. One mode is on. Not the saved job option.</summary>
 public static class HeaderCopy
 {
     public static bool IsManual(HeaderCopyMode mode) =>
