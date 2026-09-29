@@ -754,7 +754,7 @@ public class ProgressStatsLayoutTests
                 var checks = CopyModeChecks(line);
                 Assert.Equal(
                     ["Adaptive", "One stream", "2 files", "4 files", "8 files", "2 ranges"],
-                    checks.Select(c => c.Content as string).ToArray());
+                    checks.Select(c => Assert.IsType<string>(c.Content)).ToArray());
                 Assert.Equal(1, Grid.GetRow(line.CopyModeChecks));
                 Assert.Equal(1, Grid.GetColumn(line.CopyModeChecks));
                 Assert.Equal(3, Grid.GetColumnSpan(line.CopyModeChecks));
