@@ -12,7 +12,7 @@ public class TransferRundownTests
     }
 
     [Fact]
-    public void AverageUsesCopiedPlusSkippedOverWallClock()
+    public void AverageBytesPerSecondDividesBytesByElapsed()
     {
         Assert.Equal(5000, TransferRundown.AverageBytesPerSecond(10_000, TimeSpan.FromSeconds(2)));
         Assert.Equal(0, TransferRundown.AverageBytesPerSecond(10_000, TimeSpan.Zero));
@@ -444,6 +444,8 @@ public class TransferRundownTests
         Assert.Equal("Verified — Source and Dest match", rundown.MatchText);
         Assert.Contains("1h 12m 05s", rundown.ElapsedText);
         Assert.Contains(ByteFormatter.Speed(job.AverageBytesPerSecond), rundown.AverageSpeedText);
+        Assert.DoesNotContain("copied + skipped", rundown.AverageSpeedText, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("copied + skipped", string.Join('\n', rundown.ConsoleLines), StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Files:", rundown.OneLine, StringComparison.Ordinal);
         Assert.Contains("Started:", rundown.ConsoleLines[1], StringComparison.Ordinal);
     }
@@ -499,6 +501,8 @@ public class TransferRundownTests
                     SourceFolders = 2,
                     DestFolders = 2,
                     BytesCopied = 4096,
+                    TransferBytes = 2048,
+                    TransferSeconds = 20.48,
                     AverageBytesPerSecond = 100
                 }
             ]);
@@ -512,6 +516,8 @@ public class TransferRundownTests
             Assert.Equal(2, loaded[0].SourceFolders);
             Assert.Equal(2, loaded[0].DestFolders);
             Assert.Equal(4096, loaded[0].BytesCopied);
+            Assert.Equal(2048, loaded[0].TransferBytes);
+            Assert.Equal(20.48, loaded[0].TransferSeconds);
             Assert.Equal(100, loaded[0].AverageBytesPerSecond);
         }
         finally
@@ -552,6 +558,70 @@ public class TransferRundownTests
             TransferRundown.Capture(job, journal, mapping, log: null, name: "t");
             Assert.True(job.SourceFiles > 0);
             Assert.Equal(Path.Combine(dest, "Anchor Span"), mapping.DestRoot, ignoreCase: true);
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(root, true);
+            }
+            catch
+            {
+                // temp leftover is OK
+            }
+        }
+    }
+
+    [Fact]
+    public void CaptureAveragesSavedTransferPaceAndIgnoresSkippedBytes()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mercury-rd-pace-" + Guid.NewGuid().ToString("N"));
+        var src = Path.Combine(root, "src");
+        var dest = Path.Combine(root, "dest");
+        Directory.CreateDirectory(src);
+        Directory.CreateDirectory(dest);
+        File.WriteAllText(Path.Combine(src, "kept.txt"), "kept");
+        File.WriteAllText(Path.Combine(dest, "kept.txt"), "kept");
+        try
+        {
+            var job = new Job
+            {
+                SourcePath = src,
+                DestinationPath = dest,
+                StartedUtc = DateTimeOffset.UtcNow.AddHours(-17),
+                SourceFiles = 2,
+                SourceFolders = 1,
+                TransferBytes = 10_000_000,
+                TransferSeconds = 2,
+                Options = new JobOptions { IncludeSourceFolderName = false }
+            };
+            using var journal = JobJournal.Create(Path.Combine(root, "job"), job);
+            journal.UpsertFile(new FileRecord
+            {
+                RelativePath = "kept.txt",
+                SourcePath = Path.Combine(src, "kept.txt"),
+                DestPath = Path.Combine(dest, "kept.txt"),
+                Size = 4,
+                Status = FileCopyStatus.Copied
+            });
+            journal.UpsertFile(new FileRecord
+            {
+                RelativePath = "already.zip",
+                SourcePath = Path.Combine(src, "already.zip"),
+                DestPath = Path.Combine(dest, "already.zip"),
+                Size = 1_000_000_000,
+                Status = FileCopyStatus.Skipped
+            });
+            var mapping = CopyShape.Resolve(src, dest, includeSourceFolderName: false);
+            TransferRundown.Capture(job, journal, mapping, log: null, name: "t");
+
+            Assert.Equal(5_000_000, job.AverageBytesPerSecond, 1);
+            Assert.True(job.BytesCopied >= 1_000_000_000);
+            var rundown = TransferRundown.From(job);
+            Assert.Contains("(transferred)", rundown.AverageSpeedText, StringComparison.Ordinal);
+            Assert.DoesNotContain("copied + skipped", rundown.AverageSpeedText, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("(transferred)", string.Join('\n', rundown.ConsoleLines), StringComparison.Ordinal);
+            Assert.DoesNotContain("copied + skipped", string.Join('\n', rundown.ConsoleLines), StringComparison.OrdinalIgnoreCase);
         }
         finally
         {

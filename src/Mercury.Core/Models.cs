@@ -253,8 +253,13 @@ public sealed class Job
     public int DestFiles { get; set; }
     public int SourceFolders { get; set; }
     public int DestFolders { get; set; }
-    /// <summary>Copied + skipped payload accounted by the journal.</summary>
+    /// <summary>Copied + skipped payload accounted by the journal. Progress uses this. The average speed does not.</summary>
     public long BytesCopied { get; set; }
+    /// <summary>Bytes written during copy stages across runs of this job. Skipped files and bytes already on disk are not included.</summary>
+    public long TransferBytes { get; set; }
+    /// <summary>Seconds those <see cref="TransferBytes"/> took. Probe time with no writes is not included.</summary>
+    public double TransferSeconds { get; set; }
+    /// <summary>TransferBytes / TransferSeconds. Not journal done-bytes over wall-clock.</summary>
     public double AverageBytesPerSecond { get; set; }
 
     /// <summary>Long or duplicate destination names found before copy. Empty when there were none.</summary>

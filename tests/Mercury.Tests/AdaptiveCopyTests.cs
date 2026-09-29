@@ -548,6 +548,39 @@ public class AdaptiveCopyTests
     }
 
     [Fact]
+    public void SavedPaceCountsWritesAndDropsAnEmptyProbeStage()
+    {
+        const long mb = 1024 * 1024;
+        long ticks = 0;
+        var tracker = new SpeedTracker();
+        tracker.SetClock(() => ticks);
+        void Advance(double seconds) => ticks += (long)(seconds * System.Diagnostics.Stopwatch.Frequency);
+
+        tracker.BeginStage();
+        Advance(8);
+        tracker.BeginStage();
+        Advance(2);
+        tracker.Add(10 * mb);
+        var pace = tracker.Pace();
+        Assert.Equal(10 * mb, pace.Bytes);
+        Assert.InRange(pace.Seconds, 1.9, 2.1);
+
+        Advance(4);
+        tracker.Add(20 * mb);
+        tracker.BeginStage();
+        Advance(1);
+        var both = tracker.Pace();
+        Assert.Equal(30 * mb, both.Bytes);
+        Assert.InRange(both.Seconds, 5.9, 6.1);
+
+        var job = new Job { TransferBytes = 5 * mb, TransferSeconds = 1 };
+        tracker.ApplyTo(job, bytesAlreadySaved: 5 * mb, secondsAlreadySaved: 1);
+        Assert.Equal(35 * mb, job.TransferBytes);
+        Assert.InRange(job.TransferSeconds, 6.9, 7.1);
+        Assert.InRange(job.AverageBytesPerSecond, (35 * mb) / 7.1, (35 * mb) / 6.9);
+    }
+
+    [Fact]
     public void MeasuredStageRateIsNotReplacedByTheWholeJobAverage()
     {
         var now = new DateTimeOffset(2026, 9, 29, 18, 16, 0, TimeSpan.Zero);

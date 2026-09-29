@@ -301,95 +301,104 @@ public sealed class CopyEngine : ICopyEngine
             }
 
             var speed = new SpeedTracker();
-            if (pack && overlap)
+            var transferBytesBefore = Math.Max(0, job.TransferBytes);
+            var transferSecondsBefore = Math.Max(0, job.TransferSeconds);
+            try
             {
-                reporter.Enter(CopyStageKind.Transferring, JobStatus.Copying, "Copying and packing…");
-                journal.SaveJob(job);
-                await RunOverlappedAsync(
-                        job, plan, journal, budget, pause, log, name, reporter, cloud, speed, cancellationToken, io)
-                    .ConfigureAwait(false);
-            }
-            else if (pack)
-            {
-                reporter.Enter(CopyStageKind.Transferring, JobStatus.Copying, "Packing…");
-                journal.SaveJob(job);
-                foreach (var group in PackTargets(job, mapping, plan, catcher is not null))
+                if (pack && overlap)
                 {
-                    await PackWithRetriesAsync(
-                            job, group.Mapping, journal, budget, pause, log, name, reporter, cloud, speed, cancellationToken, io,
-                            onlyThese: catcher is not null ? null : group.Files,
-                            copyLoose: catcher is null && plan.Stream.Count > 0 && !overlap,
-                            compression: group.Compression)
+                    reporter.Enter(CopyStageKind.Transferring, JobStatus.Copying, "Copying and packing…");
+                    journal.SaveJob(job);
+                    await RunOverlappedAsync(
+                            job, plan, journal, budget, pause, log, name, reporter, cloud, speed, cancellationToken, io)
+                        .ConfigureAwait(false);
+                }
+                else if (pack)
+                {
+                    reporter.Enter(CopyStageKind.Transferring, JobStatus.Copying, "Packing…");
+                    journal.SaveJob(job);
+                    foreach (var group in PackTargets(job, mapping, plan, catcher is not null))
+                    {
+                        await PackWithRetriesAsync(
+                                job, group.Mapping, journal, budget, pause, log, name, reporter, cloud, speed, cancellationToken, io,
+                                onlyThese: catcher is not null ? null : group.Files,
+                                copyLoose: catcher is null && plan.Stream.Count > 0 && !overlap,
+                                compression: group.Compression)
+                            .ConfigureAwait(false);
+                    }
+
+                    if (catcher is null)
+                    {
+                        var anyZip = PackTargets(job, mapping, plan, false)
+                            .Any(g => File.Exists(ZipPack.ZipPath(g.Mapping)));
+                        if (anyZip)
+                        {
+                            reporter.Enter(CopyStageKind.Unpacking, JobStatus.Copying, "Unpacking…");
+                            journal.SaveJob(job);
+                            foreach (var group in PackTargets(job, mapping, plan, false))
+                            {
+                                if (!File.Exists(ZipPack.ZipPath(group.Mapping)))
+                                {
+                                    continue;
+                                }
+
+                                await UnpackWithRetriesAsync(
+                                        job, group.Mapping, journal, budget, pause, log, name, reporter, cloud, speed, cancellationToken, io)
+                                    .ConfigureAwait(false);
+                            }
+                        }
+                        else
+                        {
+                            log.Info(job.Id, name, "No transport zip to unpack — already-compressed files were copied as-is.");
+                        }
+                    }
+                }
+                else if (catcher is null)
+                {
+                    reporter.Enter(CopyStageKind.Transferring, JobStatus.Copying, "Copying…");
+                    journal.SaveJob(job);
+                    var pending = journal.GetFiles()
+                        .Where(f => f.Status is FileCopyStatus.Pending or FileCopyStatus.Failed or FileCopyStatus.Deferred)
+                        .ToList();
+                    await CopyPendingListAsync(
+                            job, journal, budget, pause, log, name, reporter, cloud, speed, pending, totals, cancellationToken, io,
+                            markUnpacked: false)
                         .ConfigureAwait(false);
                 }
 
                 if (catcher is null)
                 {
-                    var anyZip = PackTargets(job, mapping, plan, false)
-                        .Any(g => File.Exists(ZipPack.ZipPath(g.Mapping)));
-                    if (anyZip)
+                    foreach (var map in mappings)
                     {
-                        reporter.Enter(CopyStageKind.Unpacking, JobStatus.Copying, "Unpacking…");
-                        journal.SaveJob(job);
-                        foreach (var group in PackTargets(job, mapping, plan, false))
-                        {
-                            if (!File.Exists(ZipPack.ZipPath(group.Mapping)))
-                            {
-                                continue;
-                            }
-
-                            await UnpackWithRetriesAsync(
-                                    job, group.Mapping, journal, budget, pause, log, name, reporter, cloud, speed, cancellationToken, io)
-                                .ConfigureAwait(false);
-                        }
-                    }
-                    else
-                    {
-                        log.Info(job.Id, name, "No transport zip to unpack — already-compressed files were copied as-is.");
+                        FileMetadata.FinishDestination(job, map, journal, log, name);
                     }
                 }
-            }
-            else if (catcher is null)
-            {
-                reporter.Enter(CopyStageKind.Transferring, JobStatus.Copying, "Copying…");
-                journal.SaveJob(job);
-                var pending = journal.GetFiles()
-                    .Where(f => f.Status is FileCopyStatus.Pending or FileCopyStatus.Failed or FileCopyStatus.Deferred)
-                    .ToList();
-                await CopyPendingListAsync(
-                        job, journal, budget, pause, log, name, reporter, cloud, speed, pending, totals, cancellationToken, io,
-                        markUnpacked: false)
-                    .ConfigureAwait(false);
-            }
 
-            if (catcher is null)
-            {
-                foreach (var map in mappings)
+                if (catcher is not null)
                 {
-                    FileMetadata.FinishDestination(job, map, journal, log, name);
+                    reporter.Enter(CopyStageKind.Pushing, JobStatus.Copying, "Sending over HTTPS…");
+                    journal.SaveJob(job);
+                    await PushCatcherAsync(
+                        job,
+                        catcher,
+                        mapping,
+                        pack,
+                        journal,
+                        budget,
+                        pause,
+                        log,
+                        name,
+                        reporter,
+                        speed,
+                        cancellationToken).ConfigureAwait(false);
                 }
-            }
 
-            if (catcher is not null)
-            {
-                reporter.Enter(CopyStageKind.Pushing, JobStatus.Copying, "Sending over HTTPS…");
                 journal.SaveJob(job);
-                await PushCatcherAsync(
-                    job,
-                    catcher,
-                    mapping,
-                    pack,
-                    journal,
-                    budget,
-                    pause,
-                    log,
-                    name,
-                    reporter,
-                    speed,
-                    cancellationToken).ConfigureAwait(false);
             }
-
-            journal.SaveJob(job);
+            finally
+            {
+                speed.ApplyTo(job, transferBytesBefore, transferSecondsBefore);
+            }
         }
         finally
         {
@@ -905,7 +914,6 @@ public sealed class CopyEngine : ICopyEngine
             {
                 TryJournal(journal, () => journal.MarkSkipped(file.RelativePath, "Destination is newer or equal"), log, job.Id, name);
                 log.Info(job.Id, name, $"Skip {file.RelativePath} (dest newer or equal)");
-                speed.Add(file.Size);
                 continue;
             }
 
@@ -1549,7 +1557,6 @@ public sealed class CopyEngine : ICopyEngine
                     reporter.Update(fileStatus, file.RelativePath, speed);
                     TryJournal(journal, () => journal.MarkSkipped(file.RelativePath, "Destination is newer or equal"), log, job.Id, name);
                     log.Info(job.Id, name, $"Skip {file.RelativePath} (dest newer or equal)");
-                    speed.Add(file.Size);
                     continue;
                 }
 
@@ -2579,6 +2586,8 @@ public sealed class SpeedTracker
     private bool _stageOpen;
     private long _stageBytes;
     private long _stageStart;
+    private long _closedBytes;
+    private double _closedSeconds;
     private long _windowBytes;
     private long _windowStart;
     private long _lastWindowBytes;
@@ -2646,6 +2655,7 @@ public sealed class SpeedTracker
     {
         lock (_lock)
         {
+            CloseOpenStage();
             _stageOpen = true;
             _stageBytes = 0;
             _stageStart = NowTicks();
@@ -2655,6 +2665,56 @@ public sealed class SpeedTracker
             _lastWindowBps = 0;
             _publishedBps = 0;
             _heldBps = 0;
+        }
+    }
+
+    /// <summary>
+    /// Bytes written and the time those writes took. A stage that wrote nothing (the probe) is left out.
+    /// <paramref name="bytesAlreadySaved"/> and <paramref name="secondsAlreadySaved"/> are earlier runs of this job.
+    /// </summary>
+    public void ApplyTo(Job job, long bytesAlreadySaved, double secondsAlreadySaved)
+    {
+        var pace = Pace();
+        job.TransferBytes = Math.Max(0, bytesAlreadySaved) + pace.Bytes;
+        job.TransferSeconds = Math.Max(0, secondsAlreadySaved) + pace.Seconds;
+        job.AverageBytesPerSecond = TransferRundown.AverageBytesPerSecond(
+            job.TransferBytes,
+            TimeSpan.FromSeconds(job.TransferSeconds));
+    }
+
+    /// <summary>This tracker's writes only. Earlier runs are added in <see cref="ApplyTo"/>.</summary>
+    public (long Bytes, double Seconds) Pace()
+    {
+        lock (_lock)
+        {
+            var bytes = _closedBytes;
+            var seconds = _closedSeconds;
+            if (_stageOpen && _stageBytes > 0)
+            {
+                bytes += _stageBytes;
+                var elapsed = Elapsed(_stageStart, NowTicks());
+                if (elapsed > 0)
+                {
+                    seconds += elapsed;
+                }
+            }
+
+            return (bytes, seconds);
+        }
+    }
+
+    private void CloseOpenStage()
+    {
+        if (!_stageOpen || _stageBytes <= 0)
+        {
+            return;
+        }
+
+        _closedBytes += _stageBytes;
+        var elapsed = Elapsed(_stageStart, NowTicks());
+        if (elapsed > 0)
+        {
+            _closedSeconds += elapsed;
         }
     }
 

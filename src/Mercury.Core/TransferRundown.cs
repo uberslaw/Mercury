@@ -60,6 +60,9 @@ public sealed class TransferRundown
                 job.SourceFolders, job.DestFolders);
         var elapsedText = ByteFormatter.Duration(elapsed);
         var speedText = ByteFormatter.Speed(job.AverageBytesPerSecond);
+        var transferred = job.TransferBytes > 0 || job.TransferSeconds > 0;
+        var speedLabel = transferred ? speedText + "  (transferred)" : speedText;
+        var speedConsole = transferred ? speedText + " (transferred)" : speedText;
         var filesText = FormatPair(job.SourceFiles, job.DestFiles);
         var foldersText = FormatPair(job.SourceFolders, job.DestFolders);
         var started = FormatLocal(job.StartedUtc.Value);
@@ -79,7 +82,7 @@ public sealed class TransferRundown
             StartedText = started,
             EndedText = ended,
             ElapsedText = elapsedText + "  (includes enumeration)",
-            AverageSpeedText = speedText + "  (copied + skipped)",
+            AverageSpeedText = speedLabel,
             FilesText = filesText,
             FoldersText = foldersText,
             MatchText = matchText,
@@ -91,7 +94,7 @@ public sealed class TransferRundown
                 $"  Started:  {started}",
                 $"  Ended:    {ended}",
                 $"  Elapsed:  {elapsedText} (wall-clock, includes enumeration)",
-                $"  Average:  {speedText} (copied + skipped)",
+                $"  Average:  {speedConsole}",
                 $"  Files:    {filesText}",
                 $"  Folders:  {foldersText}",
                 $"  {matchText}"
@@ -340,7 +343,9 @@ public sealed class TransferRundown
             elapsed = TimeSpan.Zero;
         }
 
-        job.AverageBytesPerSecond = AverageBytesPerSecond(job.BytesCopied, elapsed);
+        job.AverageBytesPerSecond = AverageBytesPerSecond(
+            job.TransferBytes,
+            TimeSpan.FromSeconds(job.TransferSeconds));
         if (!journal.TrySaveJob(job))
         {
             log?.Error(job.Id, name, "Rundown skipped save — journal busy or already closed.");
@@ -456,8 +461,9 @@ public sealed class TransferRundown
         var destFiles = jobs.Sum(j => j.DestFiles);
         var sourceFolders = jobs.Sum(j => j.SourceFolders);
         var destFolders = jobs.Sum(j => j.DestFolders);
-        var bytes = jobs.Sum(j => j.BytesCopied);
-        var speed = AverageBytesPerSecond(bytes, elapsed);
+        var speed = AverageBytesPerSecond(
+            jobs.Sum(j => j.TransferBytes),
+            TimeSpan.FromSeconds(jobs.Sum(j => j.TransferSeconds)));
         var filesMatch = sourceFiles == destFiles;
         var foldersMatch = sourceFolders == destFolders;
         var worst = jobs.Select(j => j.Status).OrderByDescending(StatusRank).First();
@@ -506,6 +512,8 @@ public sealed class TransferRundown
         job.SourceFolders = 0;
         job.DestFolders = 0;
         job.BytesCopied = 0;
+        job.TransferBytes = 0;
+        job.TransferSeconds = 0;
         job.AverageBytesPerSecond = 0;
     }
 
