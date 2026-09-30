@@ -7,9 +7,13 @@ public class CompareQueueTests
     {
         var counting = CompareHeaderBars.From(new DirectoryCompareProgress(3, 1, @"album\a.txt"));
         Assert.True(counting.Indeterminate);
-        Assert.Equal("a.txt", counting.FileText);
-        Assert.Equal("album", counting.FolderText);
+        Assert.False(counting.FileIndeterminate);
+        Assert.Equal(100, counting.FilePercent);
+        Assert.Contains("a.txt", counting.FileText, StringComparison.Ordinal);
+        Assert.Contains("100%", counting.FileText, StringComparison.Ordinal);
+        Assert.Contains("album", counting.FolderText, StringComparison.Ordinal);
         Assert.Equal("Compare  (counting)", counting.OverallText);
+        Assert.Equal("—", counting.OverallRemaining);
 
         var pace = new ComparePace
         {
@@ -29,6 +33,8 @@ public class CompareQueueTests
         Assert.Contains("a.txt", bars.FileText, StringComparison.Ordinal);
         Assert.Contains("album", bars.FolderText, StringComparison.Ordinal);
         Assert.StartsWith("Compare", bars.OverallText, StringComparison.Ordinal);
+        Assert.Contains("25%", bars.FileText, StringComparison.Ordinal);
+        Assert.Equal("—", bars.FileRemaining);
     }
 
     [Fact]
@@ -46,6 +52,12 @@ public class CompareQueueTests
         Assert.Contains("x:Name=\"HeaderCompareOverallBar\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Value=\"{Binding CompareOverallPercent, Mode=OneWay}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("IsIndeterminate=\"{Binding CompareOverallIndeterminate, Mode=OneWay}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("{Binding CompareFileElapsedText}", xaml, StringComparison.Ordinal);
+        Assert.Contains("{Binding CompareFileRemainingText}", xaml, StringComparison.Ordinal);
+        Assert.Contains("{Binding CompareFolderElapsedText}", xaml, StringComparison.Ordinal);
+        Assert.Contains("{Binding CompareFolderRemainingText}", xaml, StringComparison.Ordinal);
+        Assert.Contains("{Binding CompareOverallElapsedText}", xaml, StringComparison.Ordinal);
+        Assert.Contains("{Binding CompareOverallRemainingText}", xaml, StringComparison.Ordinal);
         var transfer = xaml.IndexOf("x:Name=\"HeaderCurrentProgressBar\"", StringComparison.Ordinal);
         var compare = xaml.IndexOf("x:Name=\"HeaderCompareBars\"", StringComparison.Ordinal);
         Assert.True(transfer >= 0 && compare > transfer);
@@ -60,6 +72,9 @@ public class CompareQueueTests
         Assert.Contains("Value=\"{Binding ProgressValue, Mode=OneWay}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Maximum=\"{Binding ProgressMaximum, Mode=OneWay}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("IsIndeterminate=\"{Binding ProgressIndeterminate, Mode=OneWay}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("{Binding StageText}", xaml, StringComparison.Ordinal);
+        Assert.Contains("{Binding StageClockText}", xaml, StringComparison.Ordinal);
+        Assert.Contains("{Binding StagePercentText}", xaml, StringComparison.Ordinal);
     }
 
     [Fact]

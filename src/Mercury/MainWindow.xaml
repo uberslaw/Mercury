@@ -275,17 +275,30 @@
                                              Foreground="{DynamicResource HeaderBarFillBrush}"
                                              Background="{DynamicResource HeaderBarTrackBrush}"/>
                             </Border>
-                            <TextBlock Text="File" FontWeight="SemiBold"
-                                       HorizontalAlignment="Left" VerticalAlignment="Center"
-                                       Margin="8,0" IsHitTestVisible="False"
-                                       Foreground="{DynamicResource OnHeaderBrush}"
-                                       FontFamily="{DynamicResource ProgressFontFamily}"
-                                       FontSize="{DynamicResource ProgressFontSize}"/>
-                            <TextBlock Text="{Binding CompareFileText}" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                       Margin="48,0" TextTrimming="CharacterEllipsis"
-                                       FontWeight="SemiBold" IsHitTestVisible="False"
-                                       Foreground="{DynamicResource OnHeaderBrush}"
-                                       FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}"/>
+                            <Grid Margin="8,0" IsHitTestVisible="False">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{Binding CompareFileElapsedText}" VerticalAlignment="Center"
+                                           MinWidth="48"
+                                           Foreground="{DynamicResource OnHeaderBrush}"
+                                           FontFamily="{DynamicResource ProgressFontFamily}"
+                                           FontSize="{DynamicResource ProgressFontSize}"/>
+                                <TextBlock Grid.Column="1" Text="{Binding CompareFileText}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Margin="8,0" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource OnHeaderBrush}"
+                                           FontFamily="{DynamicResource ProgressFontFamily}"
+                                           FontSize="{DynamicResource ProgressFontSize}"/>
+                                <TextBlock Grid.Column="2" Text="{Binding CompareFileRemainingText}"
+                                           VerticalAlignment="Center" MinWidth="48" TextAlignment="Right"
+                                           Foreground="{DynamicResource OnHeaderBrush}"
+                                           FontFamily="{DynamicResource ProgressFontFamily}"
+                                           FontSize="{DynamicResource ProgressFontSize}"/>
+                            </Grid>
                         </Grid>
                         <Grid Margin="0,0,0,4">
                             <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="HeaderBarFillBrush,HeaderBarTrackBrush,OnHeaderBrush">
@@ -297,17 +310,30 @@
                                              Foreground="{DynamicResource HeaderBarFillBrush}"
                                              Background="{DynamicResource HeaderBarTrackBrush}"/>
                             </Border>
-                            <TextBlock Text="Folder" FontWeight="SemiBold"
-                                       HorizontalAlignment="Left" VerticalAlignment="Center"
-                                       Margin="8,0" IsHitTestVisible="False"
-                                       Foreground="{DynamicResource OnHeaderBrush}"
-                                       FontFamily="{DynamicResource ProgressFontFamily}"
-                                       FontSize="{DynamicResource ProgressFontSize}"/>
-                            <TextBlock Text="{Binding CompareFolderText}" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                       Margin="64,0" TextTrimming="CharacterEllipsis"
-                                       FontWeight="SemiBold" IsHitTestVisible="False"
-                                       Foreground="{DynamicResource OnHeaderBrush}"
-                                       FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}"/>
+                            <Grid Margin="8,0" IsHitTestVisible="False">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{Binding CompareFolderElapsedText}" VerticalAlignment="Center"
+                                           MinWidth="48"
+                                           Foreground="{DynamicResource OnHeaderBrush}"
+                                           FontFamily="{DynamicResource ProgressFontFamily}"
+                                           FontSize="{DynamicResource ProgressFontSize}"/>
+                                <TextBlock Grid.Column="1" Text="{Binding CompareFolderText}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Margin="8,0" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource OnHeaderBrush}"
+                                           FontFamily="{DynamicResource ProgressFontFamily}"
+                                           FontSize="{DynamicResource ProgressFontSize}"/>
+                                <TextBlock Grid.Column="2" Text="{Binding CompareFolderRemainingText}"
+                                           VerticalAlignment="Center" MinWidth="48" TextAlignment="Right"
+                                           Foreground="{DynamicResource OnHeaderBrush}"
+                                           FontFamily="{DynamicResource ProgressFontFamily}"
+                                           FontSize="{DynamicResource ProgressFontSize}"/>
+                            </Grid>
                         </Grid>
                         <Grid>
                             <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="HeaderBarFillBrush,HeaderBarTrackBrush,OnHeaderBrush">
@@ -319,17 +345,30 @@
                                              Foreground="{DynamicResource HeaderBarFillBrush}"
                                              Background="{DynamicResource HeaderBarTrackBrush}"/>
                             </Border>
-                            <TextBlock Text="Compare" FontWeight="SemiBold"
-                                       HorizontalAlignment="Left" VerticalAlignment="Center"
-                                       Margin="8,0" IsHitTestVisible="False"
-                                       Foreground="{DynamicResource OnHeaderBrush}"
-                                       FontFamily="{DynamicResource ProgressFontFamily}"
-                                       FontSize="{DynamicResource ProgressFontSize}"/>
-                            <TextBlock Text="{Binding CompareOverallText}" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                       Margin="72,0" TextTrimming="CharacterEllipsis"
-                                       FontWeight="SemiBold" IsHitTestVisible="False"
-                                       Foreground="{DynamicResource OnHeaderBrush}"
-                                       FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}"/>
+                            <Grid Margin="8,0" IsHitTestVisible="False">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{Binding CompareOverallElapsedText}" VerticalAlignment="Center"
+                                           MinWidth="48"
+                                           Foreground="{DynamicResource OnHeaderBrush}"
+                                           FontFamily="{DynamicResource ProgressFontFamily}"
+                                           FontSize="{DynamicResource ProgressFontSize}"/>
+                                <TextBlock Grid.Column="1" Text="{Binding CompareOverallText}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Margin="8,0" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource OnHeaderBrush}"
+                                           FontFamily="{DynamicResource ProgressFontFamily}"
+                                           FontSize="{DynamicResource ProgressFontSize}"/>
+                                <TextBlock Grid.Column="2" Text="{Binding CompareOverallRemainingText}"
+                                           VerticalAlignment="Center" MinWidth="48" TextAlignment="Right"
+                                           Foreground="{DynamicResource OnHeaderBrush}"
+                                           FontFamily="{DynamicResource ProgressFontFamily}"
+                                           FontSize="{DynamicResource ProgressFontSize}"/>
+                            </Grid>
                         </Grid>
                     </StackPanel>
                     <WrapPanel x:Name="HeaderRunButtons" Margin="0,8,0,0">

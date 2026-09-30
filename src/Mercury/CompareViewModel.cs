@@ -42,6 +42,9 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
     private int _foldersVisited;
     private bool _showDestOnly = true;
     private string _progressText = "";
+    private string _stageText = "";
+    private string _stageClockText = "";
+    private string _stagePercentText = "—";
     private string _fileEtaText = "File  —  —";
     private string _folderEtaText = "Folder  —  —";
     private string _compareEtaText = "Compare  —";
@@ -357,6 +360,24 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
         private set => SetField(ref _progressText, value);
     }
 
+    public string StageText
+    {
+        get => _stageText;
+        private set => SetField(ref _stageText, value);
+    }
+
+    public string StageClockText
+    {
+        get => _stageClockText;
+        private set => SetField(ref _stageClockText, value);
+    }
+
+    public string StagePercentText
+    {
+        get => _stagePercentText;
+        private set => SetField(ref _stagePercentText, value);
+    }
+
     public string FileEtaText
     {
         get => _fileEtaText;
@@ -522,6 +543,9 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
         FilesVisited = 0;
         FoldersVisited = 0;
         ProgressText = "Starting…";
+        StageText = "";
+        StageClockText = "";
+        StagePercentText = "—";
         FileEtaText = "File  —  —";
         FolderEtaText = "Folder  —  —";
         CompareEtaText = "Compare  —  (counting)";
@@ -631,13 +655,39 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
         var folder = pace?.CurrentFolder ?? ComparePace.FolderLabel(progress.CurrentRelative);
         FileEtaText = $"File  {file}  {ByteFormatter.Eta(pace?.FileEta)}";
         FolderEtaText = $"Folder  {folder}  {ByteFormatter.Eta(pace?.FolderEta)}";
-        if (pace is { BytesTotal: > 0 })
+        if (progress.Stage is { } stage)
+        {
+            StageText = stage.Line;
+            StageClockText = ComparePipeline.ClockLine(stage.OverallElapsed, stage.Elapsed, stage.Remaining);
+            if (stage.Percent is { } pct)
+            {
+                ProgressIndeterminate = false;
+                ProgressMaximum = 100;
+                ProgressValue = pct;
+                StagePercentText = ProgressHeader.PercentLabel(pct, true);
+            }
+            else
+            {
+                ProgressIndeterminate = true;
+                ProgressMaximum = 1;
+                ProgressValue = 0;
+                StagePercentText = "—";
+            }
+
+            CompareEtaText = stage.Kind is CompareStageKind.CountSource or CompareStageKind.CountDestination
+                ? $"Compare  —  ({stage.Name.ToLowerInvariant()})"
+                : $"Compare  {ByteFormatter.Eta(pace?.OverallEta)}";
+        }
+        else if (pace is { BytesTotal: > 0 })
         {
             ProgressIndeterminate = false;
             ProgressMaximum = pace.BytesTotal;
             ProgressValue = Math.Min(pace.BytesDone, pace.BytesTotal);
             CompareEtaText =
                 $"Compare  {ByteFormatter.Eta(pace.OverallEta)}  ({ByteFormatter.ToString(pace.BytesDone)} / {ByteFormatter.ToString(pace.BytesTotal)})";
+            StageText = "";
+            StageClockText = "";
+            StagePercentText = "—";
         }
         else
         {
@@ -645,6 +695,9 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
             ProgressMaximum = 1;
             ProgressValue = 0;
             CompareEtaText = "Compare  —  (counting)";
+            StageText = "";
+            StageClockText = "";
+            StagePercentText = "—";
         }
 
         ProgressText = $"Visited {progress.FilesVisited:N0} files, {progress.FoldersVisited:N0} folders";
@@ -1095,6 +1148,9 @@ public sealed class CompareViewModel : INotifyPropertyChanged, IDisposable
         FilesVisited = 0;
         FoldersVisited = 0;
         ProgressText = resuming ? "Continuing…" : "Starting…";
+        StageText = "";
+        StageClockText = "";
+        StagePercentText = "—";
         FileEtaText = "File  —  —";
         FolderEtaText = "Folder  —  —";
         CompareEtaText = "Compare  —  (counting)";

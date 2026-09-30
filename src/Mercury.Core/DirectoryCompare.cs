@@ -53,21 +53,28 @@ public sealed class DirectoryCompareOptions
 
 public sealed class DirectoryCompareProgress
 {
-    public DirectoryCompareProgress(int filesVisited, int foldersVisited, string? currentRelative, ComparePace? pace = null)
+    public DirectoryCompareProgress(
+        int filesVisited,
+        int foldersVisited,
+        string? currentRelative,
+        ComparePace? pace = null,
+        CompareStageProgress? stage = null)
     {
         FilesVisited = filesVisited;
         FoldersVisited = foldersVisited;
         CurrentRelative = currentRelative;
         Pace = pace;
+        Stage = stage;
     }
 
     public int FilesVisited { get; }
     public int FoldersVisited { get; }
     public string? CurrentRelative { get; }
     public ComparePace? Pace { get; }
+    public CompareStageProgress? Stage { get; }
 }
 
-/// <summary>Bytes still to hash for the file, its folder, and the whole compare.</summary>
+/// <summary>Work done for the current file, its folder, the current stage, and the whole compare.</summary>
 public sealed class ComparePace
 {
     public string? CurrentFolder { get; init; }
@@ -78,14 +85,97 @@ public sealed class ComparePace
     public long BytesDone { get; init; }
     public long BytesTotal { get; init; }
     public double BytesPerSecond { get; init; }
+    public bool FileInstant { get; init; }
+    public int FolderFilesDone { get; init; }
+    public int FolderFilesTotal { get; init; }
+    public int FilesDone { get; init; }
+    public int FilesTotal { get; init; }
+    public long StageBytesDone { get; init; }
+    public long StageBytesTotal { get; init; }
+    public TimeSpan FileElapsed { get; init; }
+    public TimeSpan FolderElapsed { get; init; }
+    public TimeSpan StageElapsed { get; init; }
+    public TimeSpan OverallElapsed { get; init; }
 
-    public TimeSpan? FileEta => Estimate(FileBytesDone, FileBytesTotal, BytesPerSecond);
-    public TimeSpan? FolderEta => Estimate(FolderBytesDone, FolderBytesTotal, BytesPerSecond);
-    public TimeSpan? OverallEta => Estimate(BytesDone, BytesTotal, BytesPerSecond);
-
-    public static TimeSpan? Estimate(long done, long total, double bytesPerSecond)
+    public TimeSpan? FileEta
     {
-        if (bytesPerSecond < 1 || total <= 0)
+        get
+        {
+            if (FileInstant)
+            {
+                return null;
+            }
+
+            var rate = ByteFormatter.EffectiveRate(BytesPerSecond, FileBytesDone, FileElapsed);
+            return Estimate(FileBytesDone, FileBytesTotal, rate);
+        }
+    }
+
+    public TimeSpan? FolderEta
+    {
+        get
+        {
+            if (FolderBytesTotal > 0)
+            {
+                var rate = ByteFormatter.EffectiveRate(BytesPerSecond, FolderBytesDone, FolderElapsed);
+                return Estimate(FolderBytesDone, FolderBytesTotal, rate);
+            }
+
+            return Estimate(FolderFilesDone, FolderFilesTotal, Rate(FolderFilesDone, FolderElapsed));
+        }
+    }
+
+    public TimeSpan? OverallEta
+    {
+        get
+        {
+            if (BytesTotal > 0)
+            {
+                return Estimate(BytesDone, BytesTotal, BytesPerSecond);
+            }
+
+            return Estimate(FilesDone, FilesTotal, Rate(FilesDone, OverallElapsed));
+        }
+    }
+
+    public TimeSpan? StageEta
+    {
+        get
+        {
+            if (StageBytesTotal > 0)
+            {
+                return Estimate(StageBytesDone, StageBytesTotal, BytesPerSecond);
+            }
+
+            if (FilesTotal > 0)
+            {
+                return Estimate(FilesDone, FilesTotal, Rate(FilesDone, StageElapsed));
+            }
+
+            return null;
+        }
+    }
+
+    public double? FilePercent => FileInstant ? 100 : PercentOrNull(FileBytesDone, FileBytesTotal);
+
+    public double? FolderPercent =>
+        FolderBytesTotal > 0
+            ? PercentOrNull(FolderBytesDone, FolderBytesTotal)
+            : PercentOrNull(FolderFilesDone, FolderFilesTotal);
+
+    public double? OverallPercent =>
+        BytesTotal > 0
+            ? PercentOrNull(BytesDone, BytesTotal)
+            : PercentOrNull(FilesDone, FilesTotal);
+
+    public double? StagePercent =>
+        StageBytesTotal > 0
+            ? PercentOrNull(StageBytesDone, StageBytesTotal)
+            : PercentOrNull(FilesDone, FilesTotal);
+
+    public static TimeSpan? Estimate(long done, long total, double unitsPerSecond)
+    {
+        if (unitsPerSecond < 1 || total <= 0)
         {
             return null;
         }
@@ -96,7 +186,17 @@ public sealed class ComparePace
             return TimeSpan.Zero;
         }
 
-        return TimeSpan.FromSeconds(remaining / bytesPerSecond);
+        return TimeSpan.FromSeconds(remaining / unitsPerSecond);
+    }
+
+    public static double? PercentOrNull(long done, long total)
+    {
+        if (total <= 0)
+        {
+            return null;
+        }
+
+        return Math.Clamp(100.0 * done / total, 0, 100);
     }
 
     public static string FileLabel(string? relative)
@@ -120,18 +220,31 @@ public sealed class ComparePace
         var slash = relative.LastIndexOf('\\');
         return slash <= 0 ? "." : relative[..slash];
     }
+
+    private static double Rate(int done, TimeSpan elapsed) =>
+        elapsed.TotalSeconds >= 1 && done > 0 ? done / elapsed.TotalSeconds : 0;
 }
 
 /// <summary>Three header bars for a running compare: file, folder, and the whole compare.</summary>
-public readonly record struct CompareHeaderBars(
-    bool Indeterminate,
-    double FilePercent,
-    string FileText,
-    double FolderPercent,
-    string FolderText,
-    double OverallPercent,
-    string OverallText)
+public sealed class CompareHeaderBars
 {
+    public bool FileIndeterminate { get; init; } = true;
+    public bool FolderIndeterminate { get; init; } = true;
+    public bool OverallIndeterminate { get; init; } = true;
+    public bool Indeterminate => OverallIndeterminate;
+    public double FilePercent { get; init; }
+    public double FolderPercent { get; init; }
+    public double OverallPercent { get; init; }
+    public string FileElapsed { get; init; } = "—";
+    public string FolderElapsed { get; init; } = "—";
+    public string OverallElapsed { get; init; } = "—";
+    public string FileText { get; init; } = "File  —";
+    public string FolderText { get; init; } = "Folder  —";
+    public string OverallText { get; init; } = "Compare  (counting)";
+    public string FileRemaining { get; init; } = "—";
+    public string FolderRemaining { get; init; } = "—";
+    public string OverallRemaining { get; init; } = "—";
+
     public static CompareHeaderBars From(DirectoryCompareProgress? progress)
     {
         var relative = progress?.CurrentRelative;
@@ -140,33 +253,76 @@ public readonly record struct CompareHeaderBars(
         var folderName = string.IsNullOrEmpty(pace?.CurrentFolder)
             ? ComparePace.FolderLabel(relative)
             : pace!.CurrentFolder!;
-        if (pace is not { BytesTotal: > 0 })
+        var file = FileBar(fileName, pace);
+        var folder = FolderBar(folderName, pace);
+        var overall = OverallBar(pace, progress?.Stage);
+        return new CompareHeaderBars
         {
-            return new CompareHeaderBars(true, 0, fileName, 0, folderName, 0, "Compare  (counting)");
-        }
-
-        var filePct = Percent(pace.FileBytesDone, pace.FileBytesTotal);
-        var folderPct = Percent(pace.FolderBytesDone, pace.FolderBytesTotal);
-        var overallPct = Percent(pace.BytesDone, pace.BytesTotal);
-        return new CompareHeaderBars(
-            false,
-            filePct,
-            fileName + "  " + ProgressHeader.PercentLabel(filePct, pace.FileBytesTotal > 0),
-            folderPct,
-            folderName + "  " + ProgressHeader.PercentLabel(folderPct, pace.FolderBytesTotal > 0),
-            overallPct,
-            "Compare  " + ProgressHeader.PercentLabel(overallPct, true));
+            FileIndeterminate = file.Indeterminate,
+            FilePercent = file.Percent,
+            FileElapsed = ElapsedText(pace?.FileElapsed),
+            FileText = file.Center,
+            FileRemaining = ByteFormatter.Eta(pace?.FileEta),
+            FolderIndeterminate = folder.Indeterminate,
+            FolderPercent = folder.Percent,
+            FolderElapsed = ElapsedText(pace?.FolderElapsed),
+            FolderText = folder.Center,
+            FolderRemaining = ByteFormatter.Eta(pace?.FolderEta),
+            OverallIndeterminate = overall.Indeterminate,
+            OverallPercent = overall.Percent,
+            OverallElapsed = ElapsedText(pace?.OverallElapsed),
+            OverallText = overall.Center,
+            OverallRemaining = ByteFormatter.Eta(pace?.OverallEta)
+        };
     }
 
-    private static double Percent(long done, long total)
+    private static (bool Indeterminate, double Percent, string Center) FileBar(string name, ComparePace? pace)
     {
-        if (total <= 0)
+        if (pace?.FilePercent is { } pct)
         {
-            return 0;
+            return (false, pct, Center("File", name, pct));
         }
 
-        return Math.Clamp(100.0 * done / total, 0, 100);
+        if (!string.IsNullOrEmpty(name) && name != "—")
+        {
+            return (false, 100, Center("File", name, 100));
+        }
+
+        return (true, 0, "File  —");
     }
+
+    private static (bool Indeterminate, double Percent, string Center) FolderBar(string name, ComparePace? pace)
+    {
+        if (pace?.FolderPercent is { } pct)
+        {
+            return (false, pct, Center("Folder", name, pct));
+        }
+
+        return (true, 0, "Folder  " + name);
+    }
+
+    private static (bool Indeterminate, double Percent, string Center) OverallBar(ComparePace? pace, CompareStageProgress? stage)
+    {
+        var op = ComparePipeline.OperationLabel(stage?.Kind);
+        if (pace?.OverallPercent is { } pct)
+        {
+            var label = op == "Compare" ? "Compare" : "Compare  " + op;
+            return (false, pct, label + "  " + ProgressHeader.PercentLabel(pct, true));
+        }
+
+        if (stage is not null)
+        {
+            return (true, 0, "Compare  " + op);
+        }
+
+        return (true, 0, "Compare  (counting)");
+    }
+
+    private static string Center(string role, string name, double percent) =>
+        role + "  " + name + "  " + ProgressHeader.PercentLabel(percent, true);
+
+    private static string ElapsedText(TimeSpan? elapsed) =>
+        elapsed is null ? "—" : ByteFormatter.Duration(elapsed.Value);
 }
 
 public sealed class DirectoryCompareDiff
@@ -483,24 +639,25 @@ public static class DirectoryComparer
                     options.FatTimestampTolerance);
             }
 
-            var filesVisited = 0;
-            var foldersVisited = 0;
-            var lastPulse = Stopwatch.GetTimestamp();
+            var inventoryComplete = manifest is { InventoryComplete: true, Inventory: not null };
+            var session = new CompareSession(progress, ComparePipeline.For(options, inventoryComplete));
             TreeSide left;
             TreeSide right;
-            if (manifest is { InventoryComplete: true, Inventory: { } saved })
+            if (inventoryComplete)
             {
                 Note(log, "Continuing from the saved file list");
-                left = FromManifest(saved, leftSide: true);
-                right = FromManifest(saved, leftSide: false);
-                filesVisited = left.Files.Count + right.Files.Count;
-                foldersVisited = left.Folders.Count + right.Folders.Count;
+                left = FromManifest(manifest!.Inventory!, leftSide: true);
+                right = FromManifest(manifest.Inventory!, leftSide: false);
+                session.FilesVisited = left.Files.Count + right.Files.Count;
+                session.FoldersVisited = left.Folders.Count + right.Folders.Count;
             }
             else
             {
                 Note(log, "Started scanning");
-                left = ScanSide(leftPath, cancellationToken, pause, progress, ref filesVisited, ref foldersVisited, ref lastPulse, log, "source");
-                right = ScanSide(rightPath, cancellationToken, pause, progress, ref filesVisited, ref foldersVisited, ref lastPulse, log, "destination");
+                session.BeginStage(CompareStageKind.CountSource);
+                left = ScanSide(leftPath, cancellationToken, pause, session, log, "source");
+                session.BeginStage(CompareStageKind.CountDestination);
+                right = ScanSide(rightPath, cancellationToken, pause, session, log, "destination");
                 manifest?.WriteInventory(Snapshot(left, right));
             }
 
@@ -512,18 +669,29 @@ public static class DirectoryComparer
                 }
             }
 
-            lastPulse = Pulse(progress, filesVisited, foldersVisited, null, lastPulse, force: true);
-
             var diffs = new List<DirectoryCompareDiff>();
             var tolerance = options.FatTimestampTolerance
                 ? CopyEngine.FatTimestampTolerance
                 : TimeSpan.Zero;
 
+            session.BeginStage(CompareStageKind.Diff);
             CompareFolders(left, right, advanced, diffs);
-            CompareFiles(left, right, advanced, hashDest, hashSource, tolerance, diffs, cancellationToken, pause, progress, ref filesVisited, ref foldersVisited, ref lastPulse, manifest, log);
+            CompareFiles(left, right, advanced, hashDest, hashSource, tolerance, diffs, cancellationToken, pause, session, manifest, log);
 
-            var result = BuildResult(leftPath, rightPath, started, DateTimeOffset.UtcNow, options, left, right, diffs, filesVisited, foldersVisited, canceled: false, error: null);
-            lastPulse = Pulse(progress, filesVisited, foldersVisited, null, lastPulse, force: true);
+            var result = BuildResult(
+                leftPath,
+                rightPath,
+                started,
+                DateTimeOffset.UtcNow,
+                options,
+                left,
+                right,
+                diffs,
+                session.FilesVisited,
+                session.FoldersVisited,
+                canceled: false,
+                error: null);
+            session.Emit(null, force: true);
             return result;
         }
         catch (OperationCanceledException)
@@ -589,10 +757,10 @@ public static class DirectoryComparer
         }
         else
         {
-            var filesVisited = 0;
-            var foldersVisited = 0;
-            var lastPulse = Stopwatch.GetTimestamp();
-            source = ScanSide(sourcePath, cancellationToken, pause, progress: null, ref filesVisited, ref foldersVisited, ref lastPulse);
+            var session = new CompareSession(progress: null, ComparePipeline.For(
+                new DirectoryCompareOptions { Advanced = true, HashSource = true }));
+            session.BeginStage(CompareStageKind.CountSource);
+            source = ScanSide(sourcePath, cancellationToken, pause, session);
             manifest.WriteSourceInventory(SnapshotSource(source));
         }
 
@@ -787,15 +955,56 @@ public static class DirectoryComparer
         List<DirectoryCompareDiff> diffs,
         CancellationToken cancellationToken,
         PauseGate? pause,
-        Action<DirectoryCompareProgress>? progress,
-        ref int filesVisited,
-        ref int foldersVisited,
-        ref long lastPulse,
+        CompareSession session,
         CompareManifestWriter? manifest,
         Action<string>? log)
     {
         var keys = left.Files.Keys.ToList();
         keys.Sort(StringComparer.OrdinalIgnoreCase);
+        var rightOnly = 0;
+        var folderTotals = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var key in keys)
+        {
+            folderTotals[ParentKey(key)] = folderTotals.GetValueOrDefault(ParentKey(key)) + 1;
+        }
+
+        foreach (var key in right.Files.Keys)
+        {
+            if (left.Files.ContainsKey(key))
+            {
+                continue;
+            }
+
+            rightOnly++;
+            folderTotals[ParentKey(key)] = folderTotals.GetValueOrDefault(ParentKey(key)) + 1;
+        }
+
+        var total = keys.Count + rightOnly;
+        var done = 0;
+        string? openFolder = null;
+        var folderDone = 0;
+        void PulseDiff(string key)
+        {
+            done++;
+            var folder = ParentKey(key);
+            if (!string.Equals(folder, openFolder, StringComparison.OrdinalIgnoreCase))
+            {
+                openFolder = folder;
+                folderDone = 0;
+            }
+
+            folderDone++;
+            session.Emit(key, new ComparePace
+            {
+                CurrentFolder = string.IsNullOrEmpty(folder) ? "." : folder,
+                FileInstant = true,
+                FilesDone = done,
+                FilesTotal = Math.Max(total, 1),
+                FolderFilesDone = folderDone,
+                FolderFilesTotal = folderTotals.GetValueOrDefault(folder)
+            }, force: done == total || done % 50 == 0);
+        }
+
         foreach (var key in keys)
         {
             var file = left.Files[key];
@@ -812,9 +1021,11 @@ public static class DirectoryComparer
                     LeftWriteUtc = file.LastWriteUtc
                 });
                 Note(log, "Source only " + key);
+                PulseDiff(key);
                 continue;
             }
 
+            PulseDiff(key);
             if (!advanced)
             {
                 continue;
@@ -887,35 +1098,16 @@ public static class DirectoryComparer
                 RightWriteUtc = file.LastWriteUtc
             });
             Note(log, "Destination only " + key);
+            PulseDiff(key);
         }
 
         if (hashDest)
         {
-            lastPulse = HashContents(
-                left,
-                right,
-                diffs,
-                cancellationToken,
-                pause,
-                progress,
-                filesVisited,
-                foldersVisited,
-                lastPulse,
-                manifest,
-                log);
+            HashContents(left, right, diffs, cancellationToken, pause, session, manifest, log);
         }
         else if (hashSource)
         {
-            lastPulse = HashSourceOnly(
-                left,
-                cancellationToken,
-                pause,
-                progress,
-                filesVisited,
-                foldersVisited,
-                lastPulse,
-                manifest,
-                log);
+            HashSourceOnly(left, cancellationToken, pause, session, manifest, log);
         }
     }
 
@@ -923,38 +1115,45 @@ public static class DirectoryComparer
     /// Hash source files only. The file list and each finished source hash stay in the manifest
     /// so a later content compare can skip them and hash the destination.
     /// </summary>
-    private static long HashSourceOnly(
+    private static void HashSourceOnly(
         TreeSide left,
         CancellationToken cancellationToken,
         PauseGate? pause,
-        Action<DirectoryCompareProgress>? progress,
-        int filesVisited,
-        int foldersVisited,
-        long lastPulse,
+        CompareSession session,
         CompareManifestWriter? manifest,
         Action<string>? log)
     {
+        session.BeginStage(CompareStageKind.HashSource);
         Note(log, "Started hashing source");
         var files = left.Files.Values.OrderBy(file => file.Relative, StringComparer.OrdinalIgnoreCase).ToList();
+        var folderTotals = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
         long total = 0;
         foreach (var file in files)
         {
             total += file.Size;
+            var folder = ParentKey(file.Relative);
+            folderTotals[folder] = folderTotals.GetValueOrDefault(folder) + file.Size;
         }
 
         var clock = new HashClock();
         var credited = 0L;
-        var pulseAt = lastPulse;
+        var folderDone = 0L;
+        string? openFolder = null;
         void Emit(string current, long fileDone, long fileTotal, bool force = false)
         {
-            pulseAt = Pulse(progress, filesVisited, foldersVisited, current, pulseAt, new ComparePace
+            var folder = string.IsNullOrEmpty(current) ? "" : ParentKey(current);
+            session.Emit(current, new ComparePace
             {
-                CurrentFolder = string.IsNullOrEmpty(current) ? "." : ParentKey(current),
+                CurrentFolder = string.IsNullOrEmpty(folder) ? "." : folder,
                 FileBytesDone = fileDone,
                 FileBytesTotal = fileTotal,
+                FolderBytesDone = folderDone,
+                FolderBytesTotal = folderTotals.GetValueOrDefault(folder),
                 BytesDone = credited + clock.Bytes,
                 BytesTotal = Math.Max(total, 1),
-                BytesPerSecond = clock.BytesPerSecond
+                BytesPerSecond = clock.BytesPerSecond,
+                StageBytesDone = credited + clock.Bytes,
+                StageBytesTotal = Math.Max(total, 1)
             }, force);
         }
 
@@ -962,9 +1161,17 @@ public static class DirectoryComparer
         {
             WaitIfPaused(pause, cancellationToken, clock);
             cancellationToken.ThrowIfCancellationRequested();
+            var folder = ParentKey(file.Relative);
+            if (!string.Equals(folder, openFolder, StringComparison.OrdinalIgnoreCase))
+            {
+                openFolder = folder;
+                folderDone = 0;
+            }
+
             if (SavedHash(manifest, leftSide: true, file, out _))
             {
                 credited += file.Size;
+                folderDone += file.Size;
                 Note(log, "Skipped source hash " + file.Relative + " saved hash still matches size and last-write time");
                 continue;
             }
@@ -975,6 +1182,7 @@ public static class DirectoryComparer
                 WaitIfPaused(pause, cancellationToken, clock);
                 clock.Add(read);
                 fileDone += read;
+                folderDone += read;
                 Emit(file.Relative, fileDone, file.Size);
             }
 
@@ -984,7 +1192,6 @@ public static class DirectoryComparer
                 var value = HashUtil.HashFile(file.FullPath, cancellationToken, OnRead);
                 manifest?.WriteHash(true, file.Relative, value, file.Size, file.LastWriteUtc.Ticks);
                 Note(log, "Hashed source " + file.Relative);
-                credited += file.Size;
             }
             catch (OperationCanceledException)
             {
@@ -998,29 +1205,26 @@ public static class DirectoryComparer
 
             Emit(file.Relative, file.Size, file.Size, force: true);
         }
-
-        return pulseAt;
     }
 
     /// <summary>
     /// Hash every source file, then every destination file. Finished hashes are appended
     /// before the end-of-file pulse so a cancel keeps that file.
     /// </summary>
-    private static long HashContents(
+    private static void HashContents(
         TreeSide left,
         TreeSide right,
         List<DirectoryCompareDiff> diffs,
         CancellationToken cancellationToken,
         PauseGate? pause,
-        Action<DirectoryCompareProgress>? progress,
-        int filesVisited,
-        int foldersVisited,
-        long lastPulse,
+        CompareSession session,
         CompareManifestWriter? manifest,
         Action<string>? log)
     {
-        var folderTotals = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
-        long hashTotal = 0;
+        var folderSourceTotals = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        var folderDestTotals = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        long sourceTotal = 0;
+        long destTotal = 0;
         var keys = left.Files.Keys.ToList();
         keys.Sort(StringComparer.OrdinalIgnoreCase);
         foreach (var key in keys)
@@ -1031,20 +1235,23 @@ public static class DirectoryComparer
                 continue;
             }
 
-            var bytes = entry.Size + match.Size;
-            hashTotal += bytes;
+            sourceTotal += entry.Size;
+            destTotal += match.Size;
             var folderKey = ParentKey(key);
-            folderTotals[folderKey] = folderTotals.GetValueOrDefault(folderKey) + bytes;
+            folderSourceTotals[folderKey] = folderSourceTotals.GetValueOrDefault(folderKey) + entry.Size;
+            folderDestTotals[folderKey] = folderDestTotals.GetValueOrDefault(folderKey) + match.Size;
         }
 
+        var hashTotal = sourceTotal + destTotal;
         if (hashTotal <= 0)
         {
-            return lastPulse;
+            return;
         }
 
         var clock = new HashClock();
         var credited = 0L;
-        var savedFolder = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        var savedSourceFolder = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        var savedDestFolder = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
         var leftDone = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var rightDone = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var failed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1061,24 +1268,27 @@ public static class DirectoryComparer
             {
                 leftDone[key] = leftHash;
                 credited += file.Size;
-                savedFolder[folder] = savedFolder.GetValueOrDefault(folder) + file.Size;
+                savedSourceFolder[folder] = savedSourceFolder.GetValueOrDefault(folder) + file.Size;
             }
 
             if (SavedHash(manifest, leftSide: false, other, out var rightHash))
             {
                 rightDone[key] = rightHash;
                 credited += other.Size;
-                savedFolder[folder] = savedFolder.GetValueOrDefault(folder) + other.Size;
+                savedDestFolder[folder] = savedDestFolder.GetValueOrDefault(folder) + other.Size;
             }
         }
 
         string? openFolder = null;
         var folderDone = 0L;
         var folderTotal = 0L;
-        var pulseAt = lastPulse;
+        var stageClockBase = 0L;
+        var stageSaved = 0L;
+        var stageTotal = sourceTotal;
         void Emit(string current, long fileDone, long fileTotal, bool force = false)
         {
-            pulseAt = Pulse(progress, filesVisited, foldersVisited, current, pulseAt, new ComparePace
+            var stageDone = stageSaved + Math.Max(0, clock.Bytes - stageClockBase);
+            session.Emit(current, new ComparePace
             {
                 CurrentFolder = string.IsNullOrEmpty(openFolder) ? "." : openFolder,
                 FileBytesDone = fileDone,
@@ -1087,7 +1297,9 @@ public static class DirectoryComparer
                 FolderBytesTotal = folderTotal,
                 BytesDone = credited + clock.Bytes,
                 BytesTotal = hashTotal,
-                BytesPerSecond = clock.BytesPerSecond
+                BytesPerSecond = clock.BytesPerSecond,
+                StageBytesDone = stageDone,
+                StageBytesTotal = Math.Max(stageTotal, 1)
             }, force);
         }
 
@@ -1097,10 +1309,16 @@ public static class DirectoryComparer
         }
 
         Note(log, "Started hashing source");
+        session.BeginStage(CompareStageKind.HashSource);
+        stageSaved = leftDone.Sum(pair => left.Files[pair.Key].Size);
+        stageTotal = sourceTotal;
+        stageClockBase = clock.Bytes;
         void HashSide(bool leftSide)
         {
             openFolder = null;
             var done = leftSide ? leftDone : rightDone;
+            var folderSaved = leftSide ? savedSourceFolder : savedDestFolder;
+            var folderSideTotals = leftSide ? folderSourceTotals : folderDestTotals;
             foreach (var key in keys)
             {
                 var file = left.Files[key];
@@ -1116,8 +1334,8 @@ public static class DirectoryComparer
                 if (!string.Equals(folder, openFolder, StringComparison.OrdinalIgnoreCase))
                 {
                     openFolder = folder;
-                    folderDone = savedFolder.GetValueOrDefault(folder);
-                    folderTotal = folderTotals.GetValueOrDefault(folder);
+                    folderDone = folderSaved.GetValueOrDefault(folder);
+                    folderTotal = folderSideTotals.GetValueOrDefault(folder);
                 }
 
                 if (done.ContainsKey(key))
@@ -1145,7 +1363,7 @@ public static class DirectoryComparer
                     var value = HashUtil.HashFile(entry.FullPath, cancellationToken, OnRead);
                     manifest?.WriteHash(leftSide, key, value, entry.Size, entry.LastWriteUtc.Ticks);
                     Note(log, leftSide ? "Hashed source " + key : "Hashed destination " + key);
-                    savedFolder[folder] = savedFolder.GetValueOrDefault(folder) + entry.Size;
+                    folderSaved[folder] = folderSaved.GetValueOrDefault(folder) + entry.Size;
                     done[key] = value;
                 }
                 catch (OperationCanceledException)
@@ -1171,6 +1389,11 @@ public static class DirectoryComparer
 
         HashSide(leftSide: true);
         Note(log, "Started hashing destination");
+        session.BeginStage(CompareStageKind.HashDestination);
+        stageSaved = rightDone.Sum(pair =>
+            right.Files.TryGetValue(pair.Key, out var dest) ? dest.Size : 0);
+        stageTotal = destTotal;
+        stageClockBase = clock.Bytes;
         HashSide(leftSide: false);
         foreach (var key in keys)
         {
@@ -1201,8 +1424,6 @@ public static class DirectoryComparer
             });
             Note(log, "Hash mismatch " + key);
         }
-
-        return pulseAt;
     }
 
     private static void Note(Action<string>? log, string message)
@@ -1371,15 +1592,12 @@ public static class DirectoryComparer
         string root,
         CancellationToken cancellationToken,
         PauseGate? pause,
-        Action<DirectoryCompareProgress>? progress,
-        ref int filesVisited,
-        ref int foldersVisited,
-        ref long lastPulse,
+        CompareSession session,
         Action<string>? log = null,
         string side = "source")
     {
         var tree = new TreeSide();
-        Walk(root, "", tree, cancellationToken, pause, progress, ref filesVisited, ref foldersVisited, ref lastPulse, log, side);
+        Walk(root, "", tree, cancellationToken, pause, session, log, side);
         return tree;
     }
 
@@ -1389,10 +1607,7 @@ public static class DirectoryComparer
         TreeSide side,
         CancellationToken cancellationToken,
         PauseGate? pause,
-        Action<DirectoryCompareProgress>? progress,
-        ref int filesVisited,
-        ref int foldersVisited,
-        ref long lastPulse,
+        CompareSession session,
         Action<string>? log,
         string sideLabel)
     {
@@ -1409,6 +1624,9 @@ public static class DirectoryComparer
             files = [];
         }
 
+        var filesInFolder = 0;
+        var folderName = relative.Length == 0 ? "." : relative;
+        string? lastFile = null;
         foreach (var file in files)
         {
             WaitIfPaused(pause, cancellationToken);
@@ -1441,8 +1659,26 @@ public static class DirectoryComparer
             }
 
             AddSubtreeFile(side, relative);
-            filesVisited++;
-            lastPulse = Pulse(progress, filesVisited, foldersVisited, rel, lastPulse);
+            session.FilesVisited++;
+            filesInFolder++;
+            lastFile = rel;
+            session.Emit(rel, new ComparePace
+            {
+                CurrentFolder = folderName,
+                FileInstant = true,
+                FolderFilesDone = filesInFolder
+            }, force: filesInFolder == 1);
+        }
+
+        if (filesInFolder > 0)
+        {
+            session.Emit(lastFile, new ComparePace
+            {
+                CurrentFolder = folderName,
+                FileInstant = true,
+                FolderFilesDone = filesInFolder,
+                FolderFilesTotal = filesInFolder
+            }, force: true);
         }
 
         IEnumerable<string> dirs;
@@ -1482,9 +1718,9 @@ public static class DirectoryComparer
             var name = info.Name;
             var rel = CombineRelative(relative, name);
             side.Folders[rel] = new FolderEntry(rel, name);
-            foldersVisited++;
-            lastPulse = Pulse(progress, filesVisited, foldersVisited, rel, lastPulse);
-            Walk(info.FullName, rel, side, cancellationToken, pause, progress, ref filesVisited, ref foldersVisited, ref lastPulse, log, sideLabel);
+            session.FoldersVisited++;
+            session.Emit(rel, new ComparePace { CurrentFolder = rel, FileInstant = true });
+            Walk(info.FullName, rel, side, cancellationToken, pause, session, log, sideLabel);
         }
     }
 
@@ -1537,31 +1773,136 @@ public static class DirectoryComparer
         }
     }
 
-    private static long Pulse(
-        Action<DirectoryCompareProgress>? progress,
-        int files,
-        int folders,
-        string? current,
-        long lastPulse,
-        ComparePace? pace = null,
-        bool force = false)
+    private sealed class CompareSession
     {
-        if (progress is null)
+        private readonly Action<DirectoryCompareProgress>? _progress;
+        private readonly long _started = Stopwatch.GetTimestamp();
+        private long _stageStarted = Stopwatch.GetTimestamp();
+        private long _fileStarted = Stopwatch.GetTimestamp();
+        private long _folderStarted = Stopwatch.GetTimestamp();
+        private string? _fileKey;
+        private string? _folderKey;
+        private long _lastPulse = Stopwatch.GetTimestamp();
+        private int _stageIndex;
+
+        public CompareSession(Action<DirectoryCompareProgress>? progress, IReadOnlyList<CompareStage> stages)
         {
-            return lastPulse;
+            _progress = progress;
+            Stages = stages;
         }
 
-        if (!force && files % 50 != 0)
+        public IReadOnlyList<CompareStage> Stages { get; }
+        public int FilesVisited;
+        public int FoldersVisited;
+
+        public void BeginStage(CompareStageKind kind)
         {
-            var elapsed = (Stopwatch.GetTimestamp() - lastPulse) / (double)Stopwatch.Frequency;
-            if (elapsed < 0.2)
+            if (Stages.Count == 0)
             {
-                return lastPulse;
+                return;
+            }
+
+            for (var i = 0; i < Stages.Count; i++)
+            {
+                if (Stages[i].Kind == kind)
+                {
+                    _stageIndex = i;
+                    _stageStarted = Stopwatch.GetTimestamp();
+                    Emit(null, force: true);
+                    return;
+                }
             }
         }
 
-        progress(new DirectoryCompareProgress(files, folders, current, pace));
-        return Stopwatch.GetTimestamp();
+        public void Emit(string? current, ComparePace? pace = null, bool force = false)
+        {
+            if (_progress is null)
+            {
+                return;
+            }
+
+            NoteFile(current, pace?.CurrentFolder);
+            if (!force && FilesVisited % 50 != 0)
+            {
+                var elapsed = (Stopwatch.GetTimestamp() - _lastPulse) / (double)Stopwatch.Frequency;
+                if (elapsed < 0.2)
+                {
+                    return;
+                }
+            }
+
+            _progress(new DirectoryCompareProgress(FilesVisited, FoldersVisited, current, Stamp(current, pace), Snapshot(pace)));
+            _lastPulse = Stopwatch.GetTimestamp();
+        }
+
+        private void NoteFile(string? relative, string? folder)
+        {
+            if (!string.Equals(_fileKey, relative, StringComparison.OrdinalIgnoreCase))
+            {
+                _fileKey = relative;
+                _fileStarted = Stopwatch.GetTimestamp();
+            }
+
+            var folderKey = folder ?? ComparePace.FolderLabel(relative);
+            if (!string.Equals(_folderKey, folderKey, StringComparison.OrdinalIgnoreCase))
+            {
+                _folderKey = folderKey;
+                _folderStarted = Stopwatch.GetTimestamp();
+            }
+        }
+
+        private ComparePace Stamp(string? current, ComparePace? pace)
+        {
+            var folder = pace?.CurrentFolder ?? ComparePace.FolderLabel(current);
+            return new ComparePace
+            {
+                CurrentFolder = folder,
+                FileBytesDone = pace?.FileBytesDone ?? 0,
+                FileBytesTotal = pace?.FileBytesTotal ?? 0,
+                FolderBytesDone = pace?.FolderBytesDone ?? 0,
+                FolderBytesTotal = pace?.FolderBytesTotal ?? 0,
+                BytesDone = pace?.BytesDone ?? 0,
+                BytesTotal = pace?.BytesTotal ?? 0,
+                BytesPerSecond = pace?.BytesPerSecond ?? 0,
+                FileInstant = pace?.FileInstant ?? false,
+                FolderFilesDone = pace?.FolderFilesDone ?? 0,
+                FolderFilesTotal = pace?.FolderFilesTotal ?? 0,
+                FilesDone = pace?.FilesDone ?? 0,
+                FilesTotal = pace?.FilesTotal ?? 0,
+                StageBytesDone = pace?.StageBytesDone ?? 0,
+                StageBytesTotal = pace?.StageBytesTotal ?? 0,
+                FileElapsed = Elapsed(_fileStarted),
+                FolderElapsed = Elapsed(_folderStarted),
+                StageElapsed = Elapsed(_stageStarted),
+                OverallElapsed = Elapsed(_started)
+            };
+        }
+
+        private CompareStageProgress? Snapshot(ComparePace? pace)
+        {
+            if (Stages.Count == 0)
+            {
+                return null;
+            }
+
+            var index = Math.Clamp(_stageIndex, 0, Stages.Count - 1);
+            var stage = Stages[index];
+            var stamped = Stamp(null, pace);
+            return new CompareStageProgress
+            {
+                Kind = stage.Kind,
+                Index = index + 1,
+                Count = Stages.Count,
+                Name = stage.Label,
+                Elapsed = stamped.StageElapsed,
+                OverallElapsed = stamped.OverallElapsed,
+                Remaining = stamped.StageEta,
+                Percent = stamped.StagePercent
+            };
+        }
+
+        private static TimeSpan Elapsed(long start) =>
+            TimeSpan.FromTicks(Math.Max(0, Stopwatch.GetTimestamp() - start) * TimeSpan.TicksPerSecond / Stopwatch.Frequency);
     }
 
     private sealed class HashClock

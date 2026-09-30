@@ -1540,17 +1540,19 @@ public sealed class JobScheduler : IDisposable
             CurrentFileBytesTotal = pace?.FileBytesTotal ?? 0,
             BytesCopied = pace?.BytesDone ?? 0,
             BytesTotal = pace?.BytesTotal ?? 0,
-            FilesCopied = 0,
-            FilesTotal = 0,
+            FilesCopied = pace?.FilesDone ?? 0,
+            FilesTotal = pace?.FilesTotal ?? 0,
             BytesPerSecond = pace?.BytesPerSecond ?? 0,
             SpeedMeasured = pace is { BytesPerSecond: > 0 },
-            Eta = pace?.OverallEta,
-            StageIndex = 1,
-            StageCount = 1,
-            StageName = "Compare",
+            Eta = snapshot?.Stage?.Remaining ?? pace?.OverallEta,
+            StageIndex = snapshot?.Stage?.Index ?? 1,
+            StageCount = snapshot?.Stage?.Count ?? 1,
+            StageName = snapshot?.Stage?.Name ?? "Compare",
             StartedUtc = job.StartedUtc,
             PausedUtc = status is JobStatus.Paused or JobStatus.PausedOutsideHours ? job.PausedUtc ?? DateTimeOffset.UtcNow : job.PausedUtc,
-            StageStartedUtc = job.StartedUtc
+            StageStartedUtc = snapshot?.Stage is { } stage
+                ? DateTimeOffset.UtcNow - stage.Elapsed
+                : job.StartedUtc
         });
     }
 

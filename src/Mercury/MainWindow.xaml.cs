@@ -312,12 +312,17 @@ public partial class MainWindow : Window
         }
     }
 
+    private int _consoleProgrammaticScroll;
+
     private void ConsoleList_Loaded(object sender, RoutedEventArgs e)
     {
-        _consoleScroll = FindScrollViewer(ConsoleList);
-        if (_consoleScroll is not null)
+        if (_consoleScroll is null)
         {
-            _consoleScroll.ScrollChanged += ConsoleScroll_ScrollChanged;
+            _consoleScroll = FindScrollViewer(ConsoleList);
+            if (_consoleScroll is not null)
+            {
+                _consoleScroll.ScrollChanged += ConsoleScroll_ScrollChanged;
+            }
         }
 
         if (Vm.FollowConsole)
@@ -329,15 +334,29 @@ public partial class MainWindow : Window
     private void ConsoleScroll_ScrollChanged(object sender, ScrollChangedEventArgs e)
     {
         var atBottom = IsConsoleAtBottom();
+        var next = ConsoleFollow.AfterScroll(
+            Vm.FollowConsole,
+            _consoleProgrammaticScroll > 0,
+            e.ExtentHeightChange,
+            e.VerticalChange,
+            atBottom);
         if (string.IsNullOrEmpty(Vm.ConsoleSearch))
         {
-            Vm.FollowConsole = atBottom;
+            Vm.FollowConsole = next;
+        }
+        else if (!next)
+        {
+            Vm.FollowConsole = false;
+        }
+
+        if (_consoleProgrammaticScroll > 0)
+        {
             return;
         }
 
-        if (!atBottom)
+        if (Vm.FollowConsole && e.ExtentHeightChange != 0 && !atBottom)
         {
-            Vm.FollowConsole = false;
+            ScrollConsoleNow();
         }
     }
 
@@ -371,7 +390,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        ConsoleList.ScrollIntoView(ConsoleList.Items[ConsoleList.Items.Count - 1]);
+        ScrollConsoleNow();
     }
 
     private void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -391,8 +410,36 @@ public partial class MainWindow : Window
                 return;
             }
 
-            ConsoleList.ScrollIntoView(ConsoleList.Items[ConsoleList.Items.Count - 1]);
+            ScrollConsoleNow();
         }, DispatcherPriority.Loaded);
+    }
+
+    private void ScrollConsoleNow()
+    {
+        _consoleProgrammaticScroll++;
+        try
+        {
+            if (_consoleScroll is not null)
+            {
+                _consoleScroll.ScrollToEnd();
+            }
+            else if (ConsoleList.Items.Count > 0)
+            {
+                ConsoleList.ScrollIntoView(ConsoleList.Items[ConsoleList.Items.Count - 1]);
+            }
+        }
+        finally
+        {
+            Dispatcher.BeginInvoke(
+                () =>
+                {
+                    if (_consoleProgrammaticScroll > 0)
+                    {
+                        _consoleProgrammaticScroll--;
+                    }
+                },
+                DispatcherPriority.Input);
+        }
     }
 
     private bool IsConsoleAtBottom()
@@ -402,9 +449,7 @@ public partial class MainWindow : Window
             return true;
         }
 
-        const double epsilon = 0.5;
-        return _consoleScroll.ScrollableHeight <= 0
-               || _consoleScroll.VerticalOffset >= _consoleScroll.ScrollableHeight - epsilon;
+        return ConsoleFollow.IsAtBottom(_consoleScroll.VerticalOffset, _consoleScroll.ScrollableHeight);
     }
 
     private static ScrollViewer? FindScrollViewer(DependencyObject root)

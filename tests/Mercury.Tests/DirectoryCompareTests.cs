@@ -139,7 +139,7 @@ public class DirectoryCompareTests
             var hashing = pulses.Where(p => p.Pace is { BytesTotal: > 0 }).ToList();
             Assert.NotEmpty(hashing);
             Assert.All(hashing, p => Assert.Equal(24, p.Pace!.BytesTotal));
-            Assert.Contains(hashing, p => p.Pace!.CurrentFolder == "pack" && p.Pace.FolderBytesTotal == 16);
+            Assert.Contains(hashing, p => p.Pace!.CurrentFolder == "pack" && p.Pace.FolderBytesTotal == 8);
             Assert.Equal(24, hashing[^1].Pace!.BytesDone);
         }
         finally
@@ -243,6 +243,8 @@ public class DirectoryCompareTests
         Assert.Contains("Skip if dest newer or equal", section.Body, StringComparison.Ordinal);
         Assert.Contains("xxHash64", section.Body, StringComparison.Ordinal);
         Assert.Contains("current folder", section.Body, StringComparison.Ordinal);
+        Assert.Contains("count source", section.Body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("elapsed on the left", section.Body, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("each source hash", section.Body, StringComparison.Ordinal);
         Assert.Contains("starts the count over", section.Body, StringComparison.Ordinal);
         Assert.Contains("queue row", section.Body, StringComparison.OrdinalIgnoreCase);
@@ -504,7 +506,8 @@ public class DirectoryCompareTests
                 cts.Token,
                 progress: progress =>
                 {
-                    if (progress.FilesVisited >= 50 && progress.Pace is null)
+                    if (progress.FilesVisited >= 50
+                        && progress.Stage?.Kind is CompareStageKind.CountSource or CompareStageKind.CountDestination)
                     {
                         cts.Cancel();
                     }

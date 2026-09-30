@@ -100,9 +100,15 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private double _compareFilePercent;
     private double _compareFolderPercent;
     private double _compareOverallPercent;
-    private string _compareFileText = "—";
-    private string _compareFolderText = "—";
+    private string _compareFileText = "File  —";
+    private string _compareFolderText = "Folder  —";
     private string _compareOverallText = "Compare  (counting)";
+    private string _compareFileElapsedText = "—";
+    private string _compareFolderElapsedText = "—";
+    private string _compareOverallElapsedText = "—";
+    private string _compareFileRemainingText = "—";
+    private string _compareFolderRemainingText = "—";
+    private string _compareOverallRemainingText = "—";
     private bool _isRunning;
     private bool _hasBackgroundRundown;
     private bool _isPaused;
@@ -942,6 +948,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public string CompareFileText { get => _compareFileText; private set => SetField(ref _compareFileText, value); }
     public string CompareFolderText { get => _compareFolderText; private set => SetField(ref _compareFolderText, value); }
     public string CompareOverallText { get => _compareOverallText; private set => SetField(ref _compareOverallText, value); }
+    public string CompareFileElapsedText { get => _compareFileElapsedText; private set => SetField(ref _compareFileElapsedText, value); }
+    public string CompareFolderElapsedText { get => _compareFolderElapsedText; private set => SetField(ref _compareFolderElapsedText, value); }
+    public string CompareOverallElapsedText { get => _compareOverallElapsedText; private set => SetField(ref _compareOverallElapsedText, value); }
+    public string CompareFileRemainingText { get => _compareFileRemainingText; private set => SetField(ref _compareFileRemainingText, value); }
+    public string CompareFolderRemainingText { get => _compareFolderRemainingText; private set => SetField(ref _compareFolderRemainingText, value); }
+    public string CompareOverallRemainingText { get => _compareOverallRemainingText; private set => SetField(ref _compareOverallRemainingText, value); }
 
     public bool ShowOverallProgress => ProgressHeader.ShowOverall(QueueJobs.Count);
     public ProgressStats HeaderStats => JobStats;
@@ -3614,15 +3626,21 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
 
         var bars = CompareHeaderBars.From(activity.Progress);
-        CompareFileIndeterminate = bars.Indeterminate;
-        CompareFolderIndeterminate = bars.Indeterminate;
-        CompareOverallIndeterminate = bars.Indeterminate;
+        CompareFileIndeterminate = bars.FileIndeterminate;
+        CompareFolderIndeterminate = bars.FolderIndeterminate;
+        CompareOverallIndeterminate = bars.OverallIndeterminate;
         CompareFilePercent = bars.FilePercent;
         CompareFolderPercent = bars.FolderPercent;
         CompareOverallPercent = bars.OverallPercent;
         CompareFileText = bars.FileText;
         CompareFolderText = bars.FolderText;
         CompareOverallText = bars.OverallText;
+        CompareFileElapsedText = bars.FileElapsed;
+        CompareFolderElapsedText = bars.FolderElapsed;
+        CompareOverallElapsedText = bars.OverallElapsed;
+        CompareFileRemainingText = bars.FileRemaining;
+        CompareFolderRemainingText = bars.FolderRemaining;
+        CompareOverallRemainingText = bars.OverallRemaining;
         ShowCompareHeader = true;
     }
 
@@ -3635,9 +3653,15 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         CompareFilePercent = 0;
         CompareFolderPercent = 0;
         CompareOverallPercent = 0;
-        CompareFileText = "—";
-        CompareFolderText = "—";
+        CompareFileText = "File  —";
+        CompareFolderText = "Folder  —";
         CompareOverallText = "Compare  (counting)";
+        CompareFileElapsedText = "—";
+        CompareFolderElapsedText = "—";
+        CompareOverallElapsedText = "—";
+        CompareFileRemainingText = "—";
+        CompareFolderRemainingText = "—";
+        CompareOverallRemainingText = "—";
     }
 
     private void OnQueueChanged(object? sender, EventArgs e)
