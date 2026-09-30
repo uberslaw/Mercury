@@ -93,6 +93,16 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private TransferRundown _rundown = TransferRundown.Empty;
     private double _jobPercent;
     private double _overallPercent;
+    private bool _showCompareHeader;
+    private bool _compareFileIndeterminate = true;
+    private bool _compareFolderIndeterminate = true;
+    private bool _compareOverallIndeterminate = true;
+    private double _compareFilePercent;
+    private double _compareFolderPercent;
+    private double _compareOverallPercent;
+    private string _compareFileText = "—";
+    private string _compareFolderText = "—";
+    private string _compareOverallText = "Compare  (counting)";
     private bool _isRunning;
     private bool _hasBackgroundRundown;
     private bool _isPaused;
@@ -147,6 +157,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         _paths = paths;
         _scheduler = new JobScheduler(paths);
         _scheduler.ProgressChanged += OnProgress;
+        _scheduler.CompareActivity += OnCompareActivity;
         _scheduler.QueueChanged += OnQueueChanged;
         _scheduler.HistoryChanged += OnHistoryChanged;
         _scheduler.Log.LineWritten += OnLog;
@@ -918,6 +929,17 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public string OverallPercentText => ProgressHeader.PercentLabel(OverallPercent, JobStats.Bytes.HasValue || JobStats.Files.HasValue);
 
+    public bool ShowCompareHeader { get => _showCompareHeader; private set => SetField(ref _showCompareHeader, value); }
+    public bool CompareFileIndeterminate { get => _compareFileIndeterminate; private set => SetField(ref _compareFileIndeterminate, value); }
+    public bool CompareFolderIndeterminate { get => _compareFolderIndeterminate; private set => SetField(ref _compareFolderIndeterminate, value); }
+    public bool CompareOverallIndeterminate { get => _compareOverallIndeterminate; private set => SetField(ref _compareOverallIndeterminate, value); }
+    public double CompareFilePercent { get => _compareFilePercent; private set => SetField(ref _compareFilePercent, value); }
+    public double CompareFolderPercent { get => _compareFolderPercent; private set => SetField(ref _compareFolderPercent, value); }
+    public double CompareOverallPercent { get => _compareOverallPercent; private set => SetField(ref _compareOverallPercent, value); }
+    public string CompareFileText { get => _compareFileText; private set => SetField(ref _compareFileText, value); }
+    public string CompareFolderText { get => _compareFolderText; private set => SetField(ref _compareFolderText, value); }
+    public string CompareOverallText { get => _compareOverallText; private set => SetField(ref _compareOverallText, value); }
+
     public bool ShowOverallProgress => ProgressHeader.ShowOverall(QueueJobs.Count);
     public ProgressStats HeaderStats => JobStats;
     public TransferRundown HeaderRundown => TransferRundown.Empty;
@@ -1527,6 +1549,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public void Dispose()
     {
         _scheduler.ProgressChanged -= OnProgress;
+        _scheduler.CompareActivity -= OnCompareActivity;
         _scheduler.QueueChanged -= OnQueueChanged;
         _scheduler.HistoryChanged -= OnHistoryChanged;
         _scheduler.Log.LineWritten -= OnLog;
@@ -3363,6 +3386,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private void ApplyProgress(JobProgress e)
     {
+        if (IsCompareJob(e.JobId))
+        {
+            QueueJobs.FirstOrDefault(j => j.Job.Id == e.JobId)?.ApplyProgress(e);
+            return;
+        }
+
         var copy = _scheduler.TryGetRunningJob();
         var backgroundBehindCopy = e.IsBackgroundStage && copy is not null && copy.Id != e.JobId;
         if (!string.IsNullOrEmpty(e.JobId) && e.JobId != _progressJobId && !backgroundBehindCopy)
@@ -3541,6 +3570,73 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
+    private bool IsCompareJob(string? jobId)
+    {
+        if (string.IsNullOrEmpty(jobId))
+        {
+            return false;
+        }
+
+        if (_scheduler.TryGetRunningCompare()?.Id == jobId)
+        {
+            return true;
+        }
+
+        return _scheduler.Queue.Any(job => job.Id == jobId && job.Kind == JobKind.Compare);
+    }
+
+    private void OnCompareActivity(object? sender, CompareActivity activity)
+    {
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.CheckAccess())
+        {
+            ApplyCompareHeader(activity);
+            return;
+        }
+
+        dispatcher.BeginInvoke(() => ApplyCompareHeader(activity));
+    }
+
+    private void ApplyCompareHeader(CompareActivity activity)
+    {
+        if (activity.Result is not null || !_scheduler.HasRunningCompare)
+        {
+            ClearCompareHeader();
+            return;
+        }
+
+        if (activity.Progress is null)
+        {
+            return;
+        }
+
+        var bars = CompareHeaderBars.From(activity.Progress);
+        CompareFileIndeterminate = bars.Indeterminate;
+        CompareFolderIndeterminate = bars.Indeterminate;
+        CompareOverallIndeterminate = bars.Indeterminate;
+        CompareFilePercent = bars.FilePercent;
+        CompareFolderPercent = bars.FolderPercent;
+        CompareOverallPercent = bars.OverallPercent;
+        CompareFileText = bars.FileText;
+        CompareFolderText = bars.FolderText;
+        CompareOverallText = bars.OverallText;
+        ShowCompareHeader = true;
+    }
+
+    private void ClearCompareHeader()
+    {
+        ShowCompareHeader = false;
+        CompareFileIndeterminate = true;
+        CompareFolderIndeterminate = true;
+        CompareOverallIndeterminate = true;
+        CompareFilePercent = 0;
+        CompareFolderPercent = 0;
+        CompareOverallPercent = 0;
+        CompareFileText = "—";
+        CompareFolderText = "—";
+        CompareOverallText = "Compare  (counting)";
+    }
+
     private void OnQueueChanged(object? sender, EventArgs e)
     {
         var dispatcher = Application.Current?.Dispatcher;
@@ -3690,6 +3786,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         _runningJobId = running?.Id ?? rundown?.Id;
         IsRunning = _scheduler.BlocksStart;
         HasBackgroundRundown = _scheduler.HasBackgroundRundown;
+        if (!_scheduler.HasRunningCompare)
+        {
+            ClearCompareHeader();
+        }
         IsPaused = running is { Status: JobStatus.Paused };
         IsGlobalPaused = _scheduler.GlobalPause.IsPaused;
         RaiseRunCommands();

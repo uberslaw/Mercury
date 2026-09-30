@@ -122,6 +122,53 @@ public sealed class ComparePace
     }
 }
 
+/// <summary>Three header bars for a running compare: file, folder, and the whole compare.</summary>
+public readonly record struct CompareHeaderBars(
+    bool Indeterminate,
+    double FilePercent,
+    string FileText,
+    double FolderPercent,
+    string FolderText,
+    double OverallPercent,
+    string OverallText)
+{
+    public static CompareHeaderBars From(DirectoryCompareProgress? progress)
+    {
+        var relative = progress?.CurrentRelative;
+        var fileName = ComparePace.FileLabel(relative);
+        var pace = progress?.Pace;
+        var folderName = string.IsNullOrEmpty(pace?.CurrentFolder)
+            ? ComparePace.FolderLabel(relative)
+            : pace!.CurrentFolder!;
+        if (pace is not { BytesTotal: > 0 })
+        {
+            return new CompareHeaderBars(true, 0, fileName, 0, folderName, 0, "Compare  (counting)");
+        }
+
+        var filePct = Percent(pace.FileBytesDone, pace.FileBytesTotal);
+        var folderPct = Percent(pace.FolderBytesDone, pace.FolderBytesTotal);
+        var overallPct = Percent(pace.BytesDone, pace.BytesTotal);
+        return new CompareHeaderBars(
+            false,
+            filePct,
+            fileName + "  " + ProgressHeader.PercentLabel(filePct, pace.FileBytesTotal > 0),
+            folderPct,
+            folderName + "  " + ProgressHeader.PercentLabel(folderPct, pace.FolderBytesTotal > 0),
+            overallPct,
+            "Compare  " + ProgressHeader.PercentLabel(overallPct, true));
+    }
+
+    private static double Percent(long done, long total)
+    {
+        if (total <= 0)
+        {
+            return 0;
+        }
+
+        return Math.Clamp(100.0 * done / total, 0, 100);
+    }
+}
+
 public sealed class DirectoryCompareDiff
 {
     public CompareDiffKind Kind { get; init; }

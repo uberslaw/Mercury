@@ -263,6 +263,75 @@
                                        Margin="0,4,0,0"/>
                         </Border>
                     </StackPanel>
+                    <StackPanel x:Name="HeaderCompareBars" Margin="0,8,0,0"
+                                Visibility="{Binding ShowCompareHeader, Converter={StaticResource BoolToVis}}">
+                        <Grid Margin="0,0,0,4">
+                            <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="HeaderBarFillBrush,HeaderBarTrackBrush,OnHeaderBrush">
+                                <ProgressBar x:Name="HeaderCompareFileBar"
+                                             Value="{Binding CompareFilePercent, Mode=OneWay}" Maximum="100"
+                                             IsIndeterminate="{Binding CompareFileIndeterminate, Mode=OneWay}"
+                                             Height="{DynamicResource HeaderProgressBarHeight}"
+                                             MinHeight="{DynamicResource HeaderProgressBarHeight}"
+                                             Foreground="{DynamicResource HeaderBarFillBrush}"
+                                             Background="{DynamicResource HeaderBarTrackBrush}"/>
+                            </Border>
+                            <TextBlock Text="File" FontWeight="SemiBold"
+                                       HorizontalAlignment="Left" VerticalAlignment="Center"
+                                       Margin="8,0" IsHitTestVisible="False"
+                                       Foreground="{DynamicResource OnHeaderBrush}"
+                                       FontFamily="{DynamicResource ProgressFontFamily}"
+                                       FontSize="{DynamicResource ProgressFontSize}"/>
+                            <TextBlock Text="{Binding CompareFileText}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Margin="48,0" TextTrimming="CharacterEllipsis"
+                                       FontWeight="SemiBold" IsHitTestVisible="False"
+                                       Foreground="{DynamicResource OnHeaderBrush}"
+                                       FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}"/>
+                        </Grid>
+                        <Grid Margin="0,0,0,4">
+                            <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="HeaderBarFillBrush,HeaderBarTrackBrush,OnHeaderBrush">
+                                <ProgressBar x:Name="HeaderCompareFolderBar"
+                                             Value="{Binding CompareFolderPercent, Mode=OneWay}" Maximum="100"
+                                             IsIndeterminate="{Binding CompareFolderIndeterminate, Mode=OneWay}"
+                                             Height="{DynamicResource HeaderProgressBarHeight}"
+                                             MinHeight="{DynamicResource HeaderProgressBarHeight}"
+                                             Foreground="{DynamicResource HeaderBarFillBrush}"
+                                             Background="{DynamicResource HeaderBarTrackBrush}"/>
+                            </Border>
+                            <TextBlock Text="Folder" FontWeight="SemiBold"
+                                       HorizontalAlignment="Left" VerticalAlignment="Center"
+                                       Margin="8,0" IsHitTestVisible="False"
+                                       Foreground="{DynamicResource OnHeaderBrush}"
+                                       FontFamily="{DynamicResource ProgressFontFamily}"
+                                       FontSize="{DynamicResource ProgressFontSize}"/>
+                            <TextBlock Text="{Binding CompareFolderText}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Margin="64,0" TextTrimming="CharacterEllipsis"
+                                       FontWeight="SemiBold" IsHitTestVisible="False"
+                                       Foreground="{DynamicResource OnHeaderBrush}"
+                                       FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}"/>
+                        </Grid>
+                        <Grid>
+                            <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="HeaderBarFillBrush,HeaderBarTrackBrush,OnHeaderBrush">
+                                <ProgressBar x:Name="HeaderCompareOverallBar"
+                                             Value="{Binding CompareOverallPercent, Mode=OneWay}" Maximum="100"
+                                             IsIndeterminate="{Binding CompareOverallIndeterminate, Mode=OneWay}"
+                                             Height="{DynamicResource HeaderProgressBarHeight}"
+                                             MinHeight="{DynamicResource HeaderProgressBarHeight}"
+                                             Foreground="{DynamicResource HeaderBarFillBrush}"
+                                             Background="{DynamicResource HeaderBarTrackBrush}"/>
+                            </Border>
+                            <TextBlock Text="Compare" FontWeight="SemiBold"
+                                       HorizontalAlignment="Left" VerticalAlignment="Center"
+                                       Margin="8,0" IsHitTestVisible="False"
+                                       Foreground="{DynamicResource OnHeaderBrush}"
+                                       FontFamily="{DynamicResource ProgressFontFamily}"
+                                       FontSize="{DynamicResource ProgressFontSize}"/>
+                            <TextBlock Text="{Binding CompareOverallText}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Margin="72,0" TextTrimming="CharacterEllipsis"
+                                       FontWeight="SemiBold" IsHitTestVisible="False"
+                                       Foreground="{DynamicResource OnHeaderBrush}"
+                                       FontFamily="{DynamicResource ProgressFontFamily}" FontSize="{DynamicResource ProgressFontSize}"/>
+                        </Grid>
+                    </StackPanel>
                     <WrapPanel x:Name="HeaderRunButtons" Margin="0,8,0,0">
                         <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="AccentBrush,AccentForegroundBrush">
                             <Button Content="{Binding StartButtonLabel}" Style="{StaticResource AccentButton}"

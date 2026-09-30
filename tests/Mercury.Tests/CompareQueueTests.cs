@@ -3,6 +3,57 @@ namespace Mercury.Tests;
 public class CompareQueueTests
 {
     [Fact]
+    public void CompareHeaderBarsUseFileFolderAndOverallPace()
+    {
+        var counting = CompareHeaderBars.From(new DirectoryCompareProgress(3, 1, @"album\a.txt"));
+        Assert.True(counting.Indeterminate);
+        Assert.Equal("a.txt", counting.FileText);
+        Assert.Equal("album", counting.FolderText);
+        Assert.Equal("Compare  (counting)", counting.OverallText);
+
+        var pace = new ComparePace
+        {
+            CurrentFolder = "album",
+            FileBytesDone = 25,
+            FileBytesTotal = 100,
+            FolderBytesDone = 50,
+            FolderBytesTotal = 200,
+            BytesDone = 100,
+            BytesTotal = 400
+        };
+        var bars = CompareHeaderBars.From(new DirectoryCompareProgress(4, 1, @"album\a.txt", pace));
+        Assert.False(bars.Indeterminate);
+        Assert.Equal(25, bars.FilePercent);
+        Assert.Equal(25, bars.FolderPercent);
+        Assert.Equal(25, bars.OverallPercent);
+        Assert.Contains("a.txt", bars.FileText, StringComparison.Ordinal);
+        Assert.Contains("album", bars.FolderText, StringComparison.Ordinal);
+        Assert.StartsWith("Compare", bars.OverallText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MainHeaderCompareBarsAreOneWayAndLeaveTransferBars()
+    {
+        var xaml = File.ReadAllText(FindRepoFile(Path.Combine("src", "Mercury", "MainWindow.xaml")));
+        Assert.Contains("x:Name=\"HeaderCompareBars\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Visibility=\"{Binding ShowCompareHeader, Converter={StaticResource BoolToVis}}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"HeaderCompareFileBar\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Value=\"{Binding CompareFilePercent, Mode=OneWay}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("IsIndeterminate=\"{Binding CompareFileIndeterminate, Mode=OneWay}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"HeaderCompareFolderBar\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Value=\"{Binding CompareFolderPercent, Mode=OneWay}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("IsIndeterminate=\"{Binding CompareFolderIndeterminate, Mode=OneWay}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"HeaderCompareOverallBar\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Value=\"{Binding CompareOverallPercent, Mode=OneWay}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("IsIndeterminate=\"{Binding CompareOverallIndeterminate, Mode=OneWay}\"", xaml, StringComparison.Ordinal);
+        var transfer = xaml.IndexOf("x:Name=\"HeaderCurrentProgressBar\"", StringComparison.Ordinal);
+        var compare = xaml.IndexOf("x:Name=\"HeaderCompareBars\"", StringComparison.Ordinal);
+        Assert.True(transfer >= 0 && compare > transfer);
+        Assert.Contains("Value=\"{Binding JobPercent, Mode=OneWay}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Value=\"{Binding OverallPercent, Mode=OneWay}\"", xaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ComparePanelBindsProgressOneWay()
     {
         var xaml = File.ReadAllText(FindRepoFile(Path.Combine("src", "Mercury", "ComparePanel.xaml")));
