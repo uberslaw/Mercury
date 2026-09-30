@@ -304,8 +304,8 @@ public sealed class TransferRundown
         }
         else if (dest.Files > 0 || dest.Folders > 0)
         {
-            job.DestFiles = dest.Files;
-            job.DestFolders = dest.Folders;
+            job.DestFiles = Math.Max(job.DestFiles, dest.Files);
+            job.DestFolders = Math.Max(job.DestFolders, dest.Folders);
         }
         else if (!stopped)
         {

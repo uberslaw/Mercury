@@ -47,7 +47,7 @@ public sealed class TransferHistoryEntry
             JobId = job.Id,
             Name = string.IsNullOrWhiteSpace(job.Name) ? job.Id : job.Name,
             SourcePath = job.SourcePath,
-            DestinationPath = job.DestinationPath,
+            DestinationPath = JobDestinations.Display(job),
             StartedUtc = job.StartedUtc,
             EndedUtc = job.EndedUtc,
             Status = job.Status,

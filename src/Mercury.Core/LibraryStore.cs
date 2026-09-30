@@ -25,6 +25,7 @@ public sealed class SavedJob
     public string SourcePath { get; set; } = "";
     public List<string> SourcePaths { get; set; } = [];
     public string DestinationPath { get; set; } = "";
+    public List<string> DestinationPaths { get; set; } = [];
     public JobOptions Options { get; set; } = new();
 }
 

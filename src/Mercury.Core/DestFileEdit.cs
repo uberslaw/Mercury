@@ -106,7 +106,7 @@ public static class DestFileEdit
         }
 
         var newDest = Path.Combine(directory, newName);
-        if (!IsInsideDestination(job.DestinationPath, newDest))
+        if (!JobDestinations.Roots(job).Any(d => IsInsideDestination(d, newDest)))
         {
             return new EditResult(false, "The new name would leave the job destination.");
         }

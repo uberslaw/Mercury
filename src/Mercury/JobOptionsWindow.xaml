@@ -32,19 +32,24 @@
                              DestIsFolder="{Binding Paths.QueueDestIsFolder, ElementName=Root}"
                              DestIsCatcher="{Binding Paths.QueueDestIsCatcher, ElementName=Root}"
                              HasSourceFolders="{Binding Paths.HasQueueSourceFolders, ElementName=Root}"
+                             HasDestFolders="{Binding Paths.HasQueueDestFolders, ElementName=Root}"
                              IncludeSourceFolderName="{Binding IncludeSourceFolderName, Mode=TwoWay}"
                              LandingPreview="{Binding Paths.QueueLandingPreview, ElementName=Root}"
                              ShowLandingPreview="{Binding Paths.ShowQueueLandingPreview, ElementName=Root}"
                              RecentSources="{Binding Paths.RecentSources, ElementName=Root}"
                              RecentDestinations="{Binding Paths.RecentDestinations, ElementName=Root}"
                              SourceFolders="{Binding Paths.QueueSourceFolders, ElementName=Root}"
+                             DestFolders="{Binding Paths.QueueDestFolders, ElementName=Root}"
                              CatcherTemplates="{Binding Paths.CatcherTemplates, ElementName=Root}"
                              SelectedCatcherTemplate="{Binding Paths.QueueSelectedCatcherTemplate, ElementName=Root, Mode=TwoWay}"
                              BrowseSourceCommand="{Binding Paths.BrowseQueueSourceCommand, ElementName=Root}"
                              AddSourceCommand="{Binding Paths.AddQueueSourceCommand, ElementName=Root}"
                              ClearSourcesCommand="{Binding Paths.ClearQueueSourcesCommand, ElementName=Root}"
                              RemoveSourceCommand="{Binding Paths.RemoveQueueSourceCommand, ElementName=Root}"
-                             BrowseDestCommand="{Binding Paths.BrowseQueueDestCommand, ElementName=Root}"/>
+                             BrowseDestCommand="{Binding Paths.BrowseQueueDestCommand, ElementName=Root}"
+                             AddDestCommand="{Binding Paths.AddQueueDestCommand, ElementName=Root}"
+                             ClearDestsCommand="{Binding Paths.ClearQueueDestsCommand, ElementName=Root}"
+                             RemoveDestCommand="{Binding Paths.RemoveQueueDestCommand, ElementName=Root}"/>
         <ScrollViewer VerticalScrollBarVisibility="Auto">
             <local:JobOptionsPanel/>
         </ScrollViewer>

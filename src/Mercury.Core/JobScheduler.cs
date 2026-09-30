@@ -469,6 +469,8 @@ public sealed class JobScheduler : IDisposable
             job.SourcePaths = [job.SourcePath];
         }
 
+        JobDestinations.EnsureList(job);
+
         PackPolicy.ApplySettings(job.Options, AppSettingsStore.Load(_paths));
 
         var jobDir = _paths.JobDirectory(job.Id);

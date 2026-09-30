@@ -12,8 +12,11 @@ public static class Verifier
         string name,
         CancellationToken cancellationToken = default,
         Action<RundownProgress>? progress = null,
-        IReadOnlySet<string>? onlyThese = null)
+        IReadOnlySet<string>? onlyThese = null,
+        IReadOnlyList<CopyMapping>? mappings = null)
     {
+        var maps = mappings is { Count: > 0 } ? mappings : [mapping];
+        var uniquePrefix = maps.Any(m => !string.IsNullOrEmpty(m.UniqueRelativePrefix));
         var issuesBefore = journal.IssueCount();
         var files = journal.GetFiles();
         if (onlyThese is not null)
@@ -156,7 +159,7 @@ public static class Verifier
                 .Select(f => f.SourcePath)
                 .Where(p => !string.IsNullOrWhiteSpace(p))
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            foreach (var record in SourceWalker.Walk(mapping, extraExcludeRoots: null, job.Options))
+            foreach (var record in SourceWalker.WalkAll(maps, extraExcludeRoots: null, job.Options, uniquePrefix))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 if (known.Contains(record.RelativePath) || knownSources.Contains(record.SourcePath))

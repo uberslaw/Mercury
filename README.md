@@ -8,7 +8,7 @@ Copy any Explorer path (file, folder, or whole drive) to any writable destinatio
 
 1. Copy the `Mercury` folder onto the PC or a USB toolkit drive.
 2. Double-click `Mercury.exe` to send, or `MercuryCatcher.exe` to receive over HTTPS.
-3. Pick source folder(s) and destination (browse, paste, or drop from Explorer). Browse Source can multi-select folders, then browse another parent and add more — they all go in one job.
+3. Pick source folder(s) and destination(s) (browse, paste, or drop from Explorer). Browse Source can multi-select folders, then browse another parent and add more — they all go in one job. Destination Add / Browse / drop works the same: one dest is the usual path; add more to copy the same sources to each dest in that job.
 4. Set speed / hours / verify if you want, then **Start** or **Add to queue**.
 
 Speed limits (per-job Max MB/s, global min/max, and **Throttle to X MB/s when not idle**) apply immediately while a job is running — no restart. Other in-flight option changes (hours, overwrite, verify, retries, dest) are a later pass.

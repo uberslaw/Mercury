@@ -68,7 +68,7 @@ public static class JobHeartbeat
     }
 
     public static void Write(JobJournal journal, Job job, double percent, string? file) =>
-        Write(journal, job.Id, percent, file, JobSources.Display(job), job.DestinationPath);
+        Write(journal, job.Id, percent, file, JobSources.Display(job), JobDestinations.Display(job));
 
     public static bool HasCopyProgress(double percent, string? file, Job? job) =>
         percent >= 0.05
@@ -244,7 +244,7 @@ public static class JobHeartbeat
             ? JobSources.Display(job)
             : state.SourcePath;
         var dest = job is not null
-            ? job.DestinationPath
+            ? JobDestinations.Display(job)
             : state.DestinationPath;
         if (string.IsNullOrWhiteSpace(source))
         {

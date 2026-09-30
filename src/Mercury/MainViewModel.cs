@@ -225,9 +225,15 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         AddSourceCommand = new RelayCommand(AddSourceFromDraft, () => PathsEditable);
         RemoveSourceCommand = new RelayCommand(p => RemoveSource(p as SourceFolderItem), _ => PathsEditable);
         ClearSourcesCommand = new RelayCommand(ClearSources, () => PathsEditable && SourceFolders.Count > 0);
+        AddDestCommand = new RelayCommand(AddDestFromDraft, () => PathsEditable);
+        RemoveDestCommand = new RelayCommand(p => RemoveDest(p as SourceFolderItem), _ => PathsEditable);
+        ClearDestsCommand = new RelayCommand(ClearDests, () => PathsEditable && DestFolders.Count > 0);
         AddQueueSourceCommand = new RelayCommand(AddQueueSourceFromDraft);
         RemoveQueueSourceCommand = new RelayCommand(p => RemoveQueueSource(p as SourceFolderItem));
         ClearQueueSourcesCommand = new RelayCommand(ClearQueueSources, () => QueueSourceFolders.Count > 0);
+        AddQueueDestCommand = new RelayCommand(AddQueueDestFromDraft);
+        RemoveQueueDestCommand = new RelayCommand(p => RemoveQueueDest(p as SourceFolderItem));
+        ClearQueueDestsCommand = new RelayCommand(ClearQueueDests, () => QueueDestFolders.Count > 0);
         AddNeverPackCommand = new RelayCommand(AddNeverPack);
         RemoveNeverPackCommand = new RelayCommand(RemoveNeverPack);
         ResetNeverPackCommand = new RelayCommand(ResetNeverPack);
@@ -235,7 +241,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         RemovePackExtensionCommand = new RelayCommand(RemovePackExtension);
         PauseAllCommand = new RelayCommand(PauseAll, () => IsRunning && !IsGlobalPaused);
         ResumeAllCommand = new RelayCommand(ResumeAll, () => IsRunning && IsGlobalPaused);
-        SaveJobCommand = new RelayCommand(SaveCurrentJob, () => !string.IsNullOrWhiteSpace(SourcePath) && (DestIsCatcher ? SelectedCatcherTemplate is not null : !string.IsNullOrWhiteSpace(DestPath)));
+        SaveJobCommand = new RelayCommand(SaveCurrentJob, () => !string.IsNullOrWhiteSpace(SourcePath) && (DestIsCatcher ? SelectedCatcherTemplate is not null : CollectedDests().Count > 0));
         ToggleRoboFlagsCommand = new RelayCommand(() => RoboFlagsExpanded = !RoboFlagsExpanded);
         LoadSavedJobCommand = new RelayCommand(p => LoadSavedJob(p as SavedJob));
         DeleteSavedJobCommand = new RelayCommand(p => DeleteSavedJob(p as SavedJob));
@@ -288,6 +294,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             LoadSourceFolders(JobSources.Roots(last));
             SourcePath = last.SourcePath;
+            LoadDestFolders(JobDestinations.Roots(last));
             DestPath = last.DestinationPath;
             ApplyJobOptions(last.Options);
             ApplyResumableSnapshot(last);
@@ -316,7 +323,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public ObservableCollection<HelpSection> HelpSections { get; } = [];
     public ObservableCollection<FolderTreeItem> FolderTree { get; } = [];
     public ObservableCollection<SourceFolderItem> SourceFolders { get; } = [];
+    public ObservableCollection<SourceFolderItem> DestFolders { get; } = [];
     public ObservableCollection<SourceFolderItem> QueueSourceFolders { get; } = [];
+    public ObservableCollection<SourceFolderItem> QueueDestFolders { get; } = [];
     public ObservableCollection<string> NeverPackExtensions { get; } = [];
     public ObservableCollection<string> PackExtensions { get; } = [];
     public ICollectionView ConsoleView { get; private set; } = CollectionViewSource.GetDefaultView(Array.Empty<ConsoleLine>());
@@ -338,9 +347,15 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public ICommand AddSourceCommand { get; }
     public ICommand RemoveSourceCommand { get; }
     public ICommand ClearSourcesCommand { get; }
+    public ICommand AddDestCommand { get; }
+    public ICommand RemoveDestCommand { get; }
+    public ICommand ClearDestsCommand { get; }
     public ICommand AddQueueSourceCommand { get; }
     public ICommand RemoveQueueSourceCommand { get; }
     public ICommand ClearQueueSourcesCommand { get; }
+    public ICommand AddQueueDestCommand { get; }
+    public ICommand RemoveQueueDestCommand { get; }
+    public ICommand ClearQueueDestsCommand { get; }
     public ICommand OpenPackExtensionsCommand { get; }
     public ICommand AddNeverPackCommand { get; }
     public ICommand RemoveNeverPackCommand { get; }
@@ -402,7 +417,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             if (SetField(ref _destPath, value))
             {
-                CloudWarning = DestIsFolder && CloudPath.LooksLikeCloudFolder(value);
+                CloudWarning = DestIsFolder && CollectedDests().Any(CloudPath.LooksLikeCloudFolder);
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasPaths)));
                 RaiseLandingPreview();
                 RaiseRunCommands();
@@ -417,7 +432,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             if (SetField(ref _destKindIndex, value))
             {
-                CloudWarning = DestIsFolder && CloudPath.LooksLikeCloudFolder(DestPath);
+                CloudWarning = DestIsFolder && CollectedDests().Any(CloudPath.LooksLikeCloudFolder);
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DestIsCatcher)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DestIsFolder)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasPaths)));
@@ -1096,12 +1111,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool HasRecentDestinations => RecentDestinations.Count > 0;
     public bool HasPaths =>
         CollectedSources().Count > 0 &&
-        (DestIsCatcher ? SelectedCatcherTemplate is not null : !string.IsNullOrWhiteSpace(DestPath));
+        (DestIsCatcher ? SelectedCatcherTemplate is not null : CollectedDests().Count > 0);
     public bool HasQueuePaths =>
         CollectedQueueSources().Count > 0 &&
-        (QueueDestIsCatcher ? QueueSelectedCatcherTemplate is not null : !string.IsNullOrWhiteSpace(QueueDestPath));
+        (QueueDestIsCatcher ? QueueSelectedCatcherTemplate is not null : CollectedQueueDests().Count > 0);
     public bool HasSourceFolders => SourceFolders.Count > 0;
+    public bool HasDestFolders => DestFolders.Count > 0;
     public bool HasQueueSourceFolders => QueueSourceFolders.Count > 0;
+    public bool HasQueueDestFolders => QueueDestFolders.Count > 0;
     public bool DestIsCatcher => DestKindIndex == 1;
     public bool DestIsFolder => !DestIsCatcher;
     public bool QueueDestIsCatcher => QueueDestKindIndex == 1;
@@ -1169,7 +1186,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
             var path = CopyShape.PreviewLandingSummary(
                 CollectedQueueSources(),
-                QueueDestPath,
+                CollectedQueueDests(),
                 QueueDraft.IncludeSourceFolderName);
             return path;
         }
@@ -1209,12 +1226,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 return "Will land in: Catcher receive folder (named source folders keep their top folder).";
             }
 
-            if (CollectedSources().Count == 0 || string.IsNullOrWhiteSpace(DestPath))
+            if (CollectedSources().Count == 0 || CollectedDests().Count == 0)
             {
                 return "";
             }
 
-            return CopyShape.PreviewLandingSummary(CollectedSources(), DestPath, IncludeSourceFolderName);
+            return CopyShape.PreviewLandingSummary(CollectedSources(), CollectedDests(), IncludeSourceFolderName);
         }
     }
 
@@ -1381,6 +1398,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
 
         DestPath = path;
+        AddDestPath(path);
         RememberPath(isSource: false, path);
     }
 
@@ -1421,6 +1439,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         LoadSourceFolders(JobSources.Roots(job));
         if (job.Catcher is null)
         {
+            LoadDestFolders(JobDestinations.Roots(job));
             DestPath = job.DestinationPath;
         }
 
@@ -1674,7 +1693,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             JobSources.Roots(form).ToList(),
             form.Catcher is not null,
             form.Catcher?.TemplateId,
-            form.DestinationPath);
+            JobDestinations.Roots(form));
 
     private Job? FindMatchingResumableForUi()
     {
@@ -1687,10 +1706,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             CollectedSources(),
             DestIsCatcher,
             SelectedCatcherTemplate?.Id,
-            DestIsCatcher ? "" : PathNormalizer.Normalize(DestPath));
+            DestIsCatcher ? [] : CollectedDests());
     }
 
-    private Job? FindMatchingResumable(IReadOnlyList<string> sources, bool isCatcher, string? catcherTemplateId, string dest)
+    private Job? FindMatchingResumable(IReadOnlyList<string> sources, bool isCatcher, string? catcherTemplateId, IReadOnlyList<string> dests)
     {
         Job? best = null;
         foreach (var queued in _scheduler.Queue)
@@ -1698,7 +1717,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             if (!IsResumable(queued.Status)
                 || queued.OnHold
                 || IsDeclinedResumeJob(queued.Id)
-                || !SameRoute(queued, sources, isCatcher, catcherTemplateId, dest))
+                || !SameRoute(queued, sources, isCatcher, catcherTemplateId, dests))
             {
                 continue;
             }
@@ -1724,7 +1743,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         if (last is not null
             && !IsDeclinedResumeJob(last.Id)
             && IsResumable(last.Status)
-            && SameRoute(last, sources, isCatcher, catcherTemplateId, dest))
+            && SameRoute(last, sources, isCatcher, catcherTemplateId, dests))
         {
             return last;
         }
@@ -1732,7 +1751,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         return null;
     }
 
-    private static bool SameRoute(Job queued, IReadOnlyList<string> sources, bool isCatcher, string? catcherTemplateId, string dest)
+    private static bool SameRoute(Job queued, IReadOnlyList<string> sources, bool isCatcher, string? catcherTemplateId, IReadOnlyList<string> dests)
     {
         if (!JobSources.Same(queued, sources))
         {
@@ -1744,7 +1763,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             return isCatcher && string.Equals(queued.Catcher?.TemplateId, catcherTemplateId, StringComparison.Ordinal);
         }
 
-        return string.Equals(queued.DestinationPath, dest, StringComparison.OrdinalIgnoreCase);
+        return JobDestinations.Same(queued, dests);
     }
 
     private void AddToQueue()
@@ -1821,6 +1840,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         QueueDraft.OverwriteIndex = 0;
         QueueDraft.PurgeExtraDestFiles = false;
         LoadQueueSourceFolders([source]);
+        LoadQueueDestFolders([dest]);
         QueueDestPath = dest;
         QueueDraft.SetLandingPaths(source, dest);
 
@@ -1843,6 +1863,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             }
 
             LoadSourceFolders([source]);
+            LoadDestFolders([dest]);
             DestPath = dest;
         }
 
@@ -1898,7 +1919,16 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             JobSources.Set(last, uiSources);
         }
-        last.DestinationPath = string.IsNullOrWhiteSpace(DestPath) ? last.DestinationPath : DestPath;
+
+        var uiDests = CollectedDests();
+        if (uiDests.Count > 0 && last.Catcher is null && !DestIsCatcher)
+        {
+            JobDestinations.Set(last, uiDests);
+        }
+        else if (!string.IsNullOrWhiteSpace(DestPath) && last.Catcher is null)
+        {
+            last.DestinationPath = DestPath;
+        }
         if (last.Catcher is not null || DestIsCatcher)
         {
             try
@@ -2033,7 +2063,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         RememberPath(isSource: true, job.SourcePath);
         if (job.Catcher is null)
         {
-            RememberPath(isSource: false, job.DestinationPath);
+            foreach (var dest in JobDestinations.Roots(job))
+            {
+                RememberPath(isSource: false, dest);
+            }
         }
         _lastJob = job;
         _scheduler.Enqueue(job, startNow);
@@ -2205,8 +2238,28 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             };
         }
 
-        var dest = PathNormalizer.Normalize(destPath ?? DestPath);
-        return new Job
+        var dests = destPath is not null
+            ? CollectedQueueDests()
+            : CollectedDests();
+        if (dests.Count == 0 && !string.IsNullOrWhiteSpace(destPath ?? DestPath))
+        {
+            try
+            {
+                dests = [PathNormalizer.Normalize(destPath ?? DestPath)];
+            }
+            catch
+            {
+                dests = [];
+            }
+        }
+
+        if (dests.Count == 0)
+        {
+            throw new InvalidOperationException("Pick at least one destination folder.");
+        }
+
+        var dest = dests[0];
+        var job = new Job
         {
             SourcePath = source,
             SourcePaths = sources.ToList(),
@@ -2216,6 +2269,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             VolumeSerial = VolumeInfo.GetSerial(source),
             ScheduledStart = start
         };
+        JobDestinations.Set(job, dests);
+        return job;
     }
 
     private DateTimeOffset? BuildScheduledStart()
@@ -2598,10 +2653,22 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private void BrowseDest()
     {
+        var added = BrowseFolders("Choose destination folder(s)", current: DestPath, isSource: false);
+        if (added.Count > 0)
+        {
+            foreach (var folder in added)
+            {
+                AddDestPath(folder);
+                RememberPath(isSource: false, folder);
+            }
+
+            return;
+        }
+
         var path = BrowseAny("Choose destination", isSource: false, current: DestPath);
         if (path is not null)
         {
-            DestPath = path;
+            AddDestPath(path);
             RememberPath(isSource: false, path);
         }
     }
@@ -2630,10 +2697,22 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private void BrowseQueueDest()
     {
+        var added = BrowseFolders("Choose destination folder(s)", current: QueueDestPath, isSource: false);
+        if (added.Count > 0)
+        {
+            foreach (var folder in added)
+            {
+                AddQueueDestPath(folder);
+                RememberPath(isSource: false, folder);
+            }
+
+            return;
+        }
+
         var path = BrowseAny("Choose destination", isSource: false, current: QueueDestPath);
         if (path is not null)
         {
-            QueueDestPath = path;
+            AddQueueDestPath(path);
             RememberPath(isSource: false, path);
         }
     }
@@ -2645,6 +2724,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         QueueDestKindIndex = DestKindIndex;
         QueueSelectedCatcherTemplate = SelectedCatcherTemplate;
         LoadQueueSourceFolders(CollectedSources());
+        LoadQueueDestFolders(CollectedDests());
         EnsureQueueDraftSeeded();
         QueueDraft.CatcherTemplates = CatcherTemplates;
         QueueDraft.ShowCatcherTemplate = QueueDestIsCatcher;
@@ -2789,10 +2869,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         return file.ShowDialog() == true ? file.FileName : null;
     }
 
-    private IReadOnlyList<string> BrowseFolders(string title, string? current)
+    private IReadOnlyList<string> BrowseFolders(string title, string? current, bool isSource = true)
     {
         var recents = LibraryStore.LoadRecents(_paths);
-        var start = LibraryStore.BrowseStartDir(true, recents, current ?? SourcePath);
+        var start = LibraryStore.BrowseStartDir(isSource, recents, current ?? (isSource ? SourcePath : DestPath));
         var folder = new OpenFolderDialog { Title = title, Multiselect = true };
         if (!string.IsNullOrEmpty(start))
         {
@@ -2882,6 +2962,58 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         return list;
     }
 
+    private List<string> CollectedDests()
+    {
+        var list = DestFolders.Select(f => f.Path).ToList();
+        if (list.Count == 0 && !string.IsNullOrWhiteSpace(DestPath))
+        {
+            try
+            {
+                list.Add(PathNormalizer.Normalize(DestPath));
+            }
+            catch
+            {
+                list.Add(DestPath.Trim());
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(DestPath) &&
+                 list.TrueForAll(p => !string.Equals(p, DestPath, StringComparison.OrdinalIgnoreCase)))
+        {
+            try
+            {
+                var extra = PathNormalizer.Normalize(DestPath);
+                if (list.TrueForAll(p => !string.Equals(p, extra, StringComparison.OrdinalIgnoreCase)))
+                {
+                    list.Add(extra);
+                }
+            }
+            catch
+            {
+                // typed path is the add-draft until Add
+            }
+        }
+
+        return list;
+    }
+
+    private List<string> CollectedQueueDests()
+    {
+        var list = QueueDestFolders.Select(f => f.Path).ToList();
+        if (list.Count == 0 && !string.IsNullOrWhiteSpace(QueueDestPath))
+        {
+            try
+            {
+                list.Add(PathNormalizer.Normalize(QueueDestPath));
+            }
+            catch
+            {
+                list.Add(QueueDestPath.Trim());
+            }
+        }
+
+        return list;
+    }
+
     private void LoadSourceFolders(IReadOnlyList<string> paths)
     {
         SourceFolders.Clear();
@@ -2916,6 +3048,40 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         RaiseQueueDraftBadges();
     }
 
+    private void LoadDestFolders(IReadOnlyList<string> paths)
+    {
+        DestFolders.Clear();
+        foreach (var path in paths.Where(p => !string.IsNullOrWhiteSpace(p)))
+        {
+            DestFolders.Add(new SourceFolderItem(path));
+        }
+
+        if (DestFolders.Count > 0)
+        {
+            DestPath = DestFolders[0].Path;
+        }
+
+        NotifyDestFolders();
+    }
+
+    private void LoadQueueDestFolders(IReadOnlyList<string> paths)
+    {
+        QueueDestFolders.Clear();
+        foreach (var path in paths.Where(p => !string.IsNullOrWhiteSpace(p)))
+        {
+            QueueDestFolders.Add(new SourceFolderItem(path));
+        }
+
+        if (QueueDestFolders.Count > 0)
+        {
+            QueueDestPath = QueueDestFolders[0].Path;
+        }
+
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasQueueDestFolders)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasQueuePaths)));
+        RaiseQueueDraftBadges();
+    }
+
     private void AddSourceFromDraft()
     {
         if (!string.IsNullOrWhiteSpace(SourcePath))
@@ -2929,6 +3095,22 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         if (!string.IsNullOrWhiteSpace(QueueSourcePath))
         {
             AddQueueSourcePath(QueueSourcePath);
+        }
+    }
+
+    private void AddDestFromDraft()
+    {
+        if (!string.IsNullOrWhiteSpace(DestPath))
+        {
+            AddDestPath(DestPath);
+        }
+    }
+
+    private void AddQueueDestFromDraft()
+    {
+        if (!string.IsNullOrWhiteSpace(QueueDestPath))
+        {
+            AddQueueDestPath(QueueDestPath);
         }
     }
 
@@ -2980,6 +3162,59 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
 
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasQueueSourceFolders)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasQueuePaths)));
+        RaiseQueueDraftBadges();
+        RaiseRunCommands();
+    }
+
+    private void AddDestPath(string path)
+    {
+        try
+        {
+            path = PathNormalizer.Normalize(path);
+        }
+        catch
+        {
+            return;
+        }
+
+        if (DestFolders.Any(f => string.Equals(f.Path, path, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        DestFolders.Add(new SourceFolderItem(path));
+        if (DestFolders.Count == 1)
+        {
+            DestPath = path;
+        }
+
+        NotifyDestFolders();
+    }
+
+    private void AddQueueDestPath(string path)
+    {
+        try
+        {
+            path = PathNormalizer.Normalize(path);
+        }
+        catch
+        {
+            return;
+        }
+
+        if (QueueDestFolders.Any(f => string.Equals(f.Path, path, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        QueueDestFolders.Add(new SourceFolderItem(path));
+        if (QueueDestFolders.Count == 1)
+        {
+            QueueDestPath = path;
+        }
+
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasQueueDestFolders)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasQueuePaths)));
         RaiseQueueDraftBadges();
         RaiseRunCommands();
@@ -3050,6 +3285,74 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         (ClearSourcesCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (AddSourceCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (RemoveSourceCommand as RelayCommand)?.RaiseCanExecuteChanged();
+    }
+
+    private void RemoveDest(SourceFolderItem? item)
+    {
+        if (item is null)
+        {
+            return;
+        }
+
+        DestFolders.Remove(item);
+        if (DestFolders.Count == 0)
+        {
+            DestPath = "";
+        }
+        else if (string.Equals(DestPath, item.Path, StringComparison.OrdinalIgnoreCase))
+        {
+            DestPath = DestFolders[0].Path;
+        }
+
+        NotifyDestFolders();
+    }
+
+    private void RemoveQueueDest(SourceFolderItem? item)
+    {
+        if (item is null)
+        {
+            return;
+        }
+
+        QueueDestFolders.Remove(item);
+        if (QueueDestFolders.Count == 0)
+        {
+            QueueDestPath = "";
+        }
+
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasQueueDestFolders)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasQueuePaths)));
+        RaiseQueueDraftBadges();
+        RaiseRunCommands();
+    }
+
+    private void ClearDests()
+    {
+        DestFolders.Clear();
+        DestPath = "";
+        NotifyDestFolders();
+    }
+
+    private void ClearQueueDests()
+    {
+        QueueDestFolders.Clear();
+        QueueDestPath = "";
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasQueueDestFolders)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasQueuePaths)));
+        RaiseQueueDraftBadges();
+        RaiseRunCommands();
+    }
+
+    private void NotifyDestFolders()
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasDestFolders)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasPaths)));
+        CloudWarning = DestIsFolder && CollectedDests().Any(CloudPath.LooksLikeCloudFolder);
+        RaiseLandingPreview();
+        RaiseRunCommands();
+        (ClearDestsCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (AddDestCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (RemoveDestCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 
     private void OpenPackExtensions() => OpenSettingsRequested?.Invoke();
@@ -3183,6 +3486,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             existing.SourcePath = SourcePath;
             existing.SourcePaths = CollectedSources().ToList();
             existing.DestinationPath = DestPath;
+            existing.DestinationPaths = CollectedDests().ToList();
             existing.Options = BuildOptions();
         }
         else
@@ -3193,6 +3497,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 SourcePath = SourcePath,
                 SourcePaths = CollectedSources().ToList(),
                 DestinationPath = DestPath,
+                DestinationPaths = CollectedDests().ToList(),
                 Options = BuildOptions()
             });
         }
@@ -3211,6 +3516,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
         SourcePath = saved.SourcePath;
         LoadSourceFolders(saved.SourcePaths is { Count: > 0 } ? saved.SourcePaths : string.IsNullOrWhiteSpace(saved.SourcePath) ? [] : [saved.SourcePath]);
+        LoadDestFolders(saved.DestinationPaths is { Count: > 0 } ? saved.DestinationPaths : string.IsNullOrWhiteSpace(saved.DestinationPath) ? [] : [saved.DestinationPath]);
         DestPath = saved.DestinationPath;
         ApplyJobOptions(saved.Options);
         StatusText = $"Loaded saved job “{saved.Name}”.";
@@ -3881,6 +4187,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             SourcePath = SourcePath,
             SourcePaths = SourceFolders.Select(f => f.Path).ToList(),
             DestinationPath = DestPath,
+            DestinationPaths = DestFolders.Select(f => f.Path).ToList(),
             DestinationKind = DestKindIndex,
             Options = BuildOptions(),
             ScheduleEnabled = ScheduleEnabled,
@@ -3889,6 +4196,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         };
         draft.ClearForQueueResume();
         SourceFolders.Clear();
+        DestFolders.Clear();
         SourcePath = draft.SourcePath;
         DestPath = draft.DestinationPath;
         DestKindIndex = draft.DestinationKind;
@@ -3898,6 +4206,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         ScheduledDate = draft.ScheduledDate ?? DateTime.Today;
         ScheduledTime = draft.ScheduledTime;
         NotifySourceFolders();
+        NotifyDestFolders();
     }
 
     private Job? FindFinishedJob()
@@ -4326,6 +4635,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         (BrowseDestCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (BrowseQueueSourceCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (BrowseQueueDestCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (AddDestCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (ClearDestsCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (RemoveDestCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (AddQueueDestCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (ClearQueueDestsCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (RemoveQueueDestCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (OpenSelectedQueueJobOptionsCommand as RelayCommand)?.RaiseCanExecuteChanged();
         QueueDraft.RaiseAddCanExecute();
     }

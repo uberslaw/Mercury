@@ -94,6 +94,10 @@
                         <ColumnDefinition Width="Auto" SharedSizeGroup="PathButton1"/>
                         <ColumnDefinition Width="Auto" SharedSizeGroup="PathButton2"/>
                     </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
                     <Border Style="{StaticResource ChromeHighlight}" local:ThemeChrome.Keys="InputBackgroundBrush"
                             Margin="0,0,0,8">
                         <ComboBox x:Name="DestPathCombo"
@@ -105,15 +109,52 @@
                                   Text="{Binding DestPath, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}, UpdateSourceTrigger=PropertyChanged}"
                                   ItemsSource="{Binding RecentDestinations, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}}"
                                   IsEnabled="{Binding PathsEditable, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}}"
-                                  ToolTip="Type, paste, or pick a recent destination."/>
+                                  ToolTip="Type or paste a destination, then Add. Browse can pick several folders. Drop a folder from Explorer to add."/>
                     </Border>
                     <Button x:Name="BrowseDestButton" Grid.Column="1" Content="Browse" Style="{StaticResource PathActionButton}"
                             Margin="8,0,0,8"
-                            Command="{Binding BrowseDestCommand, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}}"/>
-                    <Border x:Name="DestButtonSpacer" Grid.Column="2"
-                            Width="{StaticResource PathActionButtonWidth}"
-                            Height="{DynamicResource ControlMinHeight}"
-                            Margin="8,0,0,8"/>
+                            Command="{Binding BrowseDestCommand, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}}"
+                            ToolTip="Pick destination folder(s). Adds without wiping earlier destinations."/>
+                    <Button x:Name="AddDestButton" Grid.Column="2" Content="Add" Style="{StaticResource PathActionButton}"
+                            Margin="8,0,0,8"
+                            Command="{Binding AddDestCommand, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}}"
+                            ToolTip="Add the path in the box to this job’s destination list."/>
+
+                    <ScrollViewer Grid.Row="1" MaxHeight="88"
+                                  VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled"
+                                  Visibility="{Binding HasDestFolders, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}, Converter={StaticResource BoolToVis}}">
+                        <ItemsControl x:Name="DestFolderList"
+                                      ItemsSource="{Binding DestFolders, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}}"
+                                      ToolTip="Every selected destination for this job. Remove one without affecting the others.">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Path}" TextTrimming="CharacterEllipsis"
+                                               Height="{DynamicResource ControlMinHeight}"
+                                               Margin="0,0,0,4"
+                                               VerticalAlignment="Center"
+                                               ToolTip="{Binding Path}"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                    <ItemsControl x:Name="DestRemoveList" Grid.Row="1" Grid.Column="1"
+                                  ItemsSource="{Binding DestFolders, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}}"
+                                  Visibility="{Binding HasDestFolders, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}, Converter={StaticResource BoolToVis}}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Content="Remove" Style="{StaticResource PathActionButton}" Margin="8,0,0,4"
+                                        Command="{Binding RemoveDestCommand, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}}"
+                                        CommandParameter="{Binding}"
+                                        IsEnabled="{Binding PathsEditable, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}}"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Button x:Name="ClearDestsButton" Grid.Row="1" Grid.Column="2" Content="Clear"
+                            Style="{StaticResource PathActionButton}" Margin="8,0,0,4"
+                            VerticalAlignment="Top"
+                            Command="{Binding ClearDestsCommand, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}}"
+                            Visibility="{Binding HasDestFolders, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}, Converter={StaticResource BoolToVis}}"/>
                 </Grid>
                 <StackPanel Visibility="{Binding DestIsCatcher, RelativeSource={RelativeSource AncestorType=local:JobPathsPanel}, Converter={StaticResource BoolToVis}}">
                     <Grid>

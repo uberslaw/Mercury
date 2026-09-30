@@ -20,10 +20,13 @@ public sealed class CopyEngine : ICopyEngine
         job.Options ??= new JobOptions();
         var name = string.IsNullOrWhiteSpace(job.Name) ? job.Id[..8] : job.Name;
         var catcher = job.Catcher;
-        var cloud = catcher is null && CloudPath.LooksLikeCloudFolder(job.DestinationPath);
+        var destRoots = JobDestinations.Roots(job);
+        var cloud = catcher is null && destRoots.Any(CloudPath.LooksLikeCloudFolder);
         if (cloud)
         {
-            log.Info(job.Id, name, "Destination looks like a cloud-synced folder. Mercury verifies the local copy, not the cloud upload.");
+            log.Info(job.Id, name, destRoots.Count > 1
+                ? "A destination looks like a cloud-synced folder. Mercury verifies the local copy, not the cloud upload."
+                : "Destination looks like a cloud-synced folder. Mercury verifies the local copy, not the cloud upload.");
         }
 
         if (catcher is not null)
@@ -50,13 +53,21 @@ public sealed class CopyEngine : ICopyEngine
                 SingleFile = m.SingleFile,
                 SingleFileName = m.SingleFileName,
                 UniqueRelativePrefix = m.UniqueRelativePrefix,
-                TransportZipPath = combinedZip
+                TransportZipPath = combinedZip,
+                UserDestPath = m.UserDestPath
             }).ToList();
         }
 
         var mapping = PackDestination(job, mappings, journal.Directory);
         job.SourceKind = mappings.Count == 1 ? mappings[0].Kind : SourceKind.Folder;
         job.VolumeSerial ??= VolumeInfo.GetSerial(job.SourcePath);
+        JobDestinations.EnsureList(job);
+
+        if (destRoots.Count > 1)
+        {
+            log.Info(job.Id, name,
+                $"Copying to {destRoots.Count} destinations in this job (one after another). Pack-as-zip, if on, packs once per destination.");
+        }
 
         if (job.StartedUtc is null)
         {
@@ -85,9 +96,38 @@ public sealed class CopyEngine : ICopyEngine
         try
         {
             reporter.Enter(CopyStageKind.PreparingDestination, JobStatus.Preparing,
-                catcher is null ? "Preparing destination…" : "Preparing Catcher send…");
+                catcher is null
+                    ? destRoots.Count > 1
+                        ? $"Preparing {destRoots.Count} destinations…"
+                        : "Preparing destination…"
+                    : "Preparing Catcher send…");
+            if (destRoots.Count > 1)
+            {
+                reporter.SetDestination(1, destRoots.Count, destRoots[0]);
+            }
+
             journal.SaveJob(job);
-            await PreflightAsync(job, mappings, mapping, log, name, cancellationToken).ConfigureAwait(false);
+            var preflight = await PreflightAsync(job, mappings, log, name, cancellationToken).ConfigureAwait(false);
+            foreach (var failed in preflight.Failed)
+            {
+                journal.AddIssue(new TransferIssue
+                {
+                    RelativePath = failed.Dest,
+                    Kind = IssueKind.CopyError,
+                    Message = failed.Error
+                });
+                log.Error(job.Id, name, $"Destination failed, continuing with the rest: {failed.Dest}. {failed.Error}");
+            }
+
+            if (preflight.Mappings.Count == 0)
+            {
+                throw new IOException(preflight.Failed.Count > 0
+                    ? preflight.Failed[0].Error
+                    : "No writable destinations.");
+            }
+
+            mappings = preflight.Mappings;
+            mapping = PackDestination(job, mappings, journal.Directory);
 
             if (!hasJournal)
             {
@@ -169,22 +209,8 @@ public sealed class CopyEngine : ICopyEngine
                 if (catcher is null)
                 {
                     reporter.Enter(CopyStageKind.CheckingDestinationSpace, JobStatus.Enumerating, "Checking destination space…");
-                    var available = FreeSpace.GetAvailableBytes(mapping.DestRoot);
-                    if (available is not null)
-                    {
-                        log.Info(job.Id, name, $"Destination free space: {ByteFormatter.ToString(available.Value)}.");
-                    }
-
-                    if (pack && catcher is null)
-                    {
-                        log.Info(job.Id, name,
-                            "Pack as zip writes a transport zip then unpacks at dest (both exist until unpack finishes).");
-                        FreeSpace.CheckOrWarn(job, totals.Bytes * 2, available, log, name);
-                    }
-                    else
-                    {
-                        FreeSpace.CheckOrWarn(job, totals.Bytes, available, log, name);
-                    }
+                    var listed = journal.GetFiles();
+                    CheckSpacePerDestination(job, mappings, listed, pack, journal, log, name);
                 }
             }
             else
@@ -439,7 +465,8 @@ public sealed class CopyEngine : ICopyEngine
 
         var name = string.IsNullOrWhiteSpace(job.Name) ? job.Id[..8] : job.Name;
         var catcher = job.Catcher;
-        var cloud = catcher is null && CloudPath.LooksLikeCloudFolder(job.DestinationPath);
+        var destRoots = JobDestinations.Roots(job);
+        var cloud = catcher is null && destRoots.Any(CloudPath.LooksLikeCloudFolder);
         var destForShape = catcher is null ? job.DestinationPath : journal.Directory;
         IReadOnlyList<CopyMapping> mappings;
         try
@@ -499,7 +526,9 @@ public sealed class CopyEngine : ICopyEngine
                                 JobId = job.Id,
                                 JobName = name,
                                 Status = JobStatus.Verifying,
-                                Message = "Verifying…",
+                                Message = destRoots.Count > 1
+                                    ? $"Verifying… destination {Math.Max(1, JobDestinations.IndexOf(pulse.Phase, destRoots))} of {destRoots.Count}"
+                                    : "Verifying…",
                                 CurrentFile = CopyShape.ProgressRelative(job, pulse.Phase),
                                 CloudDestination = cloud,
                                 BytesCopied = totals.DoneBytes > 0 ? totals.DoneBytes : job.BytesCopied,
@@ -509,6 +538,11 @@ public sealed class CopyEngine : ICopyEngine
                                 StageIndex = CopyPipeline.IndexOf(stages, CopyStageKind.Verifying),
                                 StageCount = stages.Count,
                                 StageName = "Verifying",
+                                DestinationIndex = destRoots.Count > 1 ? JobDestinations.IndexOf(pulse.Phase, destRoots) : 0,
+                                DestinationCount = destRoots.Count > 1 ? destRoots.Count : 0,
+                                CurrentDestination = destRoots.Count > 1
+                                    ? destRoots[Math.Clamp(JobDestinations.IndexOf(pulse.Phase, destRoots) - 1, 0, destRoots.Count - 1)]
+                                    : null,
                                 StartedUtc = job.StartedUtc,
                                 StageStartedUtc = DateTimeOffset.UtcNow,
                                 Eta = pulse.Eta,
@@ -516,7 +550,8 @@ public sealed class CopyEngine : ICopyEngine
                                 RundownTotal = pulse.Total,
                                 RundownPerSecond = pulse.UnitsPerSecond
                             });
-                        });
+                        },
+                        mappings: mappings);
         }
         catch (OperationCanceledException)
         {
@@ -524,35 +559,35 @@ public sealed class CopyEngine : ICopyEngine
         }
 
         job.IssueCount = issues;
+        string complete;
+        if (catcher is not null)
+        {
+            complete = pack
+                ? $"Verified complete. Catcher unpacked the transfer at {CatcherCrypto.FormatBaseUrl(catcher.PublicHost, catcher.PublicPort)}."
+                : $"Verified complete. Sent file to Catcher {CatcherCrypto.FormatBaseUrl(catcher.PublicHost, catcher.PublicPort)}.";
+        }
+        else if (pack)
+        {
+            complete = $"Verified complete. Unpacked {totals.Files} files to {mapping.DestRoot}.";
+        }
+        else if (cloud)
+        {
+            complete = "Verified complete (local destination). Cloud upload is the sync client’s job.";
+        }
+        else
+        {
+            complete = "Verified complete.";
+        }
+
+        var incomplete = $"Incomplete — {issues} issue(s). Open the log for details.";
+        job.ResultMessage = JobDestinations.VerifyMessage(job, journal, issues, complete, incomplete);
+        job.Status = issues == 0 ? JobStatus.Completed : JobStatus.Incomplete;
         if (issues == 0)
         {
-            job.Status = JobStatus.Completed;
-            if (catcher is not null)
-            {
-                job.ResultMessage = pack
-                    ? $"Verified complete. Catcher unpacked the transfer at {CatcherCrypto.FormatBaseUrl(catcher.PublicHost, catcher.PublicPort)}."
-                    : $"Verified complete. Sent file to Catcher {CatcherCrypto.FormatBaseUrl(catcher.PublicHost, catcher.PublicPort)}.";
-            }
-            else if (pack)
-            {
-                job.ResultMessage =
-                    $"Verified complete. Unpacked {totals.Files} files to {mapping.DestRoot}.";
-            }
-            else if (cloud)
-            {
-                job.ResultMessage = "Verified complete (local destination). Cloud upload is the sync client’s job.";
-            }
-            else
-            {
-                job.ResultMessage = "Verified complete.";
-            }
-
             log.Info(job.Id, name, job.ResultMessage);
         }
         else
         {
-            job.Status = JobStatus.Incomplete;
-            job.ResultMessage = $"Incomplete — {issues} issue(s). Open the log for details.";
             log.Error(job.Id, name, job.ResultMessage);
         }
 
@@ -631,10 +666,25 @@ public sealed class CopyEngine : ICopyEngine
         reporter.Update($"Catcher received {fileName}", fileName, speed);
     }
 
-    private static async Task PreflightAsync(
+    private static void PulseDestination(Job job, JobProgressReporter reporter, FileRecord file)
+    {
+        var dests = JobDestinations.Roots(job);
+        if (dests.Count <= 1)
+        {
+            return;
+        }
+
+        var index = JobDestinations.IndexOf(file.DestPath, dests);
+        reporter.SetDestination(index, dests.Count, dests[Math.Clamp(index - 1, 0, dests.Count - 1)]);
+    }
+
+    private readonly record struct DestFailure(string Dest, string Error);
+
+    private readonly record struct PreflightResult(List<CopyMapping> Mappings, List<DestFailure> Failed);
+
+    private static async Task<PreflightResult> PreflightAsync(
         Job job,
         IReadOnlyList<CopyMapping> mappings,
-        CopyMapping mapping,
         IJobLog log,
         string name,
         CancellationToken cancellationToken)
@@ -648,6 +698,46 @@ public sealed class CopyEngine : ICopyEngine
             }
         }
 
+        var groups = mappings
+            .GroupBy(m => JobDestinations.UserDest(m), StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var kept = new List<CopyMapping>();
+        var failed = new List<DestFailure>();
+        foreach (var group in groups)
+        {
+            var probeMapping = group.First();
+            try
+            {
+                await ProbeDestinationAsync(job, probeMapping, log, name, cancellationToken).ConfigureAwait(false);
+                kept.AddRange(group);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                var dest = group.Key;
+                var error = $"Destination is not writable: {dest}. {ex.Message}";
+                if (groups.Count == 1)
+                {
+                    throw new IOException(error, ex);
+                }
+
+                failed.Add(new DestFailure(dest, error));
+            }
+        }
+
+        return new PreflightResult(kept, failed);
+    }
+
+    private static async Task ProbeDestinationAsync(
+        Job job,
+        CopyMapping mapping,
+        IJobLog log,
+        string name,
+        CancellationToken cancellationToken)
+    {
         var probeRoot = mapping.DestRoot;
         if (ZipPack.Applies(job, mapping))
         {
@@ -685,10 +775,61 @@ public sealed class CopyEngine : ICopyEngine
             var available = FreeSpace.GetAvailableBytes(mapping.DestRoot);
             if (available is not null)
             {
-                log.Info(job.Id, name, $"Destination free space: {ByteFormatter.ToString(available.Value)}.");
+                log.Info(job.Id, name, $"Destination free space ({JobDestinations.UserDest(mapping)}): {ByteFormatter.ToString(available.Value)}.");
             }
 
             FreeSpace.CheckOrWarn(job, needed, available, log, name);
+        }
+    }
+
+    private static void CheckSpacePerDestination(
+        Job job,
+        IReadOnlyList<CopyMapping> mappings,
+        IReadOnlyList<FileRecord> files,
+        bool pack,
+        JobJournal journal,
+        IJobLog log,
+        string name)
+    {
+        if (pack)
+        {
+            log.Info(job.Id, name,
+                "Pack as zip writes a transport zip then unpacks at dest (both exist until unpack finishes).");
+        }
+
+        foreach (var group in mappings.GroupBy(m => JobDestinations.UserDest(m), StringComparer.OrdinalIgnoreCase))
+        {
+            var destFiles = files.Where(f => JobDestinations.BelongsTo(f.DestPath, group.Key)).ToList();
+            var needed = destFiles.Sum(f => f.Size);
+            if (pack)
+            {
+                needed *= 2;
+            }
+
+            var available = FreeSpace.GetAvailableBytes(group.First().DestRoot);
+            if (available is not null)
+            {
+                log.Info(job.Id, name, $"Destination free space ({group.Key}): {ByteFormatter.ToString(available.Value)}.");
+            }
+
+            try
+            {
+                FreeSpace.CheckOrWarn(job, needed, available, log, name);
+            }
+            catch (IOException ex) when (mappings.Select(JobDestinations.UserDest).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1)
+            {
+                log.Error(job.Id, name, $"Not enough space at {group.Key}; other destinations continue. {ex.Message}");
+                journal.AddIssue(new TransferIssue
+                {
+                    RelativePath = group.Key,
+                    Kind = IssueKind.CopyError,
+                    Message = ex.Message
+                });
+                foreach (var file in destFiles)
+                {
+                    journal.MarkFailed(file.RelativePath, ex.Message, job.Options.RetryCount);
+                }
+            }
         }
     }
 
@@ -908,6 +1049,7 @@ public sealed class CopyEngine : ICopyEngine
         var queue = new LinkedList<FileRecord>();
         foreach (var file in pending)
         {
+            PulseDestination(job, reporter, file);
             cancellationToken.ThrowIfCancellationRequested();
             await pause.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
             if (ShouldSkip(file, job.Options))
@@ -1161,6 +1303,7 @@ public sealed class CopyEngine : ICopyEngine
                     statusLabel = HeaderCopy.TooSmallStatus(file.RelativePath);
                 }
 
+                PulseDestination(job, reporter, file);
                 pause.BeginFile(file.RelativePath, file.Size);
                 active.Add((file, CopyAdaptiveFileAsync(
                     job, file, journal, budget, pause, log, name, speed, cancellationToken, io, stripe, portion)));
@@ -1530,6 +1673,7 @@ public sealed class CopyEngine : ICopyEngine
         for (var index = 0; index < list.Count; index++)
         {
             var file = list[index];
+            PulseDestination(job, reporter, file);
             cancellationToken.ThrowIfCancellationRequested();
             await pause.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
             await WaitForHoursAsync(job, pause, log, name, reporter, cloud, cancellationToken).ConfigureAwait(false);
@@ -1725,6 +1869,7 @@ public sealed class CopyEngine : ICopyEngine
             await pause.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+            PulseDestination(job, reporter, file);
             pause.BeginFile(file.RelativePath, file.Size);
             reporter.Update($"Retrying deferred {file.RelativePath}", file.RelativePath, speed);
             var copied = await CopyWithRetriesAsync(job, file, journal, budget, pause, log, name, speed, cancellationToken, io)
@@ -2121,6 +2266,11 @@ public sealed class CopyEngine : ICopyEngine
                     TryJournal(journal, () => journal.MarkSkipped(file.RelativePath, "Destination is newer or equal"), log, job.Id, name);
                     log.Info(job.Id, name, $"Skip {file.RelativePath} (already compressed, dest newer or equal)");
                     continue;
+                }
+
+                if (reporter is not null)
+                {
+                    PulseDestination(job, reporter, file);
                 }
 
                 pause.BeginFile(file.RelativePath, file.Size);

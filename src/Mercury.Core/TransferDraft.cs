@@ -23,6 +23,7 @@ public sealed class TransferDraft
     public string SourcePath { get; set; } = "";
     public List<string> SourcePaths { get; set; } = [];
     public string DestinationPath { get; set; } = "";
+    public List<string> DestinationPaths { get; set; } = [];
     public int DestinationKind { get; set; }
     public JobOptions Options { get; set; } = new();
     public bool ScheduleEnabled { get; set; }
@@ -39,6 +40,7 @@ public sealed class TransferDraft
         SourcePath = "";
         SourcePaths = [];
         DestinationPath = "";
+        DestinationPaths = [];
         DestinationKind = 0;
         Options = new JobOptions();
         ScheduleEnabled = false;
@@ -50,6 +52,7 @@ public sealed class TransferDraft
         string.IsNullOrEmpty(SourcePath)
         && SourcePaths.Count == 0
         && string.IsNullOrEmpty(DestinationPath)
+        && DestinationPaths.Count == 0
         && DestinationKind == 0
         && !ScheduleEnabled
         && Options.FixLongOrDuplicateNames

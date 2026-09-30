@@ -24,6 +24,9 @@ public sealed class JobProgressReporter : IProgress<JobProgress>
     private int _filesTotal;
     private long _bytesCopied;
     private long _bytesTotal;
+    private int _destIndex;
+    private int _destCount;
+    private string? _currentDest;
 
     public JobProgressReporter(
         Job job,
@@ -67,6 +70,18 @@ public sealed class JobProgressReporter : IProgress<JobProgress>
         var label = CopyPipeline.LabelOf(_stages, kind);
         var index = CopyPipeline.IndexOf(_stages, kind);
         _log?.Info(_job.Id, _name, CopyPipeline.Format(index, _stages.Count, label));
+        Push();
+    }
+
+    public void SetDestination(int index, int count, string? path)
+    {
+        lock (_lock)
+        {
+            _destIndex = count > 1 ? Math.Max(1, index) : 0;
+            _destCount = count > 1 ? count : 0;
+            _currentDest = count > 1 ? path : null;
+        }
+
         Push();
     }
 
@@ -250,6 +265,9 @@ public sealed class JobProgressReporter : IProgress<JobProgress>
                 StageIndex = _index,
                 StageCount = _stages.Count,
                 StageName = CopyPipeline.LabelOf(_stages, _kind),
+                DestinationIndex = _destIndex,
+                DestinationCount = _destCount,
+                CurrentDestination = _currentDest,
                 StartedUtc = _job.StartedUtc,
                 PausedUtc = _job.PausedUtc,
                 StageStartedUtc = _stageStarted,

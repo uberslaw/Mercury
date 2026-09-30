@@ -144,8 +144,6 @@ public static class JobSources
     public static IReadOnlyList<CopyMapping> Resolve(
         Job job,
         string destPath,
-        bool includeSourceFolderName)
-    {
-        return CopyShape.ResolveAll(Roots(job), destPath, includeSourceFolderName);
-    }
+        bool includeSourceFolderName) =>
+        JobDestinations.Resolve(job, destPath, includeSourceFolderName);
 }

@@ -40,7 +40,7 @@ public sealed class QueueJobItem : INotifyPropertyChanged
 
     public string OrderText => "#" + Order.ToString(CultureInfo.InvariantCulture);
 
-    public string Route => $"{JobSources.Display(Job)}  →  {Job.DestinationPath}";
+    public string Route => $"{JobSources.Display(Job)}  →  {JobDestinations.Display(Job)}";
 
     private bool _writingRundown;
     private bool _verifying;

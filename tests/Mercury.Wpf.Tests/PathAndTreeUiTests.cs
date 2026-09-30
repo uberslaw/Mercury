@@ -982,7 +982,8 @@ public class PathAndTreeUiTests
                     panel.BrowseSourceButton,
                     panel.AddSourceButton,
                     panel.ClearSourcesButton,
-                    panel.BrowseDestButton
+                    panel.BrowseDestButton,
+                    panel.AddDestButton
                 };
                 var remove = Assert.Single(FindVisualChildren<Button>(panel.SourceRemoveList));
                 Assert.Equal("Remove", remove.Content);
@@ -997,7 +998,9 @@ public class PathAndTreeUiTests
                 Assert.True(Math.Abs(browseX - destBrowseX) < 2.5, $"Browse buttons must share X ({browseX} vs {destBrowseX})");
                 Assert.True(Math.Abs(browseX - removeX) < 2.5, $"Remove must stack under Browse ({browseX} vs {removeX})");
                 var addX = LeftX(panel.AddSourceButton, panel);
+                var destAddX = LeftX(panel.AddDestButton, panel);
                 var clearX = LeftX(panel.ClearSourcesButton, panel);
+                Assert.True(Math.Abs(addX - destAddX) < 2.5, $"Add dest must share X with Add source ({addX} vs {destAddX})");
                 Assert.True(Math.Abs(addX - clearX) < 2.5, $"Clear must stack under Add ({addX} vs {clearX})");
 
                 var sourceComboX = LeftX(panel.SourcePathCombo, panel);

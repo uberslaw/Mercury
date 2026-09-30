@@ -341,7 +341,7 @@ public sealed class JobOptionsForm : INotifyPropertyChanged
             ? templates.FirstOrDefault(t => t.Id == catcher.TemplateId)
             : null;
         WindowTitle = "Job options — " + (string.IsNullOrWhiteSpace(job.Name) ? job.Id[..8] : job.Name);
-        Hint = job.SourcePath + "  →  " + job.DestinationPath;
+        Hint = job.SourcePath + "  →  " + JobDestinations.Display(job);
         SetLandingPaths(job.SourcePath, job.DestinationPath);
         SpeedToolTip = job.Status is JobStatus.Preparing or JobStatus.Enumerating or JobStatus.Copying
             or JobStatus.Verifying or JobStatus.Paused or JobStatus.PausedOutsideHours

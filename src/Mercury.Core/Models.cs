@@ -242,6 +242,11 @@ public sealed class Job
     /// </summary>
     public List<string> SourcePaths { get; set; } = [];
     public string DestinationPath { get; set; } = "";
+    /// <summary>
+    /// All destination folders for this job. Empty means <see cref="DestinationPath"/> only (older jobs / one dest).
+    /// Catcher jobs keep a single <see cref="DestinationPath"/>.
+    /// </summary>
+    public List<string> DestinationPaths { get; set; } = [];
     public SourceKind SourceKind { get; set; }
     private JobOptions _options = new();
     public JobOptions Options
@@ -350,6 +355,10 @@ public sealed class JobProgress
     public int StageIndex { get; init; }
     public int StageCount { get; init; }
     public string? StageName { get; init; }
+    /// <summary>1-based dest in a multi-dest copy. 0 when the job has one destination.</summary>
+    public int DestinationIndex { get; init; }
+    public int DestinationCount { get; init; }
+    public string? CurrentDestination { get; init; }
     public DateTimeOffset? StartedUtc { get; init; }
     public DateTimeOffset? StageStartedUtc { get; init; }
     /// <summary>Enumerate type mix, e.g. "Video: 12,632 files, 2.93 TB (82%)".</summary>
@@ -465,6 +474,11 @@ public sealed class CopyMapping
     public string UniqueRelativePrefix { get; init; } = "";
     /// <summary>Override transport zip path (Catcher multi-source combined pack).</summary>
     public string? TransportZipPath { get; init; }
+    /// <summary>
+    /// Destination folder the user picked (not the landing under it). Empty means <see cref="DestRoot"/>.
+    /// Set when a job fans out to more than one destination so journal prefixes stay unique.
+    /// </summary>
+    public string UserDestPath { get; init; } = "";
 }
 
 public readonly record struct DirectoryRecord(

@@ -166,17 +166,48 @@ public static class CopyShape
         }
 
         job.Options ??= new JobOptions();
+        var dests = JobDestinations.Roots(job);
+        if (dests.Count == 0 && !string.IsNullOrWhiteSpace(job.DestinationPath))
+        {
+            dests = [job.DestinationPath];
+        }
+
+        if (dests.Count > 1 && Path.IsPathRooted(current))
+        {
+            foreach (var destPath in dests)
+            {
+                var relative = ProgressRelativeToDest(job, destPath, current);
+                if (!string.Equals(relative, current, StringComparison.OrdinalIgnoreCase)
+                    && !Path.IsPathRooted(relative))
+                {
+                    return relative;
+                }
+            }
+
+            return current;
+        }
+
+        if (dests.Count > 1)
+        {
+            return current;
+        }
+
+        return ProgressRelativeToDest(job, dests.Count == 1 ? dests[0] : job.DestinationPath, current);
+    }
+
+    private static string ProgressRelativeToDest(Job job, string destPath, string current)
+    {
         string dest;
         try
         {
-            dest = PathNormalizer.DirectoryPath(job.DestinationPath);
+            dest = PathNormalizer.DirectoryPath(destPath);
         }
         catch
         {
             return current;
         }
 
-        var landing = PreviewLandingPath(job.SourcePath, job.DestinationPath, job.Options.IncludeSourceFolderName);
+        var landing = PreviewLandingPath(job.SourcePath, destPath, job.Options.IncludeSourceFolderName);
         if (string.IsNullOrEmpty(landing))
         {
             landing = dest;
@@ -393,6 +424,84 @@ public static class CopyShape
         return list;
     }
 
+    /// <summary>
+    /// Resolve every source root against every destination. One dest keeps existing journal keys.
+    /// Two+ dests prefix relative paths with a unique dest label so dest1 and dest2 do not collide.
+    /// Pack-as-zip still packs once per destination (separate transport zip under each landing).
+    /// </summary>
+    public static IReadOnlyList<CopyMapping> ResolveFanOut(
+        IReadOnlyList<string> sourcePaths,
+        IReadOnlyList<string> destPaths,
+        bool includeSourceFolderName = true)
+    {
+        if (destPaths is null || destPaths.Count == 0)
+        {
+            throw new ArgumentException("At least one destination is required.", nameof(destPaths));
+        }
+
+        if (destPaths.Count == 1)
+        {
+            return WithUserDest(ResolveAll(sourcePaths, destPaths[0], includeSourceFolderName), destPaths[0]);
+        }
+
+        var usedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var list = new List<CopyMapping>();
+        foreach (var dest in destPaths)
+        {
+            var destKey = UniqueDestLabel(dest, usedKeys);
+            string userDest;
+            try
+            {
+                userDest = PathNormalizer.DirectoryPath(dest);
+            }
+            catch
+            {
+                userDest = dest;
+            }
+
+            foreach (var mapping in ResolveAll(sourcePaths, dest, includeSourceFolderName))
+            {
+                var prefix = string.IsNullOrEmpty(mapping.UniqueRelativePrefix)
+                    ? destKey
+                    : Path.Combine(destKey, mapping.UniqueRelativePrefix);
+                list.Add(CloneMapping(mapping, userDest, prefix));
+            }
+        }
+
+        return list;
+    }
+
+    public static string PreviewLandingSummary(
+        IReadOnlyList<string> sourcePaths,
+        IReadOnlyList<string> destPaths,
+        bool includeSourceFolderName = true)
+    {
+        if (destPaths.Count == 0)
+        {
+            return "";
+        }
+
+        if (destPaths.Count == 1)
+        {
+            return PreviewLandingSummary(sourcePaths, destPaths[0], includeSourceFolderName);
+        }
+
+        var parts = new List<string>();
+        foreach (var dest in destPaths)
+        {
+            var one = PreviewLandingSummary(sourcePaths, dest, includeSourceFolderName);
+            if (string.IsNullOrEmpty(one))
+            {
+                continue;
+            }
+
+            const string prefix = "Will land in: ";
+            parts.Add(one.StartsWith(prefix, StringComparison.Ordinal) ? one[prefix.Length..] : one);
+        }
+
+        return parts.Count == 0 ? "" : "Will land in: " + string.Join(" · ", parts);
+    }
+
     public static string PreviewLandingSummary(
         IReadOnlyList<string> sourcePaths,
         string destPath,
@@ -456,6 +565,61 @@ public static class CopyShape
 
         record.RelativePath = Path.Combine(mapping.UniqueRelativePrefix, record.RelativePath);
         return record;
+    }
+
+    private static IReadOnlyList<CopyMapping> WithUserDest(IReadOnlyList<CopyMapping> mappings, string destPath)
+    {
+        var dest = destPath;
+        try
+        {
+            dest = PathNormalizer.DirectoryPath(destPath);
+        }
+        catch
+        {
+            // keep destPath
+        }
+
+        return mappings.Select(m => CloneMapping(m, dest, m.UniqueRelativePrefix)).ToList();
+    }
+
+    private static CopyMapping CloneMapping(CopyMapping mapping, string userDest, string uniquePrefix) =>
+        new()
+        {
+            Kind = mapping.Kind,
+            SourceRoot = mapping.SourceRoot,
+            DestRoot = mapping.DestRoot,
+            SingleFile = mapping.SingleFile,
+            SingleFileName = mapping.SingleFileName,
+            UniqueRelativePrefix = uniquePrefix,
+            TransportZipPath = mapping.TransportZipPath,
+            UserDestPath = userDest
+        };
+
+    private static string UniqueDestLabel(string destPath, HashSet<string> used)
+    {
+        string name;
+        try
+        {
+            var dest = PathNormalizer.DirectoryPath(destPath);
+            if (PathNormalizer.IsDriveRoot(dest))
+            {
+                name = DriveLabel(dest);
+            }
+            else
+            {
+                name = Path.GetFileName(dest.TrimEnd('\\', '/'));
+                if (string.IsNullOrEmpty(name))
+                {
+                    name = dest;
+                }
+            }
+        }
+        catch
+        {
+            name = destPath;
+        }
+
+        return UniqueDestRoot(name, used);
     }
 
     private static string UniqueDestRoot(string destRoot, HashSet<string> used)

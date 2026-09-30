@@ -30,7 +30,8 @@ public static class HelpDocument
             Body =
                 "Source and Destination accept browse, paste, or drag-drop. Destination can be a folder or Catcher (HTTPS). " +
                 "Browse Source remembers the last Source folder; Browse Destination remembers the last Destination. Recents stay independent.\n\n" +
-                "You can pick several source folders in one Browse dialog (same parent), then Browse again from another location — each Add/Browse appends without wiping earlier picks. The selected-folders list under Source has Remove and Clear. Destination remains one folder. " +
+                "You can pick several source folders in one Browse dialog (same parent), then Browse again from another location — each Add/Browse appends without wiping earlier picks. The selected-folders list under Source has Remove and Clear. " +
+                "Destination works the same way: Add, Browse, paste, or drop more than one folder. One destination stays the simple path. Two or more copy the same sources to each dest in one job (dest1, then dest2, …). Catcher is still a single destination. " +
                 "A selected folder copies as dest\\FolderName (Explorer-style) — Include source folder name is on by default. " +
                 "Packed transport zips live under that landing in a compressed work folder (dest\\Anchor Span\\compressed\\…zip), never as dest\\compressed beside Anchor Span. After unpack, dest matches the source tree under the landing and the zip is deleted. " +
                 "Two sources both named Photos land as dest\\Photos and dest\\Photos (2). Multiple folders keep their names even if Include is off, so trees do not smash. " +

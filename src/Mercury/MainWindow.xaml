@@ -406,6 +406,7 @@
                                              DestIsCatcher="{Binding DestIsCatcher}"
                                              PathsEditable="{Binding PathsEditable}"
                                              HasSourceFolders="{Binding HasSourceFolders}"
+                                             HasDestFolders="{Binding HasDestFolders}"
                                              IncludeSourceFolderName="{Binding IncludeSourceFolderName, Mode=TwoWay}"
                                              LandingPreview="{Binding LandingPreview}"
                                              ShowLandingPreview="{Binding ShowLandingPreview}"
@@ -416,6 +417,7 @@
                                              RecentSources="{Binding RecentSources}"
                                              RecentDestinations="{Binding RecentDestinations}"
                                              SourceFolders="{Binding SourceFolders}"
+                                             DestFolders="{Binding DestFolders}"
                                              CatcherTemplates="{Binding CatcherTemplates}"
                                              SelectedCatcherTemplate="{Binding SelectedCatcherTemplate, Mode=TwoWay}"
                                              BrowseSourceCommand="{Binding BrowseSourceCommand}"
@@ -423,6 +425,9 @@
                                              ClearSourcesCommand="{Binding ClearSourcesCommand}"
                                              RemoveSourceCommand="{Binding RemoveSourceCommand}"
                                              BrowseDestCommand="{Binding BrowseDestCommand}"
+                                             AddDestCommand="{Binding AddDestCommand}"
+                                             ClearDestsCommand="{Binding ClearDestsCommand}"
+                                             RemoveDestCommand="{Binding RemoveDestCommand}"
                                              Margin="0,0,0,12"/>
 
                         <Grid Margin="0,0,0,12">

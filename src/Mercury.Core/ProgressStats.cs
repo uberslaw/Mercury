@@ -42,6 +42,7 @@ public sealed class ProgressStats
     };
 
     public StatPair Job { get; init; } = StatPair.Empty;
+    public StatPair Dest { get; init; } = StatPair.Empty;
     public StatPair Files { get; init; } = StatPair.Empty;
     public StatPair Bytes { get; init; } = StatPair.Empty;
     public StatPair Speed { get; init; } = StatPair.Empty;
@@ -64,7 +65,7 @@ public sealed class ProgressStats
         {
             StatPair[] all =
             [
-                Job, Stage, File, ThisStage, Files, OverallFiles, Bytes, Speed, PauseAfter, Types
+                Job, Dest, Stage, File, ThisStage, Files, OverallFiles, Bytes, Speed, PauseAfter, Types
             ];
             return all
                 .Where(p => p.HasValue)
@@ -121,6 +122,13 @@ public sealed class ProgressStats
         var index = Math.Clamp(jobIndex, 1, count);
         var jobPair = count > 1
             ? new StatPair("Job", $"{index} of {count}")
+            : StatPair.Empty;
+        var destPair = e.DestinationCount > 1
+            ? new StatPair("Dest",
+                $"{Math.Clamp(e.DestinationIndex, 1, e.DestinationCount)} of {e.DestinationCount}"
+                + (string.IsNullOrWhiteSpace(e.CurrentDestination)
+                    ? ""
+                    : " — " + ShortDestName(e.CurrentDestination)))
             : StatPair.Empty;
         var hasCounts = e.FilesTotal > 0 || e.FilesCopied > 0;
         var files = new StatPair("Files", hasCounts ? $"{e.FilesCopied}/{e.FilesTotal}" : "—");
@@ -179,6 +187,7 @@ public sealed class ProgressStats
         return new ProgressStats
         {
             Job = jobPair,
+            Dest = destPair,
             Files = files,
             OverallFiles = overallFiles,
             Bytes = bytes,
@@ -205,6 +214,25 @@ public sealed class ProgressStats
                 ? StatPair.Empty
                 : new StatPair("Types", e.TypeSummary) { Expandable = true }
         };
+    }
+
+    private static string ShortDestName(string path)
+    {
+        try
+        {
+            var dest = PathNormalizer.DirectoryPath(path);
+            if (PathNormalizer.IsDriveRoot(dest))
+            {
+                return dest;
+            }
+
+            var name = Path.GetFileName(dest.TrimEnd('\\', '/'));
+            return string.IsNullOrWhiteSpace(name) ? path : name;
+        }
+        catch
+        {
+            return path;
+        }
     }
 
     private static string FormatRundownSpeed(double filesPerSecond)

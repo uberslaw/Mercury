@@ -36,6 +36,10 @@ public partial class JobPathsPanel : UserControl
         nameof(HasSourceFolders), typeof(bool), typeof(JobPathsPanel),
         new PropertyMetadata(false));
 
+    public static readonly DependencyProperty HasDestFoldersProperty = DependencyProperty.Register(
+        nameof(HasDestFolders), typeof(bool), typeof(JobPathsPanel),
+        new PropertyMetadata(false));
+
     public static readonly DependencyProperty IncludeSourceFolderNameProperty = DependencyProperty.Register(
         nameof(IncludeSourceFolderName), typeof(bool), typeof(JobPathsPanel),
         new FrameworkPropertyMetadata(true, FrameworkPropertyMetadataOptions.BindsTwoWayByDefault));
@@ -73,6 +77,9 @@ public partial class JobPathsPanel : UserControl
     public static readonly DependencyProperty SourceFoldersProperty = DependencyProperty.Register(
         nameof(SourceFolders), typeof(IEnumerable), typeof(JobPathsPanel));
 
+    public static readonly DependencyProperty DestFoldersProperty = DependencyProperty.Register(
+        nameof(DestFolders), typeof(IEnumerable), typeof(JobPathsPanel));
+
     public static readonly DependencyProperty CatcherTemplatesProperty = DependencyProperty.Register(
         nameof(CatcherTemplates), typeof(IEnumerable), typeof(JobPathsPanel));
 
@@ -94,6 +101,15 @@ public partial class JobPathsPanel : UserControl
 
     public static readonly DependencyProperty BrowseDestCommandProperty = DependencyProperty.Register(
         nameof(BrowseDestCommand), typeof(ICommand), typeof(JobPathsPanel));
+
+    public static readonly DependencyProperty AddDestCommandProperty = DependencyProperty.Register(
+        nameof(AddDestCommand), typeof(ICommand), typeof(JobPathsPanel));
+
+    public static readonly DependencyProperty ClearDestsCommandProperty = DependencyProperty.Register(
+        nameof(ClearDestsCommand), typeof(ICommand), typeof(JobPathsPanel));
+
+    public static readonly DependencyProperty RemoveDestCommandProperty = DependencyProperty.Register(
+        nameof(RemoveDestCommand), typeof(ICommand), typeof(JobPathsPanel));
 
     public JobPathsPanel()
     {
@@ -153,6 +169,12 @@ public partial class JobPathsPanel : UserControl
     {
         get => (bool)GetValue(HasSourceFoldersProperty);
         set => SetValue(HasSourceFoldersProperty, value);
+    }
+
+    public bool HasDestFolders
+    {
+        get => (bool)GetValue(HasDestFoldersProperty);
+        set => SetValue(HasDestFoldersProperty, value);
     }
 
     public bool IncludeSourceFolderName
@@ -215,6 +237,12 @@ public partial class JobPathsPanel : UserControl
         set => SetValue(SourceFoldersProperty, value);
     }
 
+    public IEnumerable? DestFolders
+    {
+        get => (IEnumerable?)GetValue(DestFoldersProperty);
+        set => SetValue(DestFoldersProperty, value);
+    }
+
     public IEnumerable? CatcherTemplates
     {
         get => (IEnumerable?)GetValue(CatcherTemplatesProperty);
@@ -255,6 +283,24 @@ public partial class JobPathsPanel : UserControl
     {
         get => (ICommand?)GetValue(BrowseDestCommandProperty);
         set => SetValue(BrowseDestCommandProperty, value);
+    }
+
+    public ICommand? AddDestCommand
+    {
+        get => (ICommand?)GetValue(AddDestCommandProperty);
+        set => SetValue(AddDestCommandProperty, value);
+    }
+
+    public ICommand? ClearDestsCommand
+    {
+        get => (ICommand?)GetValue(ClearDestsCommandProperty);
+        set => SetValue(ClearDestsCommandProperty, value);
+    }
+
+    public ICommand? RemoveDestCommand
+    {
+        get => (ICommand?)GetValue(RemoveDestCommandProperty);
+        set => SetValue(RemoveDestCommandProperty, value);
     }
 
     private void OnLoadedAlignComboText(object sender, RoutedEventArgs e)
