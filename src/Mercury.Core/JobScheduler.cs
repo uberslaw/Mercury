@@ -1480,7 +1480,8 @@ public sealed class JobScheduler : IDisposable
                 });
             },
             manifestPath,
-            _paths.Jobs);
+            _paths.Jobs,
+            message => Log.Info(job.Id, job.Name, message));
 
         if (result.Completed)
         {

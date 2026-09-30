@@ -331,6 +331,101 @@ public class CompareQueueTests
     }
 
     [Fact]
+    public void CompareLogCountsAndHashesEachFile()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mercury-compare-log-" + Guid.NewGuid().ToString("N"));
+        var left = Path.Combine(root, "left");
+        var right = Path.Combine(root, "right");
+        Directory.CreateDirectory(left);
+        Directory.CreateDirectory(right);
+        try
+        {
+            File.WriteAllText(Path.Combine(left, "a.txt"), "AAAA");
+            File.WriteAllText(Path.Combine(right, "a.txt"), "AAAA");
+            File.WriteAllText(Path.Combine(left, "big.txt"), "bigger");
+            File.WriteAllText(Path.Combine(right, "big.txt"), "x");
+            File.WriteAllText(Path.Combine(left, "only-source.txt"), "solo");
+            File.WriteAllText(Path.Combine(right, "only-dest.txt"), "extra");
+            var manifest = Path.Combine(root, "compare-manifest.jsonl");
+            var lines = new List<string>();
+            var result = DirectoryComparer.Compare(
+                left,
+                right,
+                new DirectoryCompareOptions { Advanced = true, Hash = true },
+                manifestPath: manifest,
+                log: lines.Add);
+            Assert.True(result.Completed);
+            Assert.Contains(lines, line => line == "Started scanning");
+            Assert.Contains(lines, line => line == "Counted source a.txt");
+            Assert.Contains(lines, line => line == "Counted destination a.txt");
+            Assert.Contains(lines, line => line == "Started hashing source");
+            Assert.Contains(lines, line => line == "Hashed source a.txt");
+            Assert.Contains(lines, line => line == "Started hashing destination");
+            Assert.Contains(lines, line => line == "Hashed destination a.txt");
+            Assert.Contains(lines, line => line == "Hash matches a.txt");
+            Assert.Contains(lines, line => line == "Source only only-source.txt");
+            Assert.Contains(lines, line => line == "Destination only only-dest.txt");
+            Assert.Contains(lines, line => line == "Not hashed big.txt size differs");
+
+            var resumed = new List<string>();
+            DirectoryComparer.Compare(
+                left,
+                right,
+                new DirectoryCompareOptions { Advanced = true, Hash = true },
+                manifestPath: manifest,
+                log: resumed.Add);
+            Assert.Contains(resumed, line => line.StartsWith("Skipped source hash a.txt", StringComparison.Ordinal));
+            Assert.Contains(resumed, line => line.StartsWith("Skipped destination hash a.txt", StringComparison.Ordinal));
+            Assert.DoesNotContain(resumed, line => line == "Hashed source a.txt");
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
+    public async Task CompareJobLogFileReceivesPerFileLines()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mercury-compare-joblog-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var paths = new AppPaths(root);
+            var left = Path.Combine(root, "left");
+            var right = Path.Combine(root, "right");
+            Directory.CreateDirectory(left);
+            Directory.CreateDirectory(right);
+            File.WriteAllText(Path.Combine(left, "a.txt"), "AAAA");
+            File.WriteAllText(Path.Combine(right, "a.txt"), "AAAA");
+            using var scheduler = new JobScheduler(paths);
+            var job = new Job
+            {
+                Kind = JobKind.Compare,
+                Name = "Compare",
+                SourcePath = left,
+                DestinationPath = right,
+                Options = new JobOptions { CompareAdvanced = true, CompareHash = true }
+            };
+            scheduler.Enqueue(job, startNow: true);
+            await WaitUntil(
+                () => !scheduler.HasRunningCompare
+                      && scheduler.Queue.Any(row => row.Id == job.Id && row.Status == JobStatus.Completed),
+                TimeSpan.FromSeconds(20));
+            var text = string.Join('\n', FileJobLog.ReadAllLines(paths, job.Id));
+            Assert.Contains("Job started.", text, StringComparison.Ordinal);
+            Assert.Contains("Counted source a.txt", text, StringComparison.Ordinal);
+            Assert.Contains("Hashed source a.txt", text, StringComparison.Ordinal);
+            Assert.Contains("Hashed destination a.txt", text, StringComparison.Ordinal);
+            Assert.Contains("Hash matches a.txt", text, StringComparison.Ordinal);
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
     public async Task CompareRunsBesideTransferAndStopDoesNotCancelTheOther()
     {
         var root = Path.Combine(Path.GetTempPath(), "mercury-lanes-" + Guid.NewGuid().ToString("N"));

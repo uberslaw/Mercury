@@ -449,7 +449,8 @@ public static class DirectoryComparer
         PauseGate? pause = null,
         Action<DirectoryCompareProgress>? progress = null,
         string? manifestPath = null,
-        string? seedJobsRoot = null)
+        string? seedJobsRoot = null,
+        Action<string>? log = null)
     {
         options ??= DirectoryCompareOptions.Default;
         var started = DateTimeOffset.UtcNow;
@@ -489,6 +490,7 @@ public static class DirectoryComparer
             TreeSide right;
             if (manifest is { InventoryComplete: true, Inventory: { } saved })
             {
+                Note(log, "Continuing from the saved file list");
                 left = FromManifest(saved, leftSide: true);
                 right = FromManifest(saved, leftSide: false);
                 filesVisited = left.Files.Count + right.Files.Count;
@@ -496,8 +498,9 @@ public static class DirectoryComparer
             }
             else
             {
-                left = ScanSide(leftPath, cancellationToken, pause, progress, ref filesVisited, ref foldersVisited, ref lastPulse);
-                right = ScanSide(rightPath, cancellationToken, pause, progress, ref filesVisited, ref foldersVisited, ref lastPulse);
+                Note(log, "Started scanning");
+                left = ScanSide(leftPath, cancellationToken, pause, progress, ref filesVisited, ref foldersVisited, ref lastPulse, log, "source");
+                right = ScanSide(rightPath, cancellationToken, pause, progress, ref filesVisited, ref foldersVisited, ref lastPulse, log, "destination");
                 manifest?.WriteInventory(Snapshot(left, right));
             }
 
@@ -517,7 +520,7 @@ public static class DirectoryComparer
                 : TimeSpan.Zero;
 
             CompareFolders(left, right, advanced, diffs);
-            CompareFiles(left, right, advanced, hashDest, hashSource, tolerance, diffs, cancellationToken, pause, progress, ref filesVisited, ref foldersVisited, ref lastPulse, manifest);
+            CompareFiles(left, right, advanced, hashDest, hashSource, tolerance, diffs, cancellationToken, pause, progress, ref filesVisited, ref foldersVisited, ref lastPulse, manifest, log);
 
             var result = BuildResult(leftPath, rightPath, started, DateTimeOffset.UtcNow, options, left, right, diffs, filesVisited, foldersVisited, canceled: false, error: null);
             lastPulse = Pulse(progress, filesVisited, foldersVisited, null, lastPulse, force: true);
@@ -788,7 +791,8 @@ public static class DirectoryComparer
         ref int filesVisited,
         ref int foldersVisited,
         ref long lastPulse,
-        CompareManifestWriter? manifest)
+        CompareManifestWriter? manifest,
+        Action<string>? log)
     {
         var keys = left.Files.Keys.ToList();
         keys.Sort(StringComparer.OrdinalIgnoreCase);
@@ -807,6 +811,7 @@ public static class DirectoryComparer
                     LeftSize = file.Size,
                     LeftWriteUtc = file.LastWriteUtc
                 });
+                Note(log, "Source only " + key);
                 continue;
             }
 
@@ -839,6 +844,10 @@ public static class DirectoryComparer
                     RightWriteUtc = other.LastWriteUtc,
                     Detail = $"{ByteFormatter.ToString(file.Size)} vs {ByteFormatter.ToString(other.Size)}"
                 });
+                if (hashDest)
+                {
+                    Note(log, "Not hashed " + key + " size differs");
+                }
             }
 
             var delta = file.LastWriteUtc - other.LastWriteUtc;
@@ -877,6 +886,7 @@ public static class DirectoryComparer
                 RightSize = file.Size,
                 RightWriteUtc = file.LastWriteUtc
             });
+            Note(log, "Destination only " + key);
         }
 
         if (hashDest)
@@ -891,7 +901,8 @@ public static class DirectoryComparer
                 filesVisited,
                 foldersVisited,
                 lastPulse,
-                manifest);
+                manifest,
+                log);
         }
         else if (hashSource)
         {
@@ -903,7 +914,8 @@ public static class DirectoryComparer
                 filesVisited,
                 foldersVisited,
                 lastPulse,
-                manifest);
+                manifest,
+                log);
         }
     }
 
@@ -919,8 +931,10 @@ public static class DirectoryComparer
         int filesVisited,
         int foldersVisited,
         long lastPulse,
-        CompareManifestWriter? manifest)
+        CompareManifestWriter? manifest,
+        Action<string>? log)
     {
+        Note(log, "Started hashing source");
         var files = left.Files.Values.OrderBy(file => file.Relative, StringComparer.OrdinalIgnoreCase).ToList();
         long total = 0;
         foreach (var file in files)
@@ -951,6 +965,7 @@ public static class DirectoryComparer
             if (SavedHash(manifest, leftSide: true, file, out _))
             {
                 credited += file.Size;
+                Note(log, "Skipped source hash " + file.Relative + " saved hash still matches size and last-write time");
                 continue;
             }
 
@@ -968,6 +983,7 @@ public static class DirectoryComparer
             {
                 var value = HashUtil.HashFile(file.FullPath, cancellationToken, OnRead);
                 manifest?.WriteHash(true, file.Relative, value, file.Size, file.LastWriteUtc.Ticks);
+                Note(log, "Hashed source " + file.Relative);
                 credited += file.Size;
             }
             catch (OperationCanceledException)
@@ -1000,7 +1016,8 @@ public static class DirectoryComparer
         int filesVisited,
         int foldersVisited,
         long lastPulse,
-        CompareManifestWriter? manifest)
+        CompareManifestWriter? manifest,
+        Action<string>? log)
     {
         var folderTotals = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
         long hashTotal = 0;
@@ -1079,6 +1096,7 @@ public static class DirectoryComparer
             Emit("", 0, 0, force: true);
         }
 
+        Note(log, "Started hashing source");
         void HashSide(bool leftSide)
         {
             openFolder = null;
@@ -1104,6 +1122,9 @@ public static class DirectoryComparer
 
                 if (done.ContainsKey(key))
                 {
+                    Note(log, leftSide
+                        ? "Skipped source hash " + key + " saved hash still matches size and last-write time"
+                        : "Skipped destination hash " + key + " saved hash still matches size and last-write time");
                     continue;
                 }
 
@@ -1123,6 +1144,7 @@ public static class DirectoryComparer
                 {
                     var value = HashUtil.HashFile(entry.FullPath, cancellationToken, OnRead);
                     manifest?.WriteHash(leftSide, key, value, entry.Size, entry.LastWriteUtc.Ticks);
+                    Note(log, leftSide ? "Hashed source " + key : "Hashed destination " + key);
                     savedFolder[folder] = savedFolder.GetValueOrDefault(folder) + entry.Size;
                     done[key] = value;
                 }
@@ -1148,6 +1170,7 @@ public static class DirectoryComparer
         }
 
         HashSide(leftSide: true);
+        Note(log, "Started hashing destination");
         HashSide(leftSide: false);
         foreach (var key in keys)
         {
@@ -1164,6 +1187,7 @@ public static class DirectoryComparer
 
             if (string.Equals(leftHash, rightHash, StringComparison.OrdinalIgnoreCase))
             {
+                Note(log, "Hash matches " + key);
                 continue;
             }
 
@@ -1175,9 +1199,27 @@ public static class DirectoryComparer
                 RightSize = other.Size,
                 Detail = $"{leftHash} vs {rightHash}"
             });
+            Note(log, "Hash mismatch " + key);
         }
 
         return pulseAt;
+    }
+
+    private static void Note(Action<string>? log, string message)
+    {
+        if (log is null || string.IsNullOrEmpty(message))
+        {
+            return;
+        }
+
+        try
+        {
+            log(message);
+        }
+        catch
+        {
+            // a log failure must not stop the compare
+        }
     }
 
     private static bool SavedHash(CompareManifestWriter? manifest, bool leftSide, FileEntry file, out string hash)
@@ -1332,11 +1374,13 @@ public static class DirectoryComparer
         Action<DirectoryCompareProgress>? progress,
         ref int filesVisited,
         ref int foldersVisited,
-        ref long lastPulse)
+        ref long lastPulse,
+        Action<string>? log = null,
+        string side = "source")
     {
-        var side = new TreeSide();
-        Walk(root, "", side, cancellationToken, pause, progress, ref filesVisited, ref foldersVisited, ref lastPulse);
-        return side;
+        var tree = new TreeSide();
+        Walk(root, "", tree, cancellationToken, pause, progress, ref filesVisited, ref foldersVisited, ref lastPulse, log, side);
+        return tree;
     }
 
     private static void Walk(
@@ -1348,7 +1392,9 @@ public static class DirectoryComparer
         Action<DirectoryCompareProgress>? progress,
         ref int filesVisited,
         ref int foldersVisited,
-        ref long lastPulse)
+        ref long lastPulse,
+        Action<string>? log,
+        string sideLabel)
     {
         WaitIfPaused(pause, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
@@ -1384,6 +1430,7 @@ public static class DirectoryComparer
             var name = info.Name;
             var rel = CombineRelative(relative, name);
             side.Files[rel] = new FileEntry(rel, name, info.FullName, info.Length, info.LastWriteTimeUtc);
+            Note(log, "Counted " + sideLabel + " " + rel);
             if (relative.Length == 0)
             {
                 side.RootImmediateFiles++;
@@ -1437,7 +1484,7 @@ public static class DirectoryComparer
             side.Folders[rel] = new FolderEntry(rel, name);
             foldersVisited++;
             lastPulse = Pulse(progress, filesVisited, foldersVisited, rel, lastPulse);
-            Walk(info.FullName, rel, side, cancellationToken, pause, progress, ref filesVisited, ref foldersVisited, ref lastPulse);
+            Walk(info.FullName, rel, side, cancellationToken, pause, progress, ref filesVisited, ref foldersVisited, ref lastPulse, log, sideLabel);
         }
     }
 

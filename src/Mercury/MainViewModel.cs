@@ -107,6 +107,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private bool _hasBackgroundRundown;
     private bool _isPaused;
     private bool _portableData;
+    private readonly object _consoleLock = new();
+    private readonly Queue<(string Text, bool Error)> _consolePending = new();
+    private bool _consoleFlushScheduled;
     private string _helpSearch = "";
     private string _catcherOnlineStatus = "";
     private DispatcherTimer? _catcherProbeTimer;
@@ -3964,19 +3967,68 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private void OnLog(LogEvent ev)
     {
+        var text = $"{TransferRundown.FormatLogTime(ev.Utc)} [{ev.JobName}] {ev.Message}";
+        var error = ev.Level == "Error";
         var dispatcher = Application.Current?.Dispatcher;
-        void add()
-        {
-            AppendConsole($"{TransferRundown.FormatLogTime(ev.Utc)} [{ev.JobName}] {ev.Message}", ev.Level == "Error");
-        }
-
         if (dispatcher is null || dispatcher.CheckAccess())
         {
-            add();
+            AppendConsole(text, error);
+            return;
         }
-        else
+
+        var schedule = false;
+        lock (_consoleLock)
         {
-            dispatcher.Invoke(add);
+            _consolePending.Enqueue((text, error));
+            if (!_consoleFlushScheduled)
+            {
+                _consoleFlushScheduled = true;
+                schedule = true;
+            }
+        }
+
+        if (schedule)
+        {
+            dispatcher.BeginInvoke(FlushConsole, DispatcherPriority.Background);
+        }
+    }
+
+    /// <summary>
+    /// Append queued log lines on the UI thread in short chunks. The job log file already has every line.
+    /// </summary>
+    private void FlushConsole()
+    {
+        const int chunk = 200;
+        var batch = new List<(string Text, bool Error)>(chunk);
+        lock (_consoleLock)
+        {
+            while (batch.Count < chunk && _consolePending.Count > 0)
+            {
+                batch.Add(_consolePending.Dequeue());
+            }
+        }
+
+        foreach (var (text, error) in batch)
+        {
+            AppendConsole(text, error);
+        }
+
+        var more = false;
+        lock (_consoleLock)
+        {
+            if (_consolePending.Count == 0)
+            {
+                _consoleFlushScheduled = false;
+            }
+            else
+            {
+                more = true;
+            }
+        }
+
+        if (more)
+        {
+            Application.Current?.Dispatcher.BeginInvoke(FlushConsole, DispatcherPriority.Background);
         }
     }
 
@@ -3991,11 +4043,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         foreach (var part in parts)
         {
             ConsoleLines.Add(new ConsoleLine { Text = part, IsError = error });
-        }
-
-        while (ConsoleLines.Count > 5000)
-        {
-            ConsoleLines.RemoveAt(0);
         }
     }
 

@@ -341,6 +341,8 @@ public partial class MainWindow : Window
         }
     }
 
+    private int _consoleScrollQueued;
+
     private void OnConsoleLinesChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         if (!Dispatcher.CheckAccess())
@@ -354,10 +356,22 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (e.Action is NotifyCollectionChangedAction.Add or NotifyCollectionChangedAction.Reset)
+        if (e.Action is NotifyCollectionChangedAction.Add or NotifyCollectionChangedAction.Reset
+            && Interlocked.Exchange(ref _consoleScrollQueued, 1) == 0)
         {
-            ScrollConsoleToLatest();
+            Dispatcher.BeginInvoke(ScrollConsoleOnce, DispatcherPriority.Background);
         }
+    }
+
+    private void ScrollConsoleOnce()
+    {
+        _consoleScrollQueued = 0;
+        if (!Vm.FollowConsole || ConsoleList.Items.Count == 0)
+        {
+            return;
+        }
+
+        ConsoleList.ScrollIntoView(ConsoleList.Items[ConsoleList.Items.Count - 1]);
     }
 
     private void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
