@@ -273,8 +273,21 @@ public static class TransferPlanner
             var under = dest.StartsWith(root + "\\", StringComparison.OrdinalIgnoreCase)
                         || string.Equals(Path.GetDirectoryName(dest)?.TrimEnd('\\'), root, StringComparison.OrdinalIgnoreCase)
                         || string.Equals(dest.TrimEnd('\\'), root, StringComparison.OrdinalIgnoreCase);
+            if (!under
+                && !string.IsNullOrEmpty(mapping.UniqueRelativePrefix)
+                && (file.RelativePath.StartsWith(mapping.UniqueRelativePrefix + "\\", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(file.RelativePath, mapping.UniqueRelativePrefix, StringComparison.OrdinalIgnoreCase)))
+            {
+                under = true;
+            }
+
             if (!under)
             {
+                if (mappings.Any(m => !string.IsNullOrEmpty(m.UniqueRelativePrefix)))
+                {
+                    return false;
+                }
+
                 return file.SourcePath.StartsWith(mapping.SourceRoot.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase)
                        || string.Equals(file.SourcePath, mapping.SourceRoot, StringComparison.OrdinalIgnoreCase)
                        || (mapping.SingleFile &&

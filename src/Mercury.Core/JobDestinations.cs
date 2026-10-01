@@ -165,13 +165,15 @@ public static class JobDestinations
 
         var files = journal.GetFiles();
         var issueRows = journal.GetIssues();
+        var anyCopied = files.Count > 0;
         var complete = new List<string>();
         var incomplete = new List<string>();
         foreach (var dest in dests)
         {
             var destFiles = files.Where(f => BelongsTo(f.DestPath, dest)).ToList();
             var destFailed = destFiles.Any(f => f.Status is FileCopyStatus.Failed or FileCopyStatus.Deferred)
-                             || issueRows.Any(i => IssueTouches(i, dest, destFiles));
+                             || issueRows.Any(i => IssueTouches(i, dest, destFiles))
+                             || (destFiles.Count == 0 && anyCopied);
             if (destFailed)
             {
                 incomplete.Add(ShortName(dest));

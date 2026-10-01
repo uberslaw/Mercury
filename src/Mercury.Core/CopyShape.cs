@@ -265,7 +265,11 @@ public static class CopyShape
             throw new ArgumentException("At least one mapping is required.", nameof(mappings));
         }
 
+        // Source-path fallback is for one dest (or multi-source under one dest). Two+ dests share
+        // the same source, so prefix / dest-root decide; source must not steal dest2 onto dest1.
+        var prefixed = mappings.Any(m => !string.IsNullOrEmpty(m.UniqueRelativePrefix));
         CopyMapping? best = null;
+        var bestScore = -1;
         var bestLen = -1;
         foreach (var mapping in mappings)
         {
@@ -273,26 +277,24 @@ public static class CopyShape
             {
                 var dest = Path.GetFullPath(file.DestPath);
                 var root = Path.GetFullPath(mapping.DestRoot).TrimEnd('\\');
-                var under = dest.StartsWith(root + "\\", StringComparison.OrdinalIgnoreCase)
-                            || string.Equals(dest.TrimEnd('\\'), root, StringComparison.OrdinalIgnoreCase);
-                if (!under
-                    && !string.IsNullOrEmpty(mapping.UniqueRelativePrefix)
+                var underDest = dest.StartsWith(root + "\\", StringComparison.OrdinalIgnoreCase)
+                                || string.Equals(dest.TrimEnd('\\'), root, StringComparison.OrdinalIgnoreCase);
+                var underPrefix = !string.IsNullOrEmpty(mapping.UniqueRelativePrefix)
                     && (file.RelativePath.StartsWith(mapping.UniqueRelativePrefix + "\\", StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(file.RelativePath, mapping.UniqueRelativePrefix, StringComparison.OrdinalIgnoreCase)))
-                {
-                    under = true;
-                }
-
-                if (!under
+                        || string.Equals(file.RelativePath, mapping.UniqueRelativePrefix, StringComparison.OrdinalIgnoreCase));
+                var underSource = !prefixed
                     && (file.SourcePath.StartsWith(mapping.SourceRoot.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(file.SourcePath, mapping.SourceRoot, StringComparison.OrdinalIgnoreCase)))
+                        || string.Equals(file.SourcePath, mapping.SourceRoot, StringComparison.OrdinalIgnoreCase));
+                var score = underDest ? 3 : underPrefix ? 2 : underSource ? 1 : 0;
+                if (score == 0)
                 {
-                    under = true;
+                    continue;
                 }
 
-                if (under && mapping.DestRoot.Length > bestLen)
+                if (score > bestScore || (score == bestScore && mapping.DestRoot.Length > bestLen))
                 {
                     best = mapping;
+                    bestScore = score;
                     bestLen = mapping.DestRoot.Length;
                 }
             }

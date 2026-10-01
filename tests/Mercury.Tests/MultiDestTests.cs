@@ -81,6 +81,22 @@ public class CopyShapeMultiDestTests
             Assert.Equal(Path.Combine(dest2, "Photos"), mappings[1].DestRoot, ignoreCase: true);
             Assert.False(string.Equals(mappings[0].UniqueRelativePrefix, mappings[1].UniqueRelativePrefix, StringComparison.OrdinalIgnoreCase));
             Assert.False(string.IsNullOrEmpty(mappings[0].UniqueRelativePrefix));
+            var srcFile = Path.Combine(src, "a.txt");
+            File.WriteAllText(srcFile, "x");
+            var dest1File = new FileRecord
+            {
+                RelativePath = Path.Combine(mappings[0].UniqueRelativePrefix, "a.txt"),
+                SourcePath = srcFile,
+                DestPath = Path.Combine(mappings[0].DestRoot, "a.txt")
+            };
+            var dest2File = new FileRecord
+            {
+                RelativePath = Path.Combine(mappings[1].UniqueRelativePrefix, "a.txt"),
+                SourcePath = srcFile,
+                DestPath = Path.Combine(mappings[1].DestRoot, "a.txt")
+            };
+            Assert.Equal(mappings[0].DestRoot, CopyShape.FindMapping(dest1File, mappings).DestRoot, ignoreCase: true);
+            Assert.Equal(mappings[1].DestRoot, CopyShape.FindMapping(dest2File, mappings).DestRoot, ignoreCase: true);
             Assert.Contains("usb", CopyShape.PreviewLandingSummary([src], [dest1, dest2]));
             Assert.Contains("nas", CopyShape.PreviewLandingSummary([src], [dest1, dest2]));
         }

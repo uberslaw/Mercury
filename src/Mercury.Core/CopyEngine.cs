@@ -209,8 +209,7 @@ public sealed class CopyEngine : ICopyEngine
                 if (catcher is null)
                 {
                     reporter.Enter(CopyStageKind.CheckingDestinationSpace, JobStatus.Enumerating, "Checking destination space…");
-                    var listed = journal.GetFiles();
-                    CheckSpacePerDestination(job, mappings, listed, pack, journal, log, name);
+                    CheckSpacePerDestination(job, mappings, journal.GetFiles(), pack, journal, log, name);
                 }
             }
             else
@@ -556,6 +555,11 @@ public sealed class CopyEngine : ICopyEngine
         catch (OperationCanceledException)
         {
             throw;
+        }
+
+        if (destRoots.Count > 1)
+        {
+            issues = Math.Max(issues, journal.IssueCount());
         }
 
         job.IssueCount = issues;

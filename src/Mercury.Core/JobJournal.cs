@@ -28,7 +28,7 @@ public sealed class JobJournal : IDisposable
     {
         System.IO.Directory.CreateDirectory(directory);
         var db = Path.Combine(directory, "job.db");
-        var cs = new SqliteConnectionStringBuilder { DataSource = db }.ToString();
+        var cs = new SqliteConnectionStringBuilder { DataSource = db, Pooling = false }.ToString();
         var connection = new SqliteConnection(cs);
         connection.Open();
         var journal = new JobJournal(directory, connection);
@@ -45,7 +45,7 @@ public sealed class JobJournal : IDisposable
             throw new FileNotFoundException("Job journal not found.", db);
         }
 
-        var cs = new SqliteConnectionStringBuilder { DataSource = db }.ToString();
+        var cs = new SqliteConnectionStringBuilder { DataSource = db, Pooling = false }.ToString();
         var connection = new SqliteConnection(cs);
         connection.Open();
         var journal = new JobJournal(directory, connection);
