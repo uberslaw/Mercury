@@ -562,6 +562,12 @@ public sealed class CopyEngine : ICopyEngine
             issues = Math.Max(issues, journal.IssueCount());
         }
 
+        if (job.Options.Move && !job.Options.DryRun)
+        {
+            SourceMover.DeleteVerifiedSources(job, journal, log, name, cancellationToken);
+            issues = Math.Max(issues, journal.IssueCount());
+        }
+
         job.IssueCount = issues;
         string complete;
         if (catcher is not null)
@@ -581,6 +587,11 @@ public sealed class CopyEngine : ICopyEngine
         else
         {
             complete = "Verified complete.";
+        }
+
+        if (job.Options.Move)
+        {
+            complete = complete.Replace("Verified complete", "Moved complete", StringComparison.Ordinal);
         }
 
         var incomplete = $"Incomplete — {issues} issue(s). Open the log for details.";

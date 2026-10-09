@@ -58,7 +58,7 @@ public static class HelpDocument
             Id = "options",
             Title = "Job options",
             Body =
-                "Job options order: Schedule + days + Overwrite, then Window + Verify, then Unlimited / Max / Dry Run / Small Files / Skip Compressed / Ignore Storage Limit / RoboFlags / Retries / Wait.\n\n" +
+                "Job options order: Schedule + days + Overwrite, then Window + Verify, then Unlimited / Max / Dry Run / Move / Small Files / Skip Compressed / Ignore Storage Limit / RoboFlags / Retries / Wait.\n\n" +
                 "Max throttles this job. The unit sits to the right of the box and follows the Global unit checkbox (1 MB/s = 8 Mbps). Stored caps stay MB/s.\n\n" +
                 "Global bandwidth Min / Unlimited / Max / Throttle Active PC apply to all jobs immediately. Min, Max, and Throttle boxes share one column, then the unit. Unlimited is a checkbox with no box; Max is disabled while Unlimited is on. The unit checkbox is labeled with the unit you are not using (MB/s while the boxes show Mbps, Mbps while they show MB/s). Click it to switch those boxes and Progress Speed.\n\n" +
                 "Throttle Active PC: while other programs are using the PC " +
@@ -69,6 +69,7 @@ public static class HelpDocument
                 "Overwrite: skip if dest is newer or equal (2-second FAT tolerance only when RoboFlags → FAT 2s times is on), always, or never if dest exists. The combo is sized to the longest choice.\n\n" +
                 "Verify Quick checks size + timestamp. Thorough also hashes (xxHash64).\n\n" +
                 "Dry Run enumerates only.\n\n" +
+                "Move (default off) copies and verifies as usual, then deletes each source file only after every destination in the job has verified it. Cancel, failed copy, failed verify, or Dry Run leave the source. Cross-volume is copy + delete. Source folders are left in place even if they become empty.\n\n" +
                 "By default Mercury plans the job after enumerate: already-compressed and large sequential files start copying immediately while a pack worker zips small-file pockets (stored/uncompressed zip unless a sample shows deflate wins). " +
                 "Small Files is an override to pack every non-compressed file into a transport zip (USB / many tiny files), then unpack a normal folder tree and delete the zip. " +
                 "Skip Compressed (default on) copies video, photos, audio, zip/7z/rar, ISO, and similar as files. " +

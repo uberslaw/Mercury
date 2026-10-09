@@ -67,6 +67,11 @@ public sealed class JobOptions
     public OverwritePolicy Overwrite { get; set; } = OverwritePolicy.SkipIfNewerOrEqual;
     public VerifyLevel Verify { get; set; } = VerifyLevel.Quick;
     public bool DryRun { get; set; }
+    /// <summary>
+    /// After copy and verify succeed, delete source files. Default off (copy).
+    /// Source is deleted only when every destination in the job has verified that file.
+    /// </summary>
+    public bool Move { get; set; }
     public bool IgnoreFreeSpaceCheck { get; set; }
     /// <summary>
     /// Use a stored (no compression) zip as transport (USB / many small files / Catcher HTTPS).
@@ -169,6 +174,7 @@ public sealed class JobOptions
         Overwrite = other.Overwrite;
         Verify = other.Verify;
         DryRun = other.DryRun;
+        Move = other.Move;
         IgnoreFreeSpaceCheck = other.IgnoreFreeSpaceCheck;
         PackAsZip = other.PackAsZip;
         SkipCompressedWhenPacking = other.SkipCompressedWhenPacking;

@@ -109,6 +109,9 @@
                           Content="Dry Run" IsChecked="{Binding DryRun}"
                           ToolTip="Enumerate only — nothing is written."/>
                 <CheckBox Style="{StaticResource OptionsCheckBox}"
+                          Content="Move" IsChecked="{Binding Move}"
+                          ToolTip="Copy and verify as usual, then delete each source file only after every destination in this job has verified it. Default off (copy). Dry run, cancel, failed copy, or failed verify leave the source. Cross-volume is copy + delete. Source folders are left in place."/>
+                <CheckBox Style="{StaticResource OptionsCheckBox}"
                           Content="Small Files" IsChecked="{Binding PackAsZip}"
                           ToolTip="Hint: pack every non-compressed file into a stored transport zip (old behaviour). Leave off (default) so Mercury plans at start: stream already-compressed and large files immediately while packing only small-file pockets that would help. Skip Compressed and Settings extension lists still apply. Unpack restores a normal folder tree and deletes the zip."/>
                 <CheckBox Style="{StaticResource OptionsCheckBox}"

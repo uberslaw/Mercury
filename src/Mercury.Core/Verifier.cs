@@ -57,7 +57,7 @@ public static class Verifier
                 continue;
             }
 
-            if (file.Status == FileCopyStatus.Skipped)
+            if (file.Status == FileCopyStatus.Skipped && job.Options?.Move != true)
             {
                 done++;
                 Pulse(file.RelativePath);

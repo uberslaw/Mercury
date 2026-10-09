@@ -57,6 +57,11 @@ public static class JobOptionBadges
             badges.Add("Dry Run");
         }
 
+        if (o.Move)
+        {
+            badges.Add("Move");
+        }
+
         if (o.PackAsZip)
         {
             badges.Add("Small Files");

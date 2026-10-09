@@ -20,6 +20,8 @@ public class RoboFlagsTests
         Assert.False(options.FatTimestampTolerance);
         Assert.False(options.ExcludeHiddenSystem);
         Assert.False(options.PurgeExtraDestFiles);
+        Assert.False(options.Move);
+        Assert.False(options.DryRun);
     }
 
     [Fact]
@@ -32,6 +34,7 @@ public class RoboFlagsTests
         Assert.True(options.CopyEmptyDirectories);
         Assert.True(options.IncludeSourceFolderName);
         Assert.False(options.PurgeExtraDestFiles);
+        Assert.False(options.Move);
     }
 
     [Fact]
@@ -89,6 +92,8 @@ public class RoboFlagsTests
         Assert.Contains("Resume last", section.Body, StringComparison.Ordinal);
         var options = HelpDocument.Sections.Single(s => s.Id == "options");
         Assert.Contains("Include source folder name (default on)", options.Body, StringComparison.Ordinal);
+        Assert.Contains("Move (default off)", options.Body, StringComparison.Ordinal);
+        Assert.Contains("every destination", options.Body, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

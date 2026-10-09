@@ -928,6 +928,18 @@ public class PathAndTreeUiTests
     }
 
     [Fact]
+    public void JobOptionsForm_MoveRoundtrips()
+    {
+        var form = new JobOptionsForm();
+        Assert.False(form.ToOptions().Move);
+        form.LoadFrom(new JobOptions { Move = true }, scheduledStart: null);
+        Assert.True(form.Move);
+        Assert.True(form.ToOptions().Move);
+        form.Move = false;
+        Assert.False(form.ToOptions().Move);
+    }
+
+    [Fact]
     public void JobPathsPanel_SourceAndDestinationSections_AlignSelectorsAndButtons()
     {
         WpfSta.Run(() =>

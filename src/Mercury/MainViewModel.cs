@@ -49,6 +49,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private int _overwriteIndex;
     private int _verifyIndex;
     private bool _dryRun;
+    private bool _move;
     private bool _adaptiveCopy = true;
     private bool _fixLongOrDuplicateNames = true;
     private bool _scheduleMonday = true;
@@ -605,6 +606,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public int OverwriteIndex { get => _overwriteIndex; set => SetField(ref _overwriteIndex, value); }
     public int VerifyIndex { get => _verifyIndex; set => SetField(ref _verifyIndex, value); }
     public bool DryRun { get => _dryRun; set => SetField(ref _dryRun, value); }
+    public bool Move { get => _move; set => SetField(ref _move, value); }
     public bool AdaptiveCopy { get => _adaptiveCopy; set => SetField(ref _adaptiveCopy, value); }
 
     public bool CopyModeAdaptive
@@ -2313,6 +2315,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             },
             Verify = VerifyIndex == 1 ? VerifyLevel.Thorough : VerifyLevel.Quick,
             DryRun = DryRun,
+            Move = Move,
             PackAsZip = PackAsZip,
             SkipCompressedWhenPacking = SkipCompressedWhenPacking,
             PackExtensions = PackExtensions.ToList(),
@@ -2387,6 +2390,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             };
             VerifyIndex = options.Verify == VerifyLevel.Thorough ? 1 : 0;
             DryRun = options.DryRun;
+            Move = options.Move;
             PackAsZip = options.PackAsZip;
             SkipCompressedWhenPacking = options.SkipCompressedWhenPacking;
             IgnoreFreeSpaceCheck = options.IgnoreFreeSpaceCheck;

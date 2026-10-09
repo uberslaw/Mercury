@@ -57,6 +57,7 @@ public sealed class TransferDraft
         && !ScheduleEnabled
         && Options.FixLongOrDuplicateNames
         && !Options.DryRun
+        && !Options.Move
         && !Options.HoursEnabled
         && Options.ScheduleDays is null;
 }

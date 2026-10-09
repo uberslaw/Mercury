@@ -55,6 +55,7 @@ Closing the window while a copy is running asks whether to wait for the current 
 | Retries + wait | `/R` `/W` |
 | Skip if dest newer or equal | `/XO` (+ `/FFT` when RoboFlags → FAT 2s times is on) |
 | Dry run | `/L` |
+| Move (copy, verify, then delete source) | `/MOV` |
 | Destination can expand (ignore free-space abort) | (thin / growable dest; still logs Need vs available) |
 | View → Console + log files | `/LOG` `/TEE` |
 | **RoboFlags** (native copier, not robocopy.exe) | |
@@ -75,7 +76,7 @@ Closing the window while a copy is running asks whether to wait for the current 
 - **Quick:** every source file exists at dest, sizes match, timestamps within 2 seconds.
 - **Thorough:** also xxHash64 (hash-while-copy, then dest re-read).
 
-Result is **Verified complete** or **Incomplete — N issues**.
+Result is **Verified complete** or **Incomplete — N issues**. Tick **Move** to delete each source file only after every destination has verified it (default is copy). Failed verify, cancel, or Dry Run leave the source.
 
 ## Cloud destinations
 

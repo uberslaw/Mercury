@@ -160,7 +160,9 @@ public static class JobDestinations
 
         if (issues == 0)
         {
-            return $"Verified complete on {dests.Count} destinations.";
+            return job.Options.Move
+                ? $"Moved complete on {dests.Count} destinations."
+                : $"Verified complete on {dests.Count} destinations.";
         }
 
         var files = journal.GetFiles();

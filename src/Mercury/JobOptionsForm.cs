@@ -21,6 +21,7 @@ public sealed class JobOptionsForm : INotifyPropertyChanged
     private int _overwriteIndex;
     private int _verifyIndex;
     private bool _dryRun;
+    private bool _move;
     private bool _packAsZip;
     private bool _skipCompressedWhenPacking = true;
     private bool _ignoreFreeSpaceCheck;
@@ -193,6 +194,7 @@ public sealed class JobOptionsForm : INotifyPropertyChanged
     public int OverwriteIndex { get => _overwriteIndex; set => SetField(ref _overwriteIndex, value); }
     public int VerifyIndex { get => _verifyIndex; set => SetField(ref _verifyIndex, value); }
     public bool DryRun { get => _dryRun; set => SetField(ref _dryRun, value); }
+    public bool Move { get => _move; set => SetField(ref _move, value); }
     public bool AdaptiveCopy { get => _adaptiveCopy; set => SetField(ref _adaptiveCopy, value); }
     public bool HashSourceForCompare { get => _hashSourceForCompare; set => SetField(ref _hashSourceForCompare, value); }
     public bool FixLongOrDuplicateNames { get => _fixLongOrDuplicateNames; set => SetField(ref _fixLongOrDuplicateNames, value); }
@@ -291,6 +293,7 @@ public sealed class JobOptionsForm : INotifyPropertyChanged
             };
             VerifyIndex = options.Verify == VerifyLevel.Thorough ? 1 : 0;
             DryRun = options.DryRun;
+            Move = options.Move;
             PackAsZip = options.PackAsZip;
             SkipCompressedWhenPacking = options.SkipCompressedWhenPacking;
             IgnoreFreeSpaceCheck = options.IgnoreFreeSpaceCheck;
@@ -407,6 +410,7 @@ public sealed class JobOptionsForm : INotifyPropertyChanged
             },
             Verify = VerifyIndex == 1 ? VerifyLevel.Thorough : VerifyLevel.Quick,
             DryRun = DryRun,
+            Move = Move,
             PackAsZip = PackAsZip,
             SkipCompressedWhenPacking = SkipCompressedWhenPacking,
             IgnoreFreeSpaceCheck = IgnoreFreeSpaceCheck,
