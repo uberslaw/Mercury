@@ -23,6 +23,7 @@ public sealed class JobOptionsForm : INotifyPropertyChanged
     private bool _dryRun;
     private bool _move;
     private bool _packAsZip;
+    private bool _unpackAfterCopy;
     private bool _skipCompressedWhenPacking = true;
     private bool _ignoreFreeSpaceCheck;
     private bool _roboFlagsExpanded;
@@ -205,7 +206,35 @@ public sealed class JobOptionsForm : INotifyPropertyChanged
     public bool ScheduleFriday { get => _scheduleFriday; set => SetField(ref _scheduleFriday, value); }
     public bool ScheduleSaturday { get => _scheduleSaturday; set => SetField(ref _scheduleSaturday, value); }
     public bool ScheduleSunday { get => _scheduleSunday; set => SetField(ref _scheduleSunday, value); }
-    public bool PackAsZip { get => _packAsZip; set => SetField(ref _packAsZip, value); }
+    public bool PackAsZip
+    {
+        get => _packAsZip;
+        set
+        {
+            if (SetField(ref _packAsZip, value) && value)
+            {
+                UnpackAfterCopy = false;
+            }
+        }
+    }
+
+    public bool UnpackAfterCopy
+    {
+        get => _unpackAfterCopy;
+        set
+        {
+            if (SetField(ref _unpackAfterCopy, value))
+            {
+                if (value)
+                {
+                    PackAsZip = false;
+                }
+
+                RaiseLanding();
+            }
+        }
+    }
+
     public bool SkipCompressedWhenPacking { get => _skipCompressedWhenPacking; set => SetField(ref _skipCompressedWhenPacking, value); }
     public bool IgnoreFreeSpaceCheck { get => _ignoreFreeSpaceCheck; set => SetField(ref _ignoreFreeSpaceCheck, value); }
     public bool RoboFlagsExpanded { get => _roboFlagsExpanded; set => SetField(ref _roboFlagsExpanded, value); }
@@ -262,7 +291,7 @@ public sealed class JobOptionsForm : INotifyPropertyChanged
                     : "Will land in: Catcher receive folder (named source folders keep their top folder).";
             }
 
-            var path = CopyShape.PreviewLandingPath(_previewSource, _previewDest, IncludeSourceFolderName);
+            var path = CopyShape.PreviewLandingPath(_previewSource, _previewDest, IncludeSourceFolderName, UnpackAfterCopy);
             return string.IsNullOrEmpty(path) ? "" : "Will land in: " + path;
         }
     }
@@ -295,6 +324,7 @@ public sealed class JobOptionsForm : INotifyPropertyChanged
             DryRun = options.DryRun;
             Move = options.Move;
             PackAsZip = options.PackAsZip;
+            UnpackAfterCopy = options.UnpackAfterCopy;
             SkipCompressedWhenPacking = options.SkipCompressedWhenPacking;
             IgnoreFreeSpaceCheck = options.IgnoreFreeSpaceCheck;
             CopyTimestamps = options.CopyTimestamps;
@@ -412,6 +442,7 @@ public sealed class JobOptionsForm : INotifyPropertyChanged
             DryRun = DryRun,
             Move = Move,
             PackAsZip = PackAsZip,
+            UnpackAfterCopy = UnpackAfterCopy,
             SkipCompressedWhenPacking = SkipCompressedWhenPacking,
             IgnoreFreeSpaceCheck = IgnoreFreeSpaceCheck,
             CopyTimestamps = CopyTimestamps,

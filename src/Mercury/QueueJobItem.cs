@@ -143,7 +143,7 @@ public sealed class QueueJobItem : INotifyPropertyChanged
                 ? $"Window {o.HoursStart:HH:mm}–{o.HoursEnd:HH:mm}"
                 : "Window off";
             var verify = o.Verify == VerifyLevel.Thorough ? "Thorough verify" : "Quick verify";
-            var dry = o.DryRun ? "Dry Run" : o.Move ? "Move" : o.PackAsZip ? "Small Files" : "Copy";
+            var dry = o.DryRun ? "Dry Run" : o.Move ? "Move" : o.UnpackAfterCopy ? "Unpack zip" : o.PackAsZip ? "Small Files" : "Copy";
             var expand = o.IgnoreFreeSpaceCheck ? "Ignore Storage Limit" : "Storage limit on";
             var start = Job.ScheduledStart is { } s
                 ? $"Schedule {s.LocalDateTime:ddd d MMM HH:mm}"

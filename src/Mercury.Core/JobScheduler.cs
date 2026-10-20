@@ -1684,7 +1684,9 @@ public sealed class JobScheduler : IDisposable
             Journal = journal,
             Cts = cts,
             Progress = progress,
-            StageCount = last is { StageCount: > 0 } ? last.StageCount : CopyPipeline.For(job, true, job.Options.PackAsZip).Count,
+            StageCount = last is { StageCount: > 0 }
+                ? last.StageCount
+                : CopyPipeline.For(job, true, job.Options.PackAsZip, unpackAfterCopy: job.Options.UnpackAfterCopy).Count,
             StartedUtc = last?.StartedUtc ?? job.StartedUtc,
             StageStartedUtc = DateTimeOffset.UtcNow,
             BytesCopied = last?.BytesCopied ?? job.BytesCopied,

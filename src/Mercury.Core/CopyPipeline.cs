@@ -30,7 +30,12 @@ public static class CopyPipeline
     public static bool IsBackground(string? stageName, string? message = null) =>
         IsRundown(stageName, message) || IsVerify(stageName, message);
 
-    public static IReadOnlyList<CopyStage> For(Job job, bool hasJournalFiles, bool pack, bool overlap = false)
+    public static IReadOnlyList<CopyStage> For(
+        Job job,
+        bool hasJournalFiles,
+        bool pack,
+        bool overlap = false,
+        bool unpackAfterCopy = false)
     {
         var catcher = job.Catcher is not null;
         var stages = new List<CopyStage>
@@ -64,8 +69,13 @@ public static class CopyPipeline
             }
             else
             {
-                stages.Add(new(CopyStageKind.Transferring, pack ? (overlap ? "Copying and packing" : "Packing") : "Copying"));
-                if (pack)
+                var transferring = unpackAfterCopy
+                    ? "Copying"
+                    : pack
+                        ? overlap ? "Copying and packing" : "Packing"
+                        : "Copying";
+                stages.Add(new(CopyStageKind.Transferring, transferring));
+                if (pack || unpackAfterCopy)
                 {
                     stages.Add(new(CopyStageKind.Unpacking, "Unpacking"));
                 }

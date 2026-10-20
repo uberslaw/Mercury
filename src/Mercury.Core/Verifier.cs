@@ -149,7 +149,7 @@ public static class Verifier
             Pulse(file.RelativePath);
         }
 
-        if (onlyThese is null)
+        if (onlyThese is null && job.Options?.UnpackAfterCopy != true)
         {
         try
         {

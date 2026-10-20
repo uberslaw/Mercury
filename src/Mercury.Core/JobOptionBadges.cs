@@ -68,6 +68,11 @@ public static class JobOptionBadges
             badges.Add(o.SkipCompressedWhenPacking ? "Skip Compressed" : "Wrap compressed");
         }
 
+        if (o.UnpackAfterCopy)
+        {
+            badges.Add("Unpack zip");
+        }
+
         if (o.MaxMegabytesPerSecond is null or <= 0)
         {
             badges.Add("Unlimited speed");

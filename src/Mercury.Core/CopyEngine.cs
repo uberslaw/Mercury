@@ -58,6 +58,7 @@ public sealed class CopyEngine : ICopyEngine
             }).ToList();
         }
 
+        mappings = ZipPack.BindUnpack(job, mappings).ToList();
         var mapping = PackDestination(job, mappings, journal.Directory);
         job.SourceKind = mappings.Count == 1 ? mappings[0].Kind : SourceKind.Folder;
         job.VolumeSerial ??= VolumeInfo.GetSerial(job.SourcePath);
@@ -79,14 +80,15 @@ public sealed class CopyEngine : ICopyEngine
             job.Options.PackAsZip = true;
         }
 
-        var pack = catcher is not null ? mappings.All(m => !m.SingleFile) : mappings.Any(m => ZipPack.Applies(job, m));
+        var unpack = ZipPack.AppliesUnpackAny(job, mappings);
+        var pack = !unpack && (catcher is not null ? mappings.All(m => !m.SingleFile) : mappings.Any(m => ZipPack.Applies(job, m)));
         var totals = journal.Totals();
         var hasJournal = totals.Files > 0;
         if (hasJournal)
         {
             CopyShape.BindJournalToLanding(journal, mappings);
         }
-        var stages = CopyPipeline.For(job, hasJournal, pack);
+        var stages = CopyPipeline.For(job, hasJournal, pack, unpackAfterCopy: unpack);
         var reporter = new JobProgressReporter(job, name, cloud, stages, progress, log, pause);
 
         using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -126,15 +128,25 @@ public sealed class CopyEngine : ICopyEngine
                     : "No writable destinations.");
             }
 
-            mappings = preflight.Mappings;
+            mappings = ZipPack.BindUnpack(job, preflight.Mappings).ToList();
             mapping = PackDestination(job, mappings, journal.Directory);
+            unpack = ZipPack.AppliesUnpackAny(job, mappings);
+            pack = !unpack && (catcher is not null ? mappings.All(m => !m.SingleFile) : mappings.Any(m => ZipPack.Applies(job, m)));
 
             if (!hasJournal)
             {
                 reporter.Enter(CopyStageKind.EnumeratingSource, JobStatus.Enumerating, "Enumerating source…");
-                log.Info(job.Id, name, "Enumerating source files.");
+                log.Info(job.Id, name, unpack
+                    ? "Enumerating zip entries (copy one zip, unpack on dest)."
+                    : "Enumerating source files.");
+                if (job.Options.UnpackAfterCopy && !unpack && catcher is null)
+                {
+                    log.Info(job.Id, name,
+                        "Unpack zip is on, but no .zip or Mercury transport zip was found at source — copying files as usual.");
+                }
+
                 var exclude = new List<string>();
-                if (pack)
+                if (pack || unpack)
                 {
                     foreach (var map in mappings)
                     {
@@ -150,10 +162,14 @@ public sealed class CopyEngine : ICopyEngine
                 var folders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 var uniquePrefix = mappings.Count > 1;
                 var batch = new List<FileRecord>();
-                foreach (var record in SourceWalker.WalkAll(mappings, exclude, job.Options, uniquePrefix))
+                foreach (var record in ZipPack.EnumerateJobFiles(job, mappings, exclude, uniquePrefix))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    var kind = FileClassifier.Classify(record.SourcePath, record.Size, peek);
+                    var unpackEntry = unpack && ZipPack.IsZipFile(record.SourcePath);
+                    var kind = FileClassifier.Classify(
+                        unpackEntry ? record.RelativePath : record.SourcePath,
+                        record.Size,
+                        unpackEntry ? null : peek);
                     record.PayloadKind = kind;
                     inventory.Add(kind, record.Size);
                     ZipPack.NoteFolders(folders, record.RelativePath);
@@ -209,12 +225,20 @@ public sealed class CopyEngine : ICopyEngine
                 if (catcher is null)
                 {
                     reporter.Enter(CopyStageKind.CheckingDestinationSpace, JobStatus.Enumerating, "Checking destination space…");
-                    CheckSpacePerDestination(job, mappings, journal.GetFiles(), pack, journal, log, name);
+                    CheckSpacePerDestination(job, mappings, journal.GetFiles(), pack || unpack, journal, log, name);
                 }
             }
             else
             {
                 log.Info(job.Id, name, $"Resuming journal: {totals.DoneFiles}/{totals.Files} files already done.");
+                if (job.ScanSourceOnResume && unpack)
+                {
+                    log.Info(job.Id, name,
+                        "Unpack zip resume uses the journal (zip directory is not walked as thousands of source files).");
+                    job.ScanSourceOnResume = false;
+                    journal.SaveJob(job);
+                }
+
                 if (job.ScanSourceOnResume)
                 {
                     reporter.Enter(CopyStageKind.EnumeratingSource, JobStatus.Enumerating, "Checking source for changes…");
@@ -292,9 +316,17 @@ public sealed class CopyEngine : ICopyEngine
                 TransferPlanner.ApplySample(plan, pocket, sample);
             }
 
-            pack = catcher is not null ? mappings.All(m => !m.SingleFile) : plan.HasPacking;
+            if (unpack)
+            {
+                pack = false;
+            }
+            else
+            {
+                pack = catcher is not null ? mappings.All(m => !m.SingleFile) : plan.HasPacking;
+            }
+
             var overlap = pack && catcher is null && plan.Stream.Count > 0 && plan.HasPacking;
-            reporter.ReplaceStages(CopyPipeline.For(job, hasJournalFiles: true, pack, overlap));
+            reporter.ReplaceStages(CopyPipeline.For(job, hasJournalFiles: true, pack, overlap, unpackAfterCopy: unpack));
             if (!string.IsNullOrWhiteSpace(plan.Summary))
             {
                 log.Info(job.Id, name, plan.Summary);
@@ -330,7 +362,51 @@ public sealed class CopyEngine : ICopyEngine
             var transferSecondsBefore = Math.Max(0, job.TransferSeconds);
             try
             {
-                if (pack && overlap)
+                if (unpack)
+                {
+                    reporter.Enter(CopyStageKind.Transferring, JobStatus.Copying, "Copying…");
+                    journal.SaveJob(job);
+                    foreach (var map in mappings)
+                    {
+                        if (!ZipPack.AppliesUnpack(job, map))
+                        {
+                            continue;
+                        }
+
+                        await CopyTransportZipAsync(
+                                job, map, journal, budget, pause, log, name, reporter, cloud, speed, cancellationToken, io)
+                            .ConfigureAwait(false);
+                    }
+
+                    reporter.Enter(CopyStageKind.Unpacking, JobStatus.Copying, "Unpacking…");
+                    journal.SaveJob(job);
+                    foreach (var map in mappings)
+                    {
+                        if (!ZipPack.AppliesUnpack(job, map))
+                        {
+                            continue;
+                        }
+
+                        await UnpackWithRetriesAsync(
+                                job, map, journal, budget, pause, log, name, reporter, cloud, speed, cancellationToken, io)
+                            .ConfigureAwait(false);
+                    }
+
+                    var leftover = journal.GetFiles()
+                        .Where(f => f.Status is FileCopyStatus.Pending or FileCopyStatus.Failed or FileCopyStatus.Deferred)
+                        .Where(f => mappings.Where(m => !ZipPack.AppliesUnpack(job, m))
+                            .Any(m => JobDestinations.BelongsTo(f.DestPath, m.DestRoot)))
+                        .ToList();
+                    if (leftover.Count > 0)
+                    {
+                        reporter.Enter(CopyStageKind.Transferring, JobStatus.Copying, "Copying…");
+                        await CopyPendingListAsync(
+                                job, journal, budget, pause, log, name, reporter, cloud, speed, leftover, totals, cancellationToken, io,
+                                markUnpacked: false)
+                            .ConfigureAwait(false);
+                    }
+                }
+                else if (pack && overlap)
                 {
                     reporter.Enter(CopyStageKind.Transferring, JobStatus.Copying, "Copying and packing…");
                     journal.SaveJob(job);
@@ -487,11 +563,13 @@ public sealed class CopyEngine : ICopyEngine
             return;
         }
 
+        mappings = ZipPack.BindUnpack(job, mappings).ToList();
         CopyShape.BindJournalToLanding(journal, mappings);
         var mapping = PackDestination(job, mappings, journal.Directory);
-        var pack = catcher is not null ? mappings.All(m => !m.SingleFile) : mappings.Any(m => ZipPack.Applies(job, m));
+        var unpack = ZipPack.AppliesUnpackAny(job, mappings);
+        var pack = !unpack && (catcher is not null ? mappings.All(m => !m.SingleFile) : mappings.Any(m => ZipPack.Applies(job, m)));
         var totals = journal.Totals();
-        var stages = CopyPipeline.For(job, hasJournalFiles: true, pack);
+        var stages = CopyPipeline.For(job, hasJournalFiles: true, pack, unpackAfterCopy: unpack);
         var reporter = new JobProgressReporter(job, name, cloud, stages, progress, log);
         reporter.Enter(CopyStageKind.Verifying, JobStatus.Verifying, "Verifying…");
         journal.SaveJob(job);
@@ -576,7 +654,7 @@ public sealed class CopyEngine : ICopyEngine
                 ? $"Verified complete. Catcher unpacked the transfer at {CatcherCrypto.FormatBaseUrl(catcher.PublicHost, catcher.PublicPort)}."
                 : $"Verified complete. Sent file to Catcher {CatcherCrypto.FormatBaseUrl(catcher.PublicHost, catcher.PublicPort)}.";
         }
-        else if (pack)
+        else if (pack || unpack)
         {
             complete = $"Verified complete. Unpacked {totals.Files} files to {mapping.DestRoot}.";
         }
@@ -754,7 +832,7 @@ public sealed class CopyEngine : ICopyEngine
         CancellationToken cancellationToken)
     {
         var probeRoot = mapping.DestRoot;
-        if (ZipPack.Applies(job, mapping))
+        if (ZipPack.Applies(job, mapping) || ZipPack.AppliesUnpack(job, mapping))
         {
             probeRoot = Path.GetDirectoryName(ZipPack.ZipPath(mapping)) ?? mapping.DestRoot;
         }
@@ -810,6 +888,11 @@ public sealed class CopyEngine : ICopyEngine
         {
             log.Info(job.Id, name,
                 "Pack as zip writes a transport zip then unpacks at dest (both exist until unpack finishes).");
+        }
+        else if (job.Options.UnpackAfterCopy)
+        {
+            log.Info(job.Id, name,
+                "Unpack zip copies one source zip then unpacks on dest (source zip is kept unless Move is on).");
         }
 
         foreach (var group in mappings.GroupBy(m => JobDestinations.UserDest(m), StringComparer.OrdinalIgnoreCase))
@@ -2368,13 +2451,17 @@ public sealed class CopyEngine : ICopyEngine
         UnbufferedIoSession? io = null)
     {
         var zipPath = ZipPack.ZipPath(mapping);
-        var files = journal.GetFiles().Where(f => f.Status != FileCopyStatus.Skipped).ToList();
+        var unpack = ZipPack.AppliesUnpack(job, mapping);
+        var files = journal.GetFiles()
+            .Where(f => f.Status != FileCopyStatus.Skipped)
+            .Where(f => JobDestinations.BelongsTo(f.DestPath, mapping.DestRoot))
+            .ToList();
         var pending = files.Where(f => f.Status != FileCopyStatus.Unpacked).ToList();
         var catcherPack = job.Catcher is not null;
-        var zipPending = catcherPack
+        var zipPending = catcherPack || unpack
             ? pending
             : pending.Where(f => !CopyBesideZip(job, f)).ToList();
-        var loosePending = catcherPack
+        var loosePending = catcherPack || unpack
             ? []
             : pending.Where(f => CopyBesideZip(job, f)).ToList();
         if (zipPending.Count == 0)
@@ -2389,15 +2476,29 @@ public sealed class CopyEngine : ICopyEngine
 
         if (!File.Exists(zipPath))
         {
-            log.Info(job.Id, name, $"Transport zip missing at {zipPath}; packing again before unpack.");
-            await PackWithRetriesAsync(job, mapping, journal, budget, pause, log, name, progress, cloud, speed, cancellationToken, io)
-                .ConfigureAwait(false);
-            files = journal.GetFiles().Where(f => f.Status != FileCopyStatus.Skipped).ToList();
+            if (unpack)
+            {
+                log.Info(job.Id, name, $"Transport zip missing at {zipPath}; copying the source zip again before unpack.");
+                await CopyTransportZipAsync(
+                        job, mapping, journal, budget, pause, log, name, progress, cloud, speed, cancellationToken, io)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                log.Info(job.Id, name, $"Transport zip missing at {zipPath}; packing again before unpack.");
+                await PackWithRetriesAsync(job, mapping, journal, budget, pause, log, name, progress, cloud, speed, cancellationToken, io)
+                    .ConfigureAwait(false);
+            }
+
+            files = journal.GetFiles()
+                .Where(f => f.Status != FileCopyStatus.Skipped)
+                .Where(f => JobDestinations.BelongsTo(f.DestPath, mapping.DestRoot))
+                .ToList();
             pending = files.Where(f => f.Status != FileCopyStatus.Unpacked).ToList();
-            zipPending = catcherPack
+            zipPending = catcherPack || unpack
                 ? pending
                 : pending.Where(f => !CopyBesideZip(job, f)).ToList();
-            loosePending = catcherPack
+            loosePending = catcherPack || unpack
                 ? []
                 : pending.Where(f => CopyBesideZip(job, f)).ToList();
             if (zipPending.Count == 0)
@@ -2510,6 +2611,7 @@ public sealed class CopyEngine : ICopyEngine
                         job, journal, budget, pause, log, name, progress, cloud, speed, loosePending, cancellationToken, io)
                     .ConfigureAwait(false);
                 var leftover = journal.GetFiles()
+                    .Where(f => JobDestinations.BelongsTo(f.DestPath, mapping.DestRoot))
                     .Where(f => f.Status is not FileCopyStatus.Skipped and not FileCopyStatus.Unpacked and not FileCopyStatus.Failed)
                     .ToList();
                 if (leftover.Count > 0)
@@ -2550,6 +2652,107 @@ public sealed class CopyEngine : ICopyEngine
         }
 
         throw new IOException(last?.Message ?? "Unpack failed after retries", last);
+    }
+
+    private static async Task CopyTransportZipAsync(
+        Job job,
+        CopyMapping mapping,
+        JobJournal journal,
+        BandwidthBudget budget,
+        PauseGate pause,
+        IJobLog log,
+        string name,
+        IProgress<JobProgress>? progress,
+        bool cloud,
+        SpeedTracker speed,
+        CancellationToken cancellationToken,
+        UnbufferedIoSession? io)
+    {
+        var sourceZip = ZipPack.FindSourceZip(mapping);
+        if (string.IsNullOrWhiteSpace(sourceZip) || !File.Exists(sourceZip))
+        {
+            throw new FileNotFoundException("Source zip is missing; cannot copy then unpack.", mapping.SourceZipPath ?? mapping.SourceRoot);
+        }
+
+        var destZip = ZipPack.ZipPath(mapping);
+        var parent = Path.GetDirectoryName(destZip);
+        if (!string.IsNullOrEmpty(parent))
+        {
+            Directory.CreateDirectory(parent);
+        }
+
+        var srcInfo = new FileInfo(sourceZip);
+        log.Info(job.Id, name,
+            $"Copying {sourceZip} ({ByteFormatter.ToString(srcInfo.Length)}) to {destZip}, then unpacking on dest.");
+
+        if (TransportZipReady(sourceZip, destZip, job.Options))
+        {
+            log.Info(job.Id, name, $"Skip zip copy — dest already has {destZip}.");
+        }
+        else
+        {
+            var record = new FileRecord
+            {
+                RelativePath = Path.GetFileName(sourceZip),
+                SourcePath = sourceZip,
+                DestPath = destZip,
+                Size = srcInfo.Length,
+                LastWriteUtc = srcInfo.LastWriteTimeUtc,
+                Status = FileCopyStatus.Pending
+            };
+            pause.BeginFile(record.RelativePath, record.Size);
+            var reporter = progress as JobProgressReporter;
+            reporter?.Update($"Copying {record.RelativePath}", record.RelativePath, speed);
+            try
+            {
+                var copied = await CopyWithRetriesAsync(
+                        job, record, journal, budget, pause, log, name, speed, cancellationToken, io)
+                    .ConfigureAwait(false);
+                if (!copied.ok)
+                {
+                    throw new IOException(copied.error ?? "Could not copy the source zip.");
+                }
+
+                FileMetadata.ApplyCopiedFile(sourceZip, destZip, job.Options, log, job.Id, name);
+            }
+            finally
+            {
+                pause.EndFile(record.RelativePath);
+            }
+        }
+
+        if (job.Options.Verify == VerifyLevel.Thorough)
+        {
+            var payload = journal.GetFiles()
+                .Where(f => JobDestinations.BelongsTo(f.DestPath, mapping.DestRoot))
+                .ToList();
+            ZipPack.FillHashesFromZip(destZip, payload, journal);
+        }
+    }
+
+    private static bool TransportZipReady(string sourceZip, string destZip, JobOptions options)
+    {
+        if (!File.Exists(destZip) || options.Overwrite == OverwritePolicy.Always)
+        {
+            return false;
+        }
+
+        if (options.Overwrite == OverwritePolicy.NeverIfExists)
+        {
+            return true;
+        }
+
+        try
+        {
+            var src = new FileInfo(sourceZip);
+            var dst = new FileInfo(destZip);
+            return dst.Length == src.Length
+                && dst.LastWriteTimeUtc + FileMetadata.ComparisonTolerance(options) >= src.LastWriteTimeUtc;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static bool ShouldSkipZip(string zipPath, IReadOnlyList<FileRecord> files, JobOptions options)

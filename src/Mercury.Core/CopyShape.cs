@@ -94,7 +94,11 @@ public static class CopyShape
     /// Live dest preview (does not require the source to exist). Folder sources land in dest\FolderName when
     /// <paramref name="includeSourceFolderName"/> is on; drive roots dump contents into dest; files land as dest\file.
     /// </summary>
-    public static string PreviewLandingPath(string sourcePath, string destPath, bool includeSourceFolderName = true)
+    public static string PreviewLandingPath(
+        string sourcePath,
+        string destPath,
+        bool includeSourceFolderName = true,
+        bool unpackAfterCopy = false)
     {
         if (string.IsNullOrWhiteSpace(sourcePath) || string.IsNullOrWhiteSpace(destPath))
         {
@@ -116,6 +120,17 @@ public static class CopyShape
 
             if (File.Exists(source))
             {
+                if (unpackAfterCopy && ZipPack.IsZipFile(source))
+                {
+                    if (!includeSourceFolderName)
+                    {
+                        return dest;
+                    }
+
+                    var zipName = Path.GetFileNameWithoutExtension(source);
+                    return string.IsNullOrEmpty(zipName) ? dest : Path.Combine(dest, zipName);
+                }
+
                 var destNormalized = PathNormalizer.Normalize(destPath);
                 if (Directory.Exists(destNormalized) || destNormalized.EndsWith('\\') || destNormalized.EndsWith('/'))
                 {
@@ -207,7 +222,8 @@ public static class CopyShape
             return current;
         }
 
-        var landing = PreviewLandingPath(job.SourcePath, destPath, job.Options.IncludeSourceFolderName);
+        var landing = PreviewLandingPath(
+            job.SourcePath, destPath, job.Options.IncludeSourceFolderName, job.Options.UnpackAfterCopy);
         if (string.IsNullOrEmpty(landing))
         {
             landing = dest;
@@ -419,7 +435,8 @@ public static class CopyShape
                 SingleFile = mapping.SingleFile,
                 SingleFileName = mapping.SingleFileName,
                 UniqueRelativePrefix = uniquePrefix,
-                TransportZipPath = mapping.TransportZipPath
+                TransportZipPath = mapping.TransportZipPath,
+                SourceZipPath = mapping.SourceZipPath
             });
         }
 
@@ -476,7 +493,8 @@ public static class CopyShape
     public static string PreviewLandingSummary(
         IReadOnlyList<string> sourcePaths,
         IReadOnlyList<string> destPaths,
-        bool includeSourceFolderName = true)
+        bool includeSourceFolderName = true,
+        bool unpackAfterCopy = false)
     {
         if (destPaths.Count == 0)
         {
@@ -485,13 +503,13 @@ public static class CopyShape
 
         if (destPaths.Count == 1)
         {
-            return PreviewLandingSummary(sourcePaths, destPaths[0], includeSourceFolderName);
+            return PreviewLandingSummary(sourcePaths, destPaths[0], includeSourceFolderName, unpackAfterCopy);
         }
 
         var parts = new List<string>();
         foreach (var dest in destPaths)
         {
-            var one = PreviewLandingSummary(sourcePaths, dest, includeSourceFolderName);
+            var one = PreviewLandingSummary(sourcePaths, dest, includeSourceFolderName, unpackAfterCopy);
             if (string.IsNullOrEmpty(one))
             {
                 continue;
@@ -507,7 +525,8 @@ public static class CopyShape
     public static string PreviewLandingSummary(
         IReadOnlyList<string> sourcePaths,
         string destPath,
-        bool includeSourceFolderName = true)
+        bool includeSourceFolderName = true,
+        bool unpackAfterCopy = false)
     {
         if (sourcePaths.Count == 0 || string.IsNullOrWhiteSpace(destPath))
         {
@@ -516,7 +535,7 @@ public static class CopyShape
 
         if (sourcePaths.Count == 1)
         {
-            var one = PreviewLandingPath(sourcePaths[0], destPath, includeSourceFolderName);
+            var one = PreviewLandingPath(sourcePaths[0], destPath, includeSourceFolderName, unpackAfterCopy);
             return string.IsNullOrEmpty(one) ? "" : "Will land in: " + one;
         }
 
@@ -525,7 +544,7 @@ public static class CopyShape
         var parts = new List<string>();
         foreach (var source in sourcePaths)
         {
-            var preview = PreviewLandingPath(source, destPath, wrap);
+            var preview = PreviewLandingPath(source, destPath, wrap, unpackAfterCopy);
             if (string.IsNullOrEmpty(preview))
             {
                 continue;
@@ -594,6 +613,7 @@ public static class CopyShape
             SingleFileName = mapping.SingleFileName,
             UniqueRelativePrefix = uniquePrefix,
             TransportZipPath = mapping.TransportZipPath,
+            SourceZipPath = mapping.SourceZipPath,
             UserDestPath = userDest
         };
 

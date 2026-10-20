@@ -10,10 +10,280 @@ public static class ZipPack
     public const string TransportFolder = "compressed";
 
     public static bool Applies(Job job, CopyMapping mapping) =>
-        job.Options?.PackAsZip == true && !mapping.SingleFile;
+        job.Options?.PackAsZip == true && !mapping.SingleFile && !AppliesUnpack(job, mapping);
 
     public static bool AppliesAny(Job job, IReadOnlyList<CopyMapping> mappings) =>
         mappings.Any(m => Applies(job, m));
+
+    public static bool IsZipFile(string? path) =>
+        !string.IsNullOrWhiteSpace(path) && path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
+
+    public static string? FindSourceZip(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            var full = Path.GetFullPath(path);
+            if (File.Exists(full) && IsZipFile(full))
+            {
+                return full;
+            }
+
+            if (!Directory.Exists(full))
+            {
+                return null;
+            }
+
+            var compressed = Path.Combine(full, TransportFolder);
+            if (Directory.Exists(compressed))
+            {
+                var transports = Directory.GetFiles(compressed, "*-transport.zip");
+                if (transports.Length > 0)
+                {
+                    Array.Sort(transports, StringComparer.OrdinalIgnoreCase);
+                    return transports[0];
+                }
+
+                var packed = Directory.GetFiles(compressed, "*.zip");
+                if (packed.Length == 1)
+                {
+                    return packed[0];
+                }
+            }
+
+            var top = Directory.GetFiles(full, "*.zip");
+            if (top.Length == 1)
+            {
+                return top[0];
+            }
+        }
+        catch
+        {
+            return null;
+        }
+
+        return null;
+    }
+
+    public static string? FindSourceZip(CopyMapping mapping)
+    {
+        if (!string.IsNullOrWhiteSpace(mapping.SourceZipPath) && File.Exists(mapping.SourceZipPath))
+        {
+            return mapping.SourceZipPath;
+        }
+
+        if (mapping.SingleFile && !string.IsNullOrWhiteSpace(mapping.SingleFileName))
+        {
+            var file = Path.Combine(mapping.SourceRoot, mapping.SingleFileName);
+            if (File.Exists(file) && IsZipFile(file))
+            {
+                return Path.GetFullPath(file);
+            }
+        }
+
+        return FindSourceZip(mapping.SourceRoot);
+    }
+
+    public static bool AppliesUnpack(Job job, CopyMapping mapping) =>
+        job.Options?.UnpackAfterCopy == true && job.Catcher is null && FindSourceZip(mapping) is not null;
+
+    public static bool AppliesUnpackAny(Job job, IReadOnlyList<CopyMapping> mappings) =>
+        mappings.Any(m => AppliesUnpack(job, m));
+
+    public static IReadOnlyList<CopyMapping> BindUnpack(Job job, IReadOnlyList<CopyMapping> mappings)
+    {
+        if (job.Options?.UnpackAfterCopy != true || job.Catcher is not null)
+        {
+            return mappings;
+        }
+
+        return mappings.Select(m => BindUnpack(job, m)).ToList();
+    }
+
+    public static CopyMapping BindUnpack(Job job, CopyMapping mapping)
+    {
+        var zip = FindSourceZip(mapping);
+        if (zip is null)
+        {
+            return mapping;
+        }
+
+        var userDest = mapping.UserDestPath;
+        if (string.IsNullOrWhiteSpace(userDest))
+        {
+            userDest = mapping.SingleFile ? mapping.DestRoot : mapping.UserDestPath;
+        }
+
+        string destRoot;
+        if (mapping.SingleFile)
+        {
+            destRoot = job.Options.IncludeSourceFolderName
+                ? Path.Combine(mapping.DestRoot, Path.GetFileNameWithoutExtension(zip) ?? "received")
+                : mapping.DestRoot;
+        }
+        else
+        {
+            destRoot = mapping.DestRoot;
+        }
+
+        var zipName = Path.GetFileNameWithoutExtension(zip);
+        if (string.IsNullOrWhiteSpace(zipName))
+        {
+            zipName = "received";
+        }
+
+        return new CopyMapping
+        {
+            Kind = SourceKind.Folder,
+            SourceRoot = Path.GetDirectoryName(zip) ?? mapping.SourceRoot,
+            DestRoot = destRoot,
+            SingleFile = false,
+            UniqueRelativePrefix = mapping.UniqueRelativePrefix,
+            TransportZipPath = Path.Combine(destRoot, TransportFolder, zipName + "-transport.zip"),
+            SourceZipPath = zip,
+            UserDestPath = userDest ?? ""
+        };
+    }
+
+    public static IEnumerable<FileRecord> EnumerateJobFiles(
+        Job job,
+        IReadOnlyList<CopyMapping> mappings,
+        IEnumerable<string>? extraExcludeRoots,
+        bool uniquePrefix)
+    {
+        var rest = new List<CopyMapping>();
+        foreach (var mapping in mappings)
+        {
+            if (AppliesUnpack(job, mapping))
+            {
+                foreach (var record in EnumerateSource(mapping))
+                {
+                    yield return record;
+                }
+            }
+            else
+            {
+                rest.Add(mapping);
+            }
+        }
+
+        if (rest.Count == 0)
+        {
+            yield break;
+        }
+
+        foreach (var record in SourceWalker.WalkAll(rest, extraExcludeRoots, job.Options, uniquePrefix))
+        {
+            yield return record;
+        }
+    }
+
+    public static IReadOnlyList<FileRecord> EnumerateSource(CopyMapping mapping)
+    {
+        var zip = FindSourceZip(mapping);
+        if (zip is null)
+        {
+            return [];
+        }
+
+        using var archive = ZipFile.OpenRead(zip);
+        var list = new List<FileRecord>();
+        foreach (var entry in archive.Entries)
+        {
+            if (IsDirectoryEntry(entry))
+            {
+                continue;
+            }
+
+            var rel = entry.FullName.Replace('/', '\\').Trim('\\');
+            if (string.IsNullOrWhiteSpace(rel))
+            {
+                continue;
+            }
+
+            DateTime writeUtc;
+            try
+            {
+                writeUtc = entry.LastWriteTime.UtcDateTime;
+            }
+            catch
+            {
+                writeUtc = DateTime.UtcNow;
+            }
+
+            var record = new FileRecord
+            {
+                RelativePath = rel,
+                SourcePath = zip,
+                DestPath = PathNormalizer.Combine(mapping.DestRoot, rel),
+                Size = entry.Length,
+                LastWriteUtc = writeUtc,
+                Status = FileCopyStatus.Pending
+            };
+            if (!string.IsNullOrEmpty(mapping.UniqueRelativePrefix))
+            {
+                CopyShape.WithUniqueRelative(record, mapping);
+            }
+
+            list.Add(record);
+        }
+
+        return list;
+    }
+
+    public static void FillHashesFromZip(string zipPath, IReadOnlyList<FileRecord> files, JobJournal journal)
+    {
+        if (!File.Exists(zipPath) || files.Count == 0)
+        {
+            return;
+        }
+
+        using var zip = ZipFile.OpenRead(zipPath);
+        var entries = new Dictionary<string, ZipArchiveEntry>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in zip.Entries)
+        {
+            if (IsDirectoryEntry(entry))
+            {
+                continue;
+            }
+
+            entries[entry.FullName.Replace('\\', '/').Trim('/')] = entry;
+        }
+
+        foreach (var file in files)
+        {
+            if (!string.IsNullOrEmpty(file.Hash))
+            {
+                continue;
+            }
+
+            var key = EntryName(file.RelativePath);
+            if (!entries.TryGetValue(key, out var entry))
+            {
+                try
+                {
+                    key = EntryName(Path.GetRelativePath(ExtractRootFromZip(zipPath), file.DestPath));
+                }
+                catch
+                {
+                    key = EntryName(file.RelativePath);
+                }
+
+                if (!entries.TryGetValue(key, out entry))
+                {
+                    continue;
+                }
+            }
+
+            using var stream = entry.Open();
+            file.Hash = HashUtil.HashStream(stream);
+            journal.UpsertFile(file);
+        }
+    }
 
     public static string ZipPath(CopyMapping mapping)
     {
@@ -539,7 +809,8 @@ public static class ZipPack
 
             if (ShouldSkipExtract(destPath, size, lastWriteUtc, overwrite, job?.Options))
             {
-                if (job is not null && !string.IsNullOrEmpty(sourcePath) && File.Exists(sourcePath))
+                if (job is not null && !string.IsNullOrEmpty(sourcePath) && File.Exists(sourcePath)
+                    && !PathsEqual(sourcePath, zipFull))
                 {
                     FileMetadata.ApplyCopiedFile(sourcePath, destPath, job.Options, log, job.Id, name);
                 }
@@ -603,7 +874,8 @@ public static class ZipPack
                 }
 
                 File.Move(temp, destPath);
-                if (job is not null && !string.IsNullOrEmpty(sourcePath) && File.Exists(sourcePath))
+                if (job is not null && !string.IsNullOrEmpty(sourcePath) && File.Exists(sourcePath)
+                    && !PathsEqual(sourcePath, zipFull))
                 {
                     FileMetadata.ApplyCopiedFile(sourcePath, destPath, job.Options, log, job.Id, name);
                 }

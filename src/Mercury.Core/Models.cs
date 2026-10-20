@@ -80,6 +80,12 @@ public sealed class JobOptions
     public bool PackAsZip { get; set; }
 
     /// <summary>
+    /// Reverse of pack-as-zip for downloads: if source is a .zip or a Mercury transport zip,
+    /// copy that one file then unpack on this PC. Source zip is kept unless Move is on.
+    /// </summary>
+    public bool UnpackAfterCopy { get; set; }
+
+    /// <summary>
     /// When packing, copy video/photos/audio/archives/disk images as-is instead of wrapping them in the transport zip.
     /// Default on. If every file is already compressed, skip packing entirely.
     /// Settings pack/never-pack extension lists override this per extension.
@@ -177,6 +183,7 @@ public sealed class JobOptions
         Move = other.Move;
         IgnoreFreeSpaceCheck = other.IgnoreFreeSpaceCheck;
         PackAsZip = other.PackAsZip;
+        UnpackAfterCopy = other.UnpackAfterCopy;
         SkipCompressedWhenPacking = other.SkipCompressedWhenPacking;
         PackExtensions = [..other.PackExtensions ?? []];
         NeverPackExtensions = [..other.NeverPackExtensions ?? []];
@@ -480,6 +487,8 @@ public sealed class CopyMapping
     public string UniqueRelativePrefix { get; init; } = "";
     /// <summary>Override transport zip path (Catcher multi-source combined pack).</summary>
     public string? TransportZipPath { get; init; }
+    /// <summary>Source zip to copy then unpack when <see cref="JobOptions.UnpackAfterCopy"/> is on.</summary>
+    public string? SourceZipPath { get; init; }
     /// <summary>
     /// Destination folder the user picked (not the landing under it). Empty means <see cref="DestRoot"/>.
     /// Set when a job fans out to more than one destination so journal prefixes stay unique.

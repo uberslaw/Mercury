@@ -60,6 +60,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private bool _scheduleSaturday = true;
     private bool _scheduleSunday = true;
     private bool _packAsZip;
+    private bool _unpackAfterCopy;
     private bool _ignoreFreeSpaceCheck;
     private bool _roboFlagsExpanded;
     private bool _applyingJobOptions;
@@ -697,7 +698,35 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool ScheduleFriday { get => _scheduleFriday; set => SetField(ref _scheduleFriday, value); }
     public bool ScheduleSaturday { get => _scheduleSaturday; set => SetField(ref _scheduleSaturday, value); }
     public bool ScheduleSunday { get => _scheduleSunday; set => SetField(ref _scheduleSunday, value); }
-    public bool PackAsZip { get => _packAsZip; set => SetField(ref _packAsZip, value); }
+    public bool PackAsZip
+    {
+        get => _packAsZip;
+        set
+        {
+            if (SetField(ref _packAsZip, value) && value)
+            {
+                UnpackAfterCopy = false;
+            }
+        }
+    }
+
+    public bool UnpackAfterCopy
+    {
+        get => _unpackAfterCopy;
+        set
+        {
+            if (SetField(ref _unpackAfterCopy, value))
+            {
+                if (value)
+                {
+                    PackAsZip = false;
+                }
+
+                RaiseLandingPreview();
+            }
+        }
+    }
+
     public bool SkipCompressedWhenPacking { get => _skipCompressedWhenPacking; set => SetField(ref _skipCompressedWhenPacking, value); }
     public string NeverPackDraft { get => _neverPackDraft; set => SetField(ref _neverPackDraft, value); }
     public string PackExtensionDraft { get => _packExtensionDraft; set => SetField(ref _packExtensionDraft, value); }
@@ -1189,7 +1218,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             var path = CopyShape.PreviewLandingSummary(
                 CollectedQueueSources(),
                 CollectedQueueDests(),
-                QueueDraft.IncludeSourceFolderName);
+                QueueDraft.IncludeSourceFolderName,
+                QueueDraft.UnpackAfterCopy);
             return path;
         }
     }
@@ -1233,7 +1263,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 return "";
             }
 
-            return CopyShape.PreviewLandingSummary(CollectedSources(), CollectedDests(), IncludeSourceFolderName);
+            return CopyShape.PreviewLandingSummary(
+                CollectedSources(), CollectedDests(), IncludeSourceFolderName, UnpackAfterCopy);
         }
     }
 
@@ -2035,10 +2066,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private void ShowStartingStage(Job job, bool resume = false)
     {
         var catcher = job.Catcher is not null;
-        var pack = catcher
+        var unpack = job.Options.UnpackAfterCopy && !catcher;
+        var pack = !unpack && (catcher
             ? job.SourceKind != SourceKind.File
-            : job.Options.PackAsZip && job.SourceKind != SourceKind.File;
-        var stages = CopyPipeline.For(job, hasJournalFiles: resume, pack);
+            : job.Options.PackAsZip && job.SourceKind != SourceKind.File);
+        var stages = CopyPipeline.For(job, hasJournalFiles: resume, pack, unpackAfterCopy: unpack);
         var first = stages[0];
         var started = job.StartedUtc ?? DateTimeOffset.UtcNow;
         var preview = new JobProgress
@@ -2317,6 +2349,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             DryRun = DryRun,
             Move = Move,
             PackAsZip = PackAsZip,
+            UnpackAfterCopy = UnpackAfterCopy,
             SkipCompressedWhenPacking = SkipCompressedWhenPacking,
             PackExtensions = PackExtensions.ToList(),
             NeverPackExtensions = NeverPackExtensions.ToList(),
@@ -2392,6 +2425,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             DryRun = options.DryRun;
             Move = options.Move;
             PackAsZip = options.PackAsZip;
+            UnpackAfterCopy = options.UnpackAfterCopy;
             SkipCompressedWhenPacking = options.SkipCompressedWhenPacking;
             IgnoreFreeSpaceCheck = options.IgnoreFreeSpaceCheck;
             CopyTimestamps = options.CopyTimestamps;
@@ -4467,10 +4501,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
         else if (running is { StartedUtc: not null })
         {
-            var pack = running.Catcher is not null
+            var unpack = running.Options.UnpackAfterCopy && running.Catcher is null;
+            var pack = !unpack && (running.Catcher is not null
                 ? running.SourceKind != SourceKind.File
-                : running.Options.PackAsZip && running.SourceKind != SourceKind.File;
-            var preview = CopyPipeline.For(running, hasJournalFiles: false, pack);
+                : running.Options.PackAsZip && running.SourceKind != SourceKind.File);
+            var preview = CopyPipeline.For(running, hasJournalFiles: false, pack, unpackAfterCopy: unpack);
             var first = preview[0];
             var stats = ComposeStats(new JobProgress
             {
